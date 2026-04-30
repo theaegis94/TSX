@@ -157,9 +157,33 @@ def boc_valet(series: str) -> float | None:
         return None
 
 
+def _quote_from_df(df, t: str) -> dict | None:
+    try:
+        if isinstance(df.columns, pd.MultiIndex) and t in df.columns.get_level_values(0):
+            tdf = df[t]
+        elif "Close" in df.columns:
+            tdf = df
+        else:
+            return None
+        closes = tdf["Close"].dropna()
+        if len(closes) < 2:
+            return None
+        last = float(closes.iloc[-1])
+        prev = float(closes.iloc[-2])
+        return {
+            "price": last,
+            "prev": prev,
+            "change_pct": (last - prev) / prev * 100 if prev else 0.0,
+        }
+    except (KeyError, AttributeError, ValueError, IndexError):
+        return None
+
+
 def fetch_watchlist_quotes(tickers: list[str]) -> dict:
     """Latest price + day change for a list of tickers, in ONE batched yf.download
     call (rate-limit-friendly). Returns {ticker: {price, prev, change_pct}}.
+
+    Bare tickers that return no data are retried with .TO (TSX-only names like HOD).
     """
     if not tickers:
         return {}
@@ -174,30 +198,33 @@ def fetch_watchlist_quotes(tickers: list[str]) -> dict:
         )
     except Exception:
         return {}
-    if df is None or df.empty:
-        return {}
 
     out: dict = {}
-    for t in tickers:
+    missing_bare: list[str] = []
+    if df is not None and not df.empty:
+        for t in tickers:
+            q = _quote_from_df(df, t)
+            if q is not None:
+                out[t] = q
+            elif "." not in t:
+                # Bare ticker with no data — likely a TSX-only name (e.g. HOD)
+                missing_bare.append(t)
+
+    # Retry missing bare tickers with .TO suffix
+    if missing_bare:
         try:
-            if isinstance(df.columns, pd.MultiIndex) and t in df.columns.get_level_values(0):
-                tdf = df[t]
-            elif "Close" in df.columns:
-                tdf = df
-            else:
-                continue
-            closes = tdf["Close"].dropna()
-            if len(closes) < 2:
-                continue
-            last = float(closes.iloc[-1])
-            prev = float(closes.iloc[-2])
-            out[t] = {
-                "price": last,
-                "prev": prev,
-                "change_pct": (last - prev) / prev * 100 if prev else 0.0,
-            }
-        except (KeyError, AttributeError, ValueError, IndexError):
-            continue
+            df2 = yf.download(
+                " ".join(f"{t}.TO" for t in missing_bare),
+                period="5d", interval="1d",
+                auto_adjust=True, progress=False, group_by="ticker",
+            )
+        except Exception:
+            df2 = None
+        if df2 is not None and not df2.empty:
+            for t in missing_bare:
+                q = _quote_from_df(df2, f"{t}.TO")
+                if q is not None:
+                    out[t] = q  # store under original key so the UI matches
     return out
 
 

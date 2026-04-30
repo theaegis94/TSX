@@ -75,76 +75,122 @@ def cached_quotes(tickers: tuple) -> dict:
     return ss.fetch_watchlist_quotes(list(tickers))
 
 
+def _on_tile_click(ticker: str):
+    st.session_state["selected_tile"] = ticker
+
+
 def render_watchlist_bar(tickers: tuple) -> None:
     if not tickers:
         return
     quotes = cached_quotes(tickers)
-    tiles_html = []
-    for t in tickers:
-        q = quotes.get(t)
-        if not q:
-            tiles_html.append(
-                f'<div class="ticker-tile">'
-                f'<div class="tt-code">{t}</div>'
-                f'<div class="tt-price">—</div>'
-                f'<div class="tt-change">—</div>'
-                f'</div>'
-            )
-            continue
-        chg = q["change_pct"]
-        color = "#16a34a" if chg >= 0 else "#dc2626"
-        arrow = "▲" if chg >= 0 else "▼"
-        sign = "+" if chg >= 0 else ""
-        tiles_html.append(
-            f'<div class="ticker-tile">'
-            f'<div class="tt-code">{t}</div>'
-            f'<div class="tt-price">${q["price"]:.2f}</div>'
-            f'<div class="tt-change" style="color:{color}">'
-            f'{arrow} {sign}{chg:.2f}%</div>'
-            f'</div>'
-        )
 
-    html = (
+    # CSS to make tile buttons more compact + look like cards
+    st.markdown(
         "<style>"
-        ".ticker-bar {"
-        "  display: flex;"
-        "  overflow-x: auto;"
-        "  gap: 6px;"
-        "  padding: 4px 0 12px 0;"
-        "  margin-bottom: 4px;"
-        "  -webkit-overflow-scrolling: touch;"
+        "div[data-testid='stHorizontalBlock'] div[data-testid='stVerticalBlock'] "
+        "  div.stButton > button {"
+        "    width: 100%;"
+        "    background: #1f2937;"
+        "    border: 1px solid #374151;"
+        "    color: #e5e7eb;"
+        "    font-weight: 600;"
+        "    font-size: 0.75rem;"
+        "    padding: 4px 6px;"
+        "    line-height: 1.2;"
         "}"
-        ".ticker-bar::-webkit-scrollbar { height: 6px; }"
-        ".ticker-bar::-webkit-scrollbar-thumb {"
-        "  background: #4b5563; border-radius: 3px;"
+        "div[data-testid='stHorizontalBlock'] div[data-testid='stVerticalBlock'] "
+        "  div.stButton > button:hover {"
+        "    border-color: #6b7280;"
+        "    background: #374151;"
         "}"
-        ".ticker-tile {"
-        "  background: #1f2937;"
-        "  padding: 6px 10px;"
-        "  border-radius: 6px;"
-        "  min-width: 105px;"
-        "  flex-shrink: 0;"
-        "  border: 1px solid #374151;"
-        "}"
-        ".tt-code {"
-        "  font-size: 0.7rem;"
-        "  color: #9ca3af;"
-        "  font-weight: 600;"
-        "  letter-spacing: 0.5px;"
-        "}"
-        ".tt-price {"
-        "  font-size: 1rem;"
-        "  color: #e5e7eb;"
-        "  font-weight: 500;"
-        "}"
-        ".tt-change {"
-        "  font-size: 0.75rem;"
-        "  font-weight: 600;"
-        "}"
-        "</style>"
-        '<div class="ticker-bar">' + "".join(tiles_html) + "</div>"
+        "</style>",
+        unsafe_allow_html=True,
     )
-    st.markdown(html, unsafe_allow_html=True)
+
+    cols_per_row = 8
+    for row_start in range(0, len(tickers), cols_per_row):
+        row_tickers = tickers[row_start:row_start + cols_per_row]
+        cols = st.columns(cols_per_row)
+        for i, t in enumerate(row_tickers):
+            with cols[i]:
+                cols[i].button(
+                    t, key=f"tile_btn_{t}",
+                    on_click=_on_tile_click, args=(t,),
+                    use_container_width=True,
+                )
+                q = quotes.get(t)
+                if not q:
+                    st.markdown(
+                        '<div style="text-align:center; color:#6b7280; '
+                        'font-size:0.75rem; line-height:1.1;">—<br>—</div>',
+                        unsafe_allow_html=True,
+                    )
+                    continue
+                chg = q["change_pct"]
+                color = "#16a34a" if chg >= 0 else "#dc2626"
+                arrow = "▲" if chg >= 0 else "▼"
+                sign = "+" if chg >= 0 else ""
+                st.markdown(
+                    f'<div style="text-align:center; line-height:1.15;">'
+                    f'<span style="font-size:0.85rem;">${q["price"]:.2f}</span>'
+                    f'<br>'
+                    f'<span style="font-size:0.7rem; color:{color}; font-weight:600;">'
+                    f'{arrow} {sign}{chg:.2f}%</span>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+
+
+def render_quick_analysis():
+    """Inline analysis panel shown when a watchlist tile is clicked."""
+    selected = st.session_state.get("selected_tile")
+    if not selected:
+        return
+    period = st.session_state.get("_period", "2y")
+    interval = st.session_state.get("_interval", "1d")
+    strategy = st.session_state.get("_strategy", "trend")
+    adx_filter = st.session_state.get("_adx_filter", False)
+    stop_loss_pct = st.session_state.get("_stop_loss_pct")
+
+    with st.container(border=True):
+        header_col, close_col = st.columns([5, 1])
+        header_col.markdown(f"### 🎯 Quick view: **{selected}**")
+        if close_col.button("✖ Close", key="close_quick_view",
+                            use_container_width=True):
+            st.session_state.pop("selected_tile", None)
+            st.rerun()
+
+        try:
+            ticker = ss.normalize_ticker(selected)
+        except SystemExit as e:
+            st.error(str(e))
+            return
+
+        with st.spinner(f"Loading {ticker}…"):
+            df, stats = cached_single(ticker, period, interval,
+                                      strategy, adx_filter, stop_loss_pct)
+        if df is None:
+            st.error(f"No data for {ticker}.")
+            return
+
+        last = df.iloc[-1]
+        if bool(last["BUY"]):
+            st.success(f"🟢 BUY signal today ({df.index[-1].date()})")
+        elif bool(last["SELL"]):
+            st.error(f"🔴 SELL signal today ({df.index[-1].date()})")
+        else:
+            st.info(f"⚪ HOLD — score {int(last['SCORE']):+d}")
+
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Trades", stats["trades"])
+        c2.metric("Win Rate", f"{stats['win_rate']:.0%}")
+        c3.metric("Strategy", f"{stats['total_return']:+.1%}")
+        c4.metric("Buy & Hold", f"{stats['buy_hold']:+.1%}")
+        c5.metric("Max DD", f"{stats.get('max_drawdown', 0):.1%}")
+
+        fig = ss.build_chart(df, ticker, stats)
+        st.pyplot(fig, use_container_width=True)
+        st.caption("For news, analyst data, and fundamentals — open the **Single Ticker** tab below.")
 
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -197,6 +243,7 @@ for _raw in _wl_str.split(","):
     except SystemExit:
         continue
 render_watchlist_bar(tuple(_wl_normalized[:30]))
+render_quick_analysis()
 
 # Macro context — view selected from sidebar
 _macro_view = st.session_state.get("macro_view", "🇨🇦 Canada")
@@ -318,6 +365,13 @@ with st.sidebar:
     )
     stop_loss_pct = None if stop_choice == "None" else int(stop_choice.rstrip("%")) / 100
 
+# Persist these for the quick-view panel to read (it renders earlier in the script)
+st.session_state["_period"] = period
+st.session_state["_interval"] = interval
+st.session_state["_strategy"] = strategy
+st.session_state["_adx_filter"] = adx_filter
+st.session_state["_stop_loss_pct"] = stop_loss_pct
+
     st.divider()
     if st.button("🔄 Clear cache & refresh"):
         st.cache_data.clear()
@@ -345,10 +399,13 @@ with tab_scan:
     st.subheader("Watchlist Scan")
 
     default_str = ", ".join(ss.DEFAULT_WATCHLIST)
-    watchlist_str = st.text_area(
-        "Tickers (comma-separated; bare = US, .TO = TSX, .V = TSXV)",
-        default_str, height=80, key="watchlist_input",
-    )
+    with st.expander("Edit watchlist (bulk)", expanded=False):
+        watchlist_str = st.text_area(
+            "Comma-separated tickers — bare = US, .TO = TSX, .V = TSXV",
+            default_str, height=68, key="watchlist_input",
+            label_visibility="collapsed",
+        )
+    watchlist_str = st.session_state.get("watchlist_input", default_str)
     tickers = tuple(t.strip() for t in watchlist_str.split(",") if t.strip())
 
     with st.spinner(f"Scanning {len(tickers)} tickers…"):
