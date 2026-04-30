@@ -14,6 +14,54 @@ import stock_signals as ss
 st.set_page_config(page_title="Stock Signals", layout="wide", page_icon="📈")
 
 
+# Global CSS — make tabs larger, bolder, with clearer active state
+st.markdown(
+    """
+    <style>
+    /* Tab list container — adds spacing and a subtle bottom border */
+    div[data-baseweb="tab-list"] {
+        gap: 8px;
+        border-bottom: 1px solid #374151 !important;
+        padding-bottom: 0;
+        margin-bottom: 16px;
+    }
+
+    /* Individual tab buttons */
+    button[data-baseweb="tab"] {
+        height: auto !important;
+        padding: 12px 24px !important;
+        font-size: 1.05rem !important;
+        font-weight: 500 !important;
+        background: transparent !important;
+        border-radius: 8px 8px 0 0 !important;
+        transition: background 0.15s ease, color 0.15s ease !important;
+    }
+
+    /* Hover state */
+    button[data-baseweb="tab"]:hover {
+        background: rgba(255,255,255,0.04) !important;
+        color: #f9fafb !important;
+    }
+
+    /* Active tab — bigger, bolder, highlighted background */
+    button[data-baseweb="tab"][aria-selected="true"] {
+        background: rgba(239, 68, 68, 0.10) !important;
+        color: #fca5a5 !important;
+        font-weight: 700 !important;
+        font-size: 1.1rem !important;
+    }
+
+    /* The red underline on the active tab (Streamlit's default) */
+    div[data-baseweb="tab-highlight"] {
+        height: 3px !important;
+        border-radius: 2px !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
 # --------- watchlist persistence via URL query param ---------
 # Reads `?wl=AAPL,RY.TO,...` from the URL on first load, syncs back on every run.
 # This means:
