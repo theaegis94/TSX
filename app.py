@@ -445,8 +445,8 @@ st.session_state["_stop_loss_pct"] = stop_loss_pct
 
 # --------- tabs ---------
 
-tab_scan, tab_single, tab_news, tab_help = st.tabs(
-    ["📊 Scan", "🔍 Single Ticker", "📰 News", "ℹ️ Help"]
+tab_scan, tab_single, tab_screener, tab_news, tab_help = st.tabs(
+    ["📊 Scan", "🔍 Single Ticker", "🎯 Screener", "📰 News", "ℹ️ Help"]
 )
 
 
@@ -637,6 +637,88 @@ with tab_single:
 
                 fig = ss.build_chart(df, ticker, stats)
                 st.pyplot(fig, use_container_width=True)
+
+
+# === Screener tab ===
+with tab_screener:
+    st.subheader("Multi-strategy Buy Screener")
+    st.caption(
+        "Find stocks where **both** Bollinger Mean Reversion (price at lower band) "
+        "and **RSI oversold** are firing — a confluence of two independent oversold signals."
+    )
+
+    sc_col1, sc_col2 = st.columns([1, 1])
+    universe_choice = sc_col1.radio(
+        "Universe",
+        options=["S&P 100 (~100)", "TSX 60 (~60)", "Custom watchlist"],
+        index=0,
+        key="screener_universe",
+    )
+    rsi_thresh = sc_col2.slider(
+        "RSI threshold (≤ to qualify as oversold)",
+        min_value=20, max_value=50, value=35, step=1,
+        key="screener_rsi_thresh",
+    )
+
+    sc_col3, sc_col4 = sc_col1.columns(2)
+    require_bb = sc_col3.checkbox(
+        "Bollinger BUY", value=True, key="screener_require_bb",
+        help="Bollinger lower-band touch in the last 5 days",
+    )
+    require_rsi = sc_col4.checkbox(
+        "RSI oversold", value=True, key="screener_require_rsi",
+        help="Current RSI ≤ threshold",
+    )
+
+    if universe_choice.startswith("S&P"):
+        universe = ss.UNIVERSE_SP100
+    elif universe_choice.startswith("TSX"):
+        universe = ss.UNIVERSE_TSX60
+    else:
+        universe = list(tickers)
+
+    st.caption(f"Will scan **{len(universe)}** tickers.")
+
+    if st.button("🎯 Run screener", type="primary",
+                 disabled=not (require_bb or require_rsi)):
+        with st.spinner(f"Scanning {len(universe)} tickers (one batched call)…"):
+            matches = ss.screen_buy_signals(
+                universe,
+                rsi_threshold=rsi_thresh,
+                require_bollinger=require_bb,
+                require_rsi=require_rsi,
+            )
+
+        if not matches:
+            st.info("No matches. Try raising the RSI threshold or relaxing one filter.")
+        else:
+            st.success(f"Found **{len(matches)}** match{'es' if len(matches) != 1 else ''}")
+            df_m = pd.DataFrame([{
+                "Ticker": m["ticker"],
+                "Price": m["price"],
+                "RSI": m["rsi"],
+                "vs BB Lower": m["bb_distance_pct"],
+                "BB BUY": "✓" if m["bollinger_buy"] else "·",
+                "RSI Oversold": "✓" if m["rsi_oversold"] else "·",
+            } for m in matches])
+            st.dataframe(
+                df_m,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Price": st.column_config.NumberColumn(format="$%.2f"),
+                    "RSI": st.column_config.NumberColumn(format="%.1f"),
+                    "vs BB Lower": st.column_config.NumberColumn(
+                        format="%+.2f%%",
+                        help="Price relative to Bollinger lower band. "
+                             "Negative = below lower band (oversold).",
+                    ),
+                },
+            )
+            st.caption(
+                "Click a ticker in the watchlist tile bar (after adding it) for "
+                "the full chart + signal analysis. Or use the Single Ticker tab."
+            )
 
 
 # === News tab ===

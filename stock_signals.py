@@ -179,6 +179,82 @@ def _quote_from_df(df, t: str) -> dict | None:
         return None
 
 
+def screen_buy_signals(tickers: list[str], rsi_threshold: float = 35.0,
+                       lookback_bars: int = 5,
+                       require_bollinger: bool = True,
+                       require_rsi: bool = True) -> list[dict]:
+    """Find tickers with confluence buy signals: Bollinger lower-band BUY + RSI oversold.
+
+    rsi_threshold: RSI must be at or below this value (default 35 — relaxed oversold).
+    lookback_bars: a Bollinger BUY in the last N bars counts (so we don't miss
+                   a signal that fired 1-2 days ago).
+    require_bollinger / require_rsi: toggle each filter independently.
+
+    Returns list of {ticker, price, rsi, bb_lower, bb_distance_pct,
+                     bollinger_buy, rsi_oversold} sorted by RSI ascending.
+    """
+    if not tickers or not (require_bollinger or require_rsi):
+        return []
+
+    try:
+        df = yf.download(
+            " ".join(tickers),
+            period="1y",
+            interval="1d",
+            auto_adjust=True,
+            progress=False,
+            group_by="ticker",
+        )
+    except Exception:
+        return []
+    if df is None or df.empty:
+        return []
+
+    matches: list[dict] = []
+    for t in tickers:
+        try:
+            if isinstance(df.columns, pd.MultiIndex) and t in df.columns.get_level_values(0):
+                tdf = df[t].copy()
+            elif "Close" in df.columns:
+                tdf = df.copy()
+            else:
+                continue
+            if len(tdf.dropna(subset=["Close"])) < 30:
+                continue
+            tdf = compute_indicators(tdf)
+            if "BB_LOWER" not in tdf.columns or "RSI" not in tdf.columns:
+                continue
+            bb_sig = _strategy_bollinger(tdf)
+            recent = bb_sig.iloc[-lookback_bars:]
+            bollinger_buy = bool(recent["BUY"].any())
+            last = tdf.iloc[-1]
+            if pd.isna(last["RSI"]) or pd.isna(last["Close"]) or pd.isna(last["BB_LOWER"]):
+                continue
+            rsi_val = float(last["RSI"])
+            close_val = float(last["Close"])
+            bb_lo = float(last["BB_LOWER"])
+            rsi_oversold = rsi_val <= rsi_threshold
+
+            if require_bollinger and not bollinger_buy:
+                continue
+            if require_rsi and not rsi_oversold:
+                continue
+
+            matches.append({
+                "ticker": t,
+                "price": close_val,
+                "rsi": rsi_val,
+                "bb_lower": bb_lo,
+                "bb_distance_pct": (close_val - bb_lo) / bb_lo * 100 if bb_lo else 0.0,
+                "bollinger_buy": bollinger_buy,
+                "rsi_oversold": rsi_oversold,
+            })
+        except (KeyError, AttributeError, ValueError, IndexError, TypeError):
+            continue
+
+    return sorted(matches, key=lambda r: r["rsi"])
+
+
 def fetch_watchlist_quotes(tickers: list[str]) -> dict:
     """Latest price + day change for a list of tickers, in ONE batched yf.download
     call (rate-limit-friendly). Returns {ticker: {price, prev, change_pct}}.
@@ -772,6 +848,39 @@ def normalize_ticker(raw: str) -> str:
 
 # Back-compat alias (older code paths called the TSX-only name).
 normalize_tsx_ticker = normalize_ticker
+
+
+# Predefined universes for the screener
+UNIVERSE_SP100 = [
+    "AAPL", "MSFT", "NVDA", "GOOGL", "GOOG", "AMZN", "META", "TSLA", "BRK-B",
+    "LLY", "AVGO", "JPM", "V", "WMT", "XOM", "MA", "UNH", "JNJ", "PG", "ORCL",
+    "HD", "COST", "ABBV", "BAC", "MRK", "CVX", "KO", "PEP", "ADBE", "NFLX",
+    "CRM", "TMO", "AMD", "ACN", "MCD", "LIN", "DIS", "ABT", "WFC", "CSCO",
+    "TXN", "DHR", "VZ", "INTU", "AMGN", "CAT", "PM", "PFE", "IBM", "GE",
+    "AXP", "QCOM", "ISRG", "NOW", "RTX", "BX", "GS", "T", "NEE", "MS",
+    "UBER", "LOW", "BKNG", "SPGI", "UNP", "BA", "C", "ELV", "TJX", "PGR",
+    "BLK", "MDT", "GILD", "SYK", "VRTX", "MMC", "ADP", "PLD", "DE", "BSX",
+    "ETN", "LMT", "MDLZ", "SCHW", "AMT", "ADI", "REGN", "FI", "MO", "PANW",
+    "INTC", "BMY", "SO", "DUK", "CB", "CL", "EOG", "TGT", "USB", "MU",
+]
+
+UNIVERSE_TSX60 = [
+    "RY.TO", "TD.TO", "BNS.TO", "BMO.TO", "CM.TO", "NA.TO",  # banks
+    "SHOP.TO", "CSU.TO", "OTEX.TO", "CGI.TO",  # tech
+    "ENB.TO", "TRP.TO", "SU.TO", "CNQ.TO", "IMO.TO", "CVE.TO", "TOU.TO",
+    "PPL.TO", "ARX.TO", "TPZ.TO",  # energy
+    "BCE.TO", "T.TO", "RCI-B.TO",  # telecom
+    "CNR.TO", "CP.TO",  # rail
+    "FTS.TO", "EMA.TO", "ALA.TO", "H.TO", "AQN.TO",  # utilities
+    "NTR.TO", "ABX.TO", "AEM.TO", "TECK-B.TO", "FNV.TO", "WPM.TO",  # materials
+    "WCN.TO", "GIB-A.TO",  # services
+    "ATD.TO", "L.TO", "MRU.TO", "WN.TO", "DOL.TO",  # consumer
+    "SLF.TO", "MFC.TO", "GWO.TO", "POW.TO", "IFC.TO", "FFH.TO",  # insurance
+    "BAM.TO", "BN.TO", "BIP-UN.TO", "BEP-UN.TO",  # alt asset mgrs
+    "MG.TO", "CCL-B.TO", "WSP.TO", "STN.TO",  # industrial
+    "QSR.TO", "GIL.TO",  # consumer cyc
+    "REI-UN.TO", "CAR-UN.TO", "SRU-UN.TO",  # REITs
+]
 
 
 DEFAULT_WATCHLIST = [
