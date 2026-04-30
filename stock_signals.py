@@ -875,8 +875,8 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
 
     fig = make_subplots(
         rows=3, cols=1, shared_xaxes=True,
-        vertical_spacing=0.03,
-        row_heights=[0.6, 0.2, 0.2],
+        vertical_spacing=0.10,
+        row_heights=[0.55, 0.22, 0.22],
     )
 
     # --- Price panel ---
@@ -952,14 +952,14 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
     if compact:
         title = (f"<b>{ticker}</b> &nbsp;·&nbsp; {stats['trades']} trades "
                  f"&nbsp;·&nbsp; {stats['win_rate']:.0%} win")
-        height = 520
+        height = 580
     else:
         title = (
             f"<b>{ticker}</b> &nbsp;·&nbsp; {stats['trades']} trades "
             f"&nbsp;·&nbsp; {stats['win_rate']:.0%} win &nbsp;·&nbsp; "
             f"strategy {stats['total_return']:+.1%} vs B&H {stats['buy_hold']:+.1%}"
         )
-        height = 720
+        height = 780
 
     fig.update_layout(
         title=dict(text=title, x=0.01, xanchor="left", font=dict(size=14)),
