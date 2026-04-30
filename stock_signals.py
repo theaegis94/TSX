@@ -792,13 +792,13 @@ def build_chart(df: pd.DataFrame, ticker: str, stats: dict, compact: bool = Fals
     compact=True returns a smaller figure suitable for embedded popups.
     """
     if compact:
-        figsize = (12, 4.5)  # wide + short, fills full popup width
+        figsize = (12, 5.5)  # wide, with enough height for visible markers
         title_fs, label_fs, tick_fs, legend_fs = 9, 8, 7, 7
-        marker_size, lw = 50, 0.9
+        marker_size, lw = 110, 1.0
     else:
         figsize = (14, 10)
         title_fs, label_fs, tick_fs, legend_fs = 12, 11, 10, 10
-        marker_size, lw = 120, 1.2
+        marker_size, lw = 140, 1.2
 
     fig, (ax_price, ax_rsi, ax_macd) = plt.subplots(
         3, 1, figsize=figsize, sharex=True,

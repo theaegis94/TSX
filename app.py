@@ -329,10 +329,13 @@ def render_quick_analysis():
             key=f"qv_strategy_{selected}",
             label_visibility="collapsed",
         )
+        _period_options = ["6mo", "1y", "2y", "5y"]
+        _sidebar_period = st.session_state.get("_period", "2y")
         period = h3.selectbox(
             "Lookback",
-            ["6mo", "1y", "2y", "5y"],
-            index=1,
+            _period_options,
+            index=(_period_options.index(_sidebar_period)
+                   if _sidebar_period in _period_options else 2),
             key=f"qv_period_{selected}",
             label_visibility="collapsed",
         )
