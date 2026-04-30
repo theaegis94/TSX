@@ -704,11 +704,17 @@ with tab_scan:
             key=lambda c: c.map(rank) if c.name == "Action" else -c,
         )
 
-        st.dataframe(
+        st.caption(
+            "💡 **Click a row's checkbox** to open the chart in a popup."
+        )
+        scan_event = st.dataframe(
             df_view,
             use_container_width=True,
             height=720,
             hide_index=True,
+            selection_mode="single-row",
+            on_select="rerun",
+            key="scan_results_table",
             column_config={
                 "Score": st.column_config.NumberColumn(format="%+d"),
                 "Close": st.column_config.NumberColumn(format="$%.2f"),
@@ -736,6 +742,15 @@ with tab_scan:
                 ),
             },
         )
+
+        # Open popup when a scan row is selected (only on a fresh selection
+        # so we don't re-open the dialog on every rerun).
+        if scan_event.selection.rows:
+            sel_idx = scan_event.selection.rows[0]
+            sel_ticker = df_view.iloc[sel_idx]["Ticker"]
+            if st.session_state.get("_scan_dialog_for") != sel_ticker:
+                st.session_state["_scan_dialog_for"] = sel_ticker
+                show_quick_analysis_dialog(sel_ticker)
 
         c1, c2, c3 = st.columns(3)
         c1.metric("🟢 BUY signals",
