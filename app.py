@@ -213,7 +213,76 @@ st.divider()
 
 # --------- sidebar ---------
 
+def _add_to_watchlist():
+    """on_click handler — add the typed ticker to the watchlist text area."""
+    new_t = st.session_state.get("add_ticker_input", "").strip().upper()
+    if not new_t:
+        return
+    try:
+        new_t = ss.normalize_ticker(new_t)
+    except SystemExit:
+        st.session_state["_add_msg"] = f"⚠️ Invalid ticker: {new_t}"
+        return
+    current = st.session_state.get(
+        "watchlist_input", ", ".join(ss.DEFAULT_WATCHLIST)
+    )
+    parts = [p.strip() for p in current.split(",") if p.strip()]
+    if any(p.upper() == new_t for p in parts):
+        st.session_state["_add_msg"] = f"ℹ️ {new_t} already in watchlist"
+    else:
+        parts.append(new_t)
+        st.session_state.watchlist_input = ", ".join(parts)
+        st.session_state["_add_msg"] = f"✅ Added {new_t}"
+    st.session_state.add_ticker_input = ""
+
+
+def _remove_from_watchlist():
+    """Remove the selected ticker from the watchlist."""
+    target = st.session_state.get("remove_ticker_select", "")
+    if not target:
+        return
+    current = st.session_state.get("watchlist_input", "")
+    parts = [p.strip() for p in current.split(",") if p.strip()]
+    parts = [p for p in parts if p.upper() != target.upper()]
+    st.session_state.watchlist_input = ", ".join(parts)
+    st.session_state["_add_msg"] = f"🗑️ Removed {target}"
+
+
 with st.sidebar:
+    st.header("Watchlist")
+
+    add_col1, add_col2 = st.columns([3, 1])
+    add_col1.text_input(
+        "Add ticker",
+        placeholder="AAPL, RY.TO, BRK.B…",
+        key="add_ticker_input",
+        label_visibility="collapsed",
+        on_change=_add_to_watchlist,
+    )
+    add_col2.button("➕ Add", on_click=_add_to_watchlist,
+                    use_container_width=True)
+
+    # Remove dropdown — populated from current watchlist
+    _current_wl = st.session_state.get(
+        "watchlist_input", ", ".join(ss.DEFAULT_WATCHLIST)
+    )
+    _wl_list = [p.strip() for p in _current_wl.split(",") if p.strip()]
+    if _wl_list:
+        rm_col1, rm_col2 = st.columns([3, 1])
+        rm_col1.selectbox(
+            "Remove ticker",
+            options=[""] + _wl_list,
+            key="remove_ticker_select",
+            label_visibility="collapsed",
+        )
+        rm_col2.button("🗑️ Remove", on_click=_remove_from_watchlist,
+                       use_container_width=True)
+
+    if "_add_msg" in st.session_state:
+        st.caption(st.session_state["_add_msg"])
+
+    st.divider()
+
     st.header("Settings")
     period = st.selectbox("Lookback period", ["6mo", "1y", "2y", "5y", "10y"],
                           index=2)

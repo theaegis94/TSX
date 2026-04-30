@@ -180,10 +180,10 @@ def fetch_watchlist_quotes(tickers: list[str]) -> dict:
     out: dict = {}
     for t in tickers:
         try:
-            if len(tickers) == 1:
-                tdf = df
-            elif isinstance(df.columns, pd.MultiIndex) and t in df.columns.get_level_values(0):
+            if isinstance(df.columns, pd.MultiIndex) and t in df.columns.get_level_values(0):
                 tdf = df[t]
+            elif "Close" in df.columns:
+                tdf = df
             else:
                 continue
             closes = tdf["Close"].dropna()
