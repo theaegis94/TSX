@@ -346,25 +346,36 @@ def render_quick_analysis():
             return
 
         last = df.iloc[-1]
-        if bool(last["BUY"]):
-            st.success(f"🟢 BUY signal today")
-        elif bool(last["SELL"]):
-            st.error(f"🔴 SELL signal today")
-        else:
-            st.caption(f"⚪ HOLD — score {int(last['SCORE']):+d}  ·  "
-                       f"Strategy {stats['total_return']:+.1%}  ·  "
-                       f"B&H {stats['buy_hold']:+.1%}  ·  "
-                       f"Max DD {stats.get('max_drawdown', 0):.1%}  ·  "
-                       f"{stats['trades']} trades, win {stats['win_rate']:.0%}")
 
-        fig = ss.build_chart(df, ticker, stats, compact=True)
-        # Constrain to ~half-width so it doesn't dominate the page
-        chart_col, _spacer = st.columns([1, 1])
-        chart_col.pyplot(fig, use_container_width=True)
-        plt_close_cleanup(fig)
-        st.caption(
-            "For news, analyst data & fundamentals → use the **Single Ticker** tab."
-        )
+        # Layout: chart on left (2/3), info panel on right (1/3)
+        chart_col, info_col = st.columns([2, 1])
+
+        with chart_col:
+            fig = ss.build_chart(df, ticker, stats, compact=True)
+            st.pyplot(fig, use_container_width=True)
+            plt_close_cleanup(fig)
+
+        with info_col:
+            if bool(last["BUY"]):
+                st.success("🟢 BUY signal today")
+            elif bool(last["SELL"]):
+                st.error("🔴 SELL signal today")
+            else:
+                st.info(f"⚪ HOLD — score {int(last['SCORE']):+d}")
+
+            m1, m2 = st.columns(2)
+            m1.metric("Strategy", f"{stats['total_return']:+.1%}")
+            m2.metric("B&H", f"{stats['buy_hold']:+.1%}")
+            m3, m4 = st.columns(2)
+            m3.metric("Max DD", f"{stats.get('max_drawdown', 0):.1%}")
+            m4.metric("Win Rate", f"{stats['win_rate']:.0%}")
+            st.caption(
+                f"{stats['trades']} trade{'s' if stats['trades'] != 1 else ''}"
+                f" · last close ${float(last['Close']):.2f}"
+            )
+            st.caption(
+                "📰 News · 📊 fundamentals → **Single Ticker** tab"
+            )
 
 
 def plt_close_cleanup(fig):
