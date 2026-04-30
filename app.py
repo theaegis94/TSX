@@ -311,17 +311,24 @@ def render_quick_analysis():
     selected = st.session_state.get("selected_tile")
     if not selected:
         return
-    period = st.session_state.get("_period", "2y")
     interval = st.session_state.get("_interval", "1d")
     strategy = st.session_state.get("_strategy", "trend")
     adx_filter = st.session_state.get("_adx_filter", False)
     stop_loss_pct = st.session_state.get("_stop_loss_pct")
 
     with st.container(border=True):
-        header_col, close_col = st.columns([5, 1])
-        header_col.markdown(f"### 🎯 Quick view: **{selected}**")
-        if close_col.button("✖ Close", key="close_quick_view",
-                            use_container_width=True):
+        # Compact header: title + lookback selector + close button
+        head_l, head_m, head_r = st.columns([3, 2, 1])
+        head_l.markdown(f"#### 🎯 {selected}")
+        period = head_m.selectbox(
+            "Lookback",
+            ["6mo", "1y", "2y", "5y"],
+            index=1,
+            key=f"qv_period_{selected}",
+            label_visibility="collapsed",
+        )
+        if head_r.button("✖ Close", key="close_quick_view",
+                         use_container_width=True):
             st.session_state.pop("selected_tile", None)
             st.rerun()
 
@@ -340,22 +347,31 @@ def render_quick_analysis():
 
         last = df.iloc[-1]
         if bool(last["BUY"]):
-            st.success(f"🟢 BUY signal today ({df.index[-1].date()})")
+            st.success(f"🟢 BUY signal today")
         elif bool(last["SELL"]):
-            st.error(f"🔴 SELL signal today ({df.index[-1].date()})")
+            st.error(f"🔴 SELL signal today")
         else:
-            st.info(f"⚪ HOLD — score {int(last['SCORE']):+d}")
+            st.caption(f"⚪ HOLD — score {int(last['SCORE']):+d}  ·  "
+                       f"Strategy {stats['total_return']:+.1%}  ·  "
+                       f"B&H {stats['buy_hold']:+.1%}  ·  "
+                       f"Max DD {stats.get('max_drawdown', 0):.1%}  ·  "
+                       f"{stats['trades']} trades, win {stats['win_rate']:.0%}")
 
-        c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("Trades", stats["trades"])
-        c2.metric("Win Rate", f"{stats['win_rate']:.0%}")
-        c3.metric("Strategy", f"{stats['total_return']:+.1%}")
-        c4.metric("Buy & Hold", f"{stats['buy_hold']:+.1%}")
-        c5.metric("Max DD", f"{stats.get('max_drawdown', 0):.1%}")
-
-        fig = ss.build_chart(df, ticker, stats)
+        fig = ss.build_chart(df, ticker, stats, compact=True)
         st.pyplot(fig, use_container_width=True)
-        st.caption("For news, analyst data, and fundamentals — open the **Single Ticker** tab below.")
+        plt_close_cleanup(fig)
+        st.caption(
+            "For news, analyst data & fundamentals → use the **Single Ticker** tab."
+        )
+
+
+def plt_close_cleanup(fig):
+    """Close the matplotlib figure to free memory between reruns."""
+    try:
+        import matplotlib.pyplot as _plt
+        _plt.close(fig)
+    except Exception:
+        pass
 
 
 @st.cache_data(ttl=900, show_spinner=False)

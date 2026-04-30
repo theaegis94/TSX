@@ -785,11 +785,15 @@ def backtest(df: pd.DataFrame, stop_loss_pct: float | None = None) -> dict:
     }
 
 
-def build_chart(df: pd.DataFrame, ticker: str, stats: dict):
+def build_chart(df: pd.DataFrame, ticker: str, stats: dict, compact: bool = False):
     """Build the 3-panel matplotlib figure (price/RSI/MACD) and return it.
-    Caller is responsible for showing/saving/closing."""
+    Caller is responsible for showing/saving/closing.
+
+    compact=True returns a smaller figure suitable for embedded popups.
+    """
+    figsize = (10, 5.5) if compact else (14, 10)
     fig, (ax_price, ax_rsi, ax_macd) = plt.subplots(
-        3, 1, figsize=(14, 10), sharex=True,
+        3, 1, figsize=figsize, sharex=True,
         gridspec_kw={"height_ratios": [3, 1, 1]},
     )
 
