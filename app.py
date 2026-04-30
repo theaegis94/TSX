@@ -467,8 +467,8 @@ def render_quick_analysis():
                         ],
                     })
         st.caption(
-            "💡 Scroll to zoom · drag to pan · **double-click** to auto-fit Y "
-            "to the visible window · 📰 news + fundamentals → **Single Ticker** tab"
+            "💡 **Drag** to pan · **scroll** to zoom · **double-click** to auto-fit Y · "
+            "📰 news + fundamentals → **Single Ticker** tab"
         )
 
 
