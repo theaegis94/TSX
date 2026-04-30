@@ -180,18 +180,23 @@ def _quote_from_df(df, t: str) -> dict | None:
 
 
 def screen_buy_signals(tickers: list[str], rsi_threshold: float = 35.0,
-                       lookback_bars: int = 5,
+                       lookback_bars: int = 22,
                        require_bollinger: bool = True,
                        require_rsi: bool = True) -> list[dict]:
     """Find tickers with confluence buy signals: Bollinger lower-band BUY + RSI oversold.
 
     rsi_threshold: RSI must be at or below this value (default 35 — relaxed oversold).
-    lookback_bars: a Bollinger BUY in the last N bars counts (so we don't miss
-                   a signal that fired 1-2 days ago).
+    lookback_bars: a Bollinger BUY anywhere in the last N trading days counts
+                   (default 22 ≈ 1 calendar month).
     require_bollinger / require_rsi: toggle each filter independently.
 
-    Returns list of {ticker, price, rsi, bb_lower, bb_distance_pct,
-                     bollinger_buy, rsi_oversold} sorted by RSI ascending.
+    Returns list of dicts including:
+      ticker, price, rsi, bb_lower, bb_distance_pct,
+      bollinger_buy (bool, was there a BUY in the lookback window?),
+      rsi_oversold (bool, current RSI <= threshold),
+      bb_buy_date (date of the most recent BUY in the window, or None),
+      bb_buy_age (trading-days ago, or None).
+    Sorted by most recent BB BUY first, then RSI ascending.
     """
     if not tickers or not (require_bollinger or require_rsi):
         return []
@@ -225,8 +230,15 @@ def screen_buy_signals(tickers: list[str], rsi_threshold: float = 35.0,
             if "BB_LOWER" not in tdf.columns or "RSI" not in tdf.columns:
                 continue
             bb_sig = _strategy_bollinger(tdf)
-            recent = bb_sig.iloc[-lookback_bars:]
-            bollinger_buy = bool(recent["BUY"].any())
+            window = bb_sig.iloc[-lookback_bars:]
+            buy_indices = window.index[window["BUY"]]
+            bollinger_buy = len(buy_indices) > 0
+            bb_buy_date = buy_indices[-1] if bollinger_buy else None
+            bb_buy_age = (
+                int((tdf.index[-1] - bb_buy_date).days)
+                if bb_buy_date is not None else None
+            )
+
             last = tdf.iloc[-1]
             if pd.isna(last["RSI"]) or pd.isna(last["Close"]) or pd.isna(last["BB_LOWER"]):
                 continue
@@ -248,11 +260,17 @@ def screen_buy_signals(tickers: list[str], rsi_threshold: float = 35.0,
                 "bb_distance_pct": (close_val - bb_lo) / bb_lo * 100 if bb_lo else 0.0,
                 "bollinger_buy": bollinger_buy,
                 "rsi_oversold": rsi_oversold,
+                "bb_buy_date": bb_buy_date.date().isoformat() if bb_buy_date is not None else None,
+                "bb_buy_age": bb_buy_age,
             })
         except (KeyError, AttributeError, ValueError, IndexError, TypeError):
             continue
 
-    return sorted(matches, key=lambda r: r["rsi"])
+    # Sort: most recent BB BUY first (lower age = more recent), tie-break by lower RSI
+    return sorted(matches, key=lambda r: (
+        r["bb_buy_age"] if r["bb_buy_age"] is not None else 9999,
+        r["rsi"],
+    ))
 
 
 def fetch_watchlist_quotes(tickers: list[str]) -> dict:

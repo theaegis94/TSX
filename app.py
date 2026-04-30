@@ -654,18 +654,28 @@ with tab_screener:
         index=0,
         key="screener_universe",
     )
+    lookback_days = sc_col2.select_slider(
+        "Bollinger BUY lookback window",
+        options=[5, 10, 22, 45, 66],
+        value=22,
+        format_func=lambda d: f"{d}d (~{d//5}wk)" if d < 22 else
+                              ("1 month" if d == 22 else
+                               "2 months" if d == 45 else
+                               "3 months"),
+        key="screener_lookback",
+    )
     rsi_thresh = sc_col2.slider(
         "RSI threshold (≤ to qualify as oversold)",
         min_value=20, max_value=50, value=35, step=1,
         key="screener_rsi_thresh",
     )
 
-    sc_col3, sc_col4 = sc_col1.columns(2)
-    require_bb = sc_col3.checkbox(
+    bb_col, rsi_col = sc_col1.columns(2)
+    require_bb = bb_col.checkbox(
         "Bollinger BUY", value=True, key="screener_require_bb",
-        help="Bollinger lower-band touch in the last 5 days",
+        help=f"Bollinger lower-band touch in the lookback window",
     )
-    require_rsi = sc_col4.checkbox(
+    require_rsi = rsi_col.checkbox(
         "RSI oversold", value=True, key="screener_require_rsi",
         help="Current RSI ≤ threshold",
     )
@@ -677,28 +687,53 @@ with tab_screener:
     else:
         universe = list(tickers)
 
-    st.caption(f"Will scan **{len(universe)}** tickers.")
+    st.caption(f"Will scan **{len(universe)}** tickers (one batched API call).")
 
     if st.button("🎯 Run screener", type="primary",
                  disabled=not (require_bb or require_rsi)):
-        with st.spinner(f"Scanning {len(universe)} tickers (one batched call)…"):
+        with st.spinner(f"Scanning {len(universe)} tickers…"):
             matches = ss.screen_buy_signals(
                 universe,
                 rsi_threshold=rsi_thresh,
+                lookback_bars=lookback_days,
                 require_bollinger=require_bb,
                 require_rsi=require_rsi,
             )
 
         if not matches:
-            st.info("No matches. Try raising the RSI threshold or relaxing one filter.")
+            st.info(
+                "No matches. Try a wider lookback window, higher RSI threshold, "
+                "or untick one filter."
+            )
         else:
-            st.success(f"Found **{len(matches)}** match{'es' if len(matches) != 1 else ''}")
+            # Split into "today" and "earlier"
+            today_matches = [m for m in matches if m.get("bb_buy_age") == 0]
+            earlier_matches = [m for m in matches if m.get("bb_buy_age") and m["bb_buy_age"] > 0]
+            no_bb_matches = [m for m in matches if m.get("bb_buy_age") is None]
+
+            summary_parts = [f"**{len(matches)}** total"]
+            if today_matches:
+                summary_parts.append(f"🎯 **{len(today_matches)} TODAY**")
+            if earlier_matches:
+                summary_parts.append(f"{len(earlier_matches)} within window")
+            st.success(" · ".join(summary_parts))
+
+            def _fmt_age(age):
+                if age is None:
+                    return "—"
+                if age == 0:
+                    return "today"
+                if age == 1:
+                    return "1d ago"
+                return f"{age}d ago"
+
             df_m = pd.DataFrame([{
                 "Ticker": m["ticker"],
                 "Price": m["price"],
                 "RSI": m["rsi"],
                 "vs BB Lower": m["bb_distance_pct"],
-                "BB BUY": "✓" if m["bollinger_buy"] else "·",
+                "BB BUY Date": m.get("bb_buy_date") or "—",
+                "BB BUY Age": _fmt_age(m.get("bb_buy_age")),
                 "RSI Oversold": "✓" if m["rsi_oversold"] else "·",
             } for m in matches])
             st.dataframe(
@@ -713,11 +748,17 @@ with tab_screener:
                         help="Price relative to Bollinger lower band. "
                              "Negative = below lower band (oversold).",
                     ),
+                    "BB BUY Date": st.column_config.TextColumn(
+                        help="Date of most recent Bollinger lower-band touch in the lookback window",
+                    ),
+                    "BB BUY Age": st.column_config.TextColumn(
+                        help="Trading days since the BUY signal — 'today' = fired on the latest bar",
+                    ),
                 },
             )
             st.caption(
-                "Click a ticker in the watchlist tile bar (after adding it) for "
-                "the full chart + signal analysis. Or use the Single Ticker tab."
+                "Sorted by most recent BB BUY first. Add any to your watchlist via "
+                "the Scan tab search box, then click the tile to see full analysis."
             )
 
 
