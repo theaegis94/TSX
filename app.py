@@ -197,6 +197,67 @@ def render_watchlist_bar(tickers: tuple) -> None:
                 )
 
 
+@st.dialog("📊 Quick Analysis", width="large")
+def show_quick_analysis_dialog(ticker: str):
+    """Modal popup with chart, signal, and key metrics for a ticker.
+    Used by the Screener tab when a row is clicked."""
+    period = st.session_state.get("_period", "2y")
+    interval = st.session_state.get("_interval", "1d")
+    strategy = st.session_state.get("_strategy", "trend")
+    adx_filter = st.session_state.get("_adx_filter", False)
+    stop_loss_pct = st.session_state.get("_stop_loss_pct")
+
+    try:
+        norm_ticker = ss.normalize_ticker(ticker)
+    except SystemExit as e:
+        st.error(str(e))
+        return
+
+    with st.spinner(f"Loading {norm_ticker}…"):
+        df, stats = cached_single(norm_ticker, period, interval,
+                                  strategy, adx_filter, stop_loss_pct)
+    if df is None:
+        st.error(f"No data for {norm_ticker}.")
+        return
+
+    st.markdown(f"### {norm_ticker}")
+
+    last = df.iloc[-1]
+    if bool(last["BUY"]):
+        st.success(f"🟢 BUY signal today ({df.index[-1].date()})")
+    elif bool(last["SELL"]):
+        st.error(f"🔴 SELL signal today ({df.index[-1].date()})")
+    else:
+        st.info(f"⚪ HOLD — score {int(last['SCORE']):+d}")
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Trades", stats["trades"])
+    c2.metric("Win Rate", f"{stats['win_rate']:.0%}")
+    c3.metric("Strategy", f"{stats['total_return']:+.1%}")
+    c4.metric("Buy & Hold", f"{stats['buy_hold']:+.1%}")
+    c5.metric("Max DD", f"{stats.get('max_drawdown', 0):.1%}")
+
+    metrics = cached_metrics(norm_ticker)
+    if metrics:
+        m1, m2, m3, m4 = st.columns(4)
+        if metrics.get("pe") is not None:
+            m1.metric("P/E", f"{metrics['pe']:.1f}")
+        if metrics.get("yield_pct") is not None:
+            m2.metric("Yield", f"{metrics['yield_pct']:.2f}%")
+        if metrics.get("upside_pct") is not None:
+            m3.metric("Analyst Upside", f"{metrics['upside_pct']:+.1f}%")
+        if metrics.get("earn_days") is not None:
+            m4.metric("Earnings In", f"{metrics['earn_days']}d")
+
+    fig = ss.build_chart(df, norm_ticker, stats)
+    st.pyplot(fig, use_container_width=True)
+
+    st.caption(
+        "For news headlines, open the Single Ticker / News tab. "
+        "Close this popup with the ✖ in the corner or click outside."
+    )
+
+
 def render_quick_analysis():
     """Inline analysis panel shown when a watchlist tile is clicked."""
     selected = st.session_state.get("selected_tile")
@@ -736,10 +797,17 @@ with tab_screener:
                 "BB BUY Age": _fmt_age(m.get("bb_buy_age")),
                 "RSI Oversold": "✓" if m["rsi_oversold"] else "·",
             } for m in matches])
-            st.dataframe(
+
+            st.caption(
+                "💡 **Click any row** to see chart + signal + metrics in a popup."
+            )
+            event = st.dataframe(
                 df_m,
                 use_container_width=True,
                 hide_index=True,
+                selection_mode="single-row",
+                on_select="rerun",
+                key="screener_results_table",
                 column_config={
                     "Price": st.column_config.NumberColumn(format="$%.2f"),
                     "RSI": st.column_config.NumberColumn(format="%.1f"),
@@ -756,10 +824,15 @@ with tab_screener:
                     ),
                 },
             )
-            st.caption(
-                "Sorted by most recent BB BUY first. Add any to your watchlist via "
-                "the Scan tab search box, then click the tile to see full analysis."
-            )
+
+            # Open dialog when a row is selected — but only on a NEW selection
+            # (avoid re-opening on every rerun while selection persists).
+            if event.selection.rows:
+                selected_idx = event.selection.rows[0]
+                selected_ticker = df_m.iloc[selected_idx]["Ticker"]
+                if st.session_state.get("_screener_dialog_for") != selected_ticker:
+                    st.session_state["_screener_dialog_for"] = selected_ticker
+                    show_quick_analysis_dialog(selected_ticker)
 
 
 # === News tab ===
