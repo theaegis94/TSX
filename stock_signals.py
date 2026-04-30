@@ -1,27 +1,23 @@
 """
-TSX stock & ETF buy/sell signal indicator.
+Stock & ETF buy/sell signal indicator (TSX + US + international).
 
 Pulls OHLC data with yfinance, computes RSI + MACD + SMA(50/200),
 generates buy/sell signals where multiple indicators agree, plots
 them on a chart, and runs a basic long-only backtest.
 
-Restricted to Toronto Stock Exchange (.TO) and TSX Venture (.V).
-Tickers without a suffix are auto-suffixed with .TO.
+Ticker conventions:
+    Bare tickers (AAPL, SPY) are treated as US listings.
+    .TO / .V / .CN suffixes are TSX / TSXV / CSE.
+    Other suffixes (.L London, .HK Hong Kong, .DE Germany, ...) are
+    passed through to Yahoo as-is.
+    Class shares are auto-converted: BRK.B -> BRK-B.
 
 Usage:
     python stock_signals.py                  # defaults to XIC.TO, 2y
-    python stock_signals.py RY               # auto -> RY.TO
-    python stock_signals.py XIU.TO 5y        # explicit suffix
+    python stock_signals.py AAPL             # US ticker
+    python stock_signals.py RY.TO 5y         # TSX, 5y backtest
     python stock_signals.py SHOP.TO 5y 1d    # + interval
-    python stock_signals.py NVAX.V 1y        # TSX Venture
-
-Examples of common TSX ETFs:
-    XIC.TO  iShares S&P/TSX Capped Composite (broad CA market)
-    XIU.TO  iShares S&P/TSX 60
-    VFV.TO  Vanguard S&P 500 (CAD-hedged exposure to US)
-    XEQT.TO iShares All-Equity ETF
-    ZSP.TO  BMO S&P 500
-    HXT.TO  Horizons S&P/TSX 60 (swap-based)
+    python stock_signals.py BRK.B            # class share -> BRK-B
 """
 
 import os
@@ -677,25 +673,45 @@ def plot(df: pd.DataFrame, ticker: str, stats: dict, show: bool = True) -> None:
     plt.close(fig)
 
 
-def normalize_tsx_ticker(raw: str) -> str:
-    """Force ticker into TSX (.TO) or TSX Venture (.V) namespace.
+_EXCHANGE_SUFFIXES = {
+    # North America
+    "TO", "V", "CN", "NE",
+    # Europe
+    "L", "PA", "DE", "MI", "AS", "BR", "MC", "ST", "SW", "VI", "WA", "IS", "F",
+    # Asia-Pacific
+    "HK", "T", "SS", "SZ", "KS", "KQ", "NS", "BO", "AX", "NZ", "SI", "BK",
+    # Latin America / Africa / Middle East
+    "MX", "SA", "BA", "SN", "JO", "TA", "CR", "IR",
+    # Other
+    "TSX",  # rewritten to .TO upstream
+}
 
-    - Already-suffixed .TO/.TSX/.V/.CN are accepted (.TSX -> .TO).
-    - Bare tickers get .TO appended.
-    - Tickers with any other suffix (e.g. AAPL, BRK.B, RY.L) are rejected.
+
+def normalize_ticker(raw: str) -> str:
+    """Normalize a ticker symbol for Yahoo Finance.
+
+    - .TSX suffix is rewritten to .TO.
+    - .TO / .V / .CN are TSX/TSXV/CSE — accepted as-is.
+    - Bare tickers (e.g. AAPL, MSFT) are treated as US listings.
+    - Known exchange suffixes (.L London, .HK Hong Kong, etc.) pass through.
+    - Class-share dots (BRK.B) become hyphens for Yahoo: BRK-B.
     """
     t = raw.strip().upper()
-    allowed = (".TO", ".V", ".CN")  # TSX, TSX Venture, CSE
+    if not t:
+        raise SystemExit("Empty ticker.")
     if t.endswith(".TSX"):
         return t[:-4] + ".TO"
-    if t.endswith(allowed):
-        return t
     if "." in t:
-        raise SystemExit(
-            f"Ticker '{raw}' has a non-TSX suffix. "
-            f"This tool only supports TSX (.TO), TSX Venture (.V), and CSE (.CN)."
-        )
-    return t + ".TO"
+        prefix, _, last = t.rpartition(".")
+        if last in _EXCHANGE_SUFFIXES:
+            return t
+        # Class share — Yahoo expects a hyphen (BRK.B -> BRK-B).
+        return f"{prefix}-{last}"
+    return t
+
+
+# Back-compat alias (older code paths called the TSX-only name).
+normalize_tsx_ticker = normalize_ticker
 
 
 DEFAULT_WATCHLIST = [
@@ -706,6 +722,10 @@ DEFAULT_WATCHLIST = [
     # CA tech / energy / telecom / rail / utilities
     "SHOP.TO", "CSU.TO", "ENB.TO", "TRP.TO", "SU.TO", "CNQ.TO",
     "BCE.TO", "T.TO", "CNR.TO", "CP.TO", "FTS.TO",
+    # US benchmarks
+    "SPY", "QQQ", "DIA",
+    # US mega-caps for context
+    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN",
 ]
 
 
