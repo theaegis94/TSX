@@ -964,7 +964,7 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
     fig.update_layout(
         title=dict(text=title, x=0.01, xanchor="left", font=dict(size=14)),
         height=height,
-        margin=dict(l=10, r=10, t=60, b=40),
+        margin=dict(l=10, r=10, t=90, b=40),
         hovermode="x unified",
         legend=dict(
             orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
@@ -1014,7 +1014,7 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
             fig.update_xaxes(range=[x_start, x_end], row=r, col=1,
                              gridcolor="#1f2937")
 
-    # Range buttons on bottom x-axis
+    # Range buttons on top x-axis (above the price panel)
     fig.update_xaxes(
         rangeselector=dict(
             buttons=[
@@ -1028,8 +1028,12 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
             bgcolor="#1f2937",
             activecolor="#3b82f6",
             font=dict(color="#e5e7eb", size=11),
+            x=0,
+            xanchor="left",
+            y=1.05,
+            yanchor="bottom",
         ),
-        row=3, col=1,
+        row=1, col=1,
     )
 
     return fig
