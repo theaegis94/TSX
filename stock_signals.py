@@ -1450,9 +1450,8 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
     fig.update_layout(
         title=dict(text=title, x=0.01, xanchor="left", font=dict(size=14)),
         height=height,
-        # Left margin wide for rotated panel labels; trim top now that
-        # panels are tightly packed.
-        margin=dict(l=80, r=50, t=110, b=40),
+        # Left margin wide for rotated panel labels; trim top tightly.
+        margin=dict(l=80, r=50, t=70, b=40),
         hovermode="x unified",
         # Legend INSIDE the chart at top-right with a translucent background.
         # This way it never collides with Plotly's modebar (top-right outside)
@@ -1568,7 +1567,7 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
             font=dict(color="#e5e7eb", size=11),
             x=0,
             xanchor="left",
-            y=1.08,
+            y=1.02,
             yanchor="bottom",
         ),
         row=1, col=1,
