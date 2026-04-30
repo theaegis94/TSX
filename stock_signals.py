@@ -1030,7 +1030,8 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
                 row=r, col=1, gridcolor="#1f2937",
             )
 
-        # Price panel Y bounds: data range with 10% padding
+        # Price panel Y bounds: data range with 10% padding.
+        # autorange="max" ensures the axis goes low->high (high values at top).
         price_min = float(df["Close"].min())
         price_max = float(df["Close"].max())
         if price_max > price_min:
@@ -1038,13 +1039,16 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
             fig.update_yaxes(
                 minallowed=price_min - pad,
                 maxallowed=price_max + pad,
+                autorange=True,
+                range=[price_min - pad, price_max + pad],
                 row=1, col=1,
             )
 
-        # RSI is bounded 0..100 by definition
-        fig.update_yaxes(minallowed=0, maxallowed=100, row=2, col=1)
+        # RSI bounded 0..100 with high values at top
+        fig.update_yaxes(minallowed=0, maxallowed=100,
+                         autorange=True, range=[0, 100], row=2, col=1)
 
-        # MACD bounds: data range with 30% padding (it can swing widely)
+        # MACD bounds: data range with 30% padding, low->high orientation
         macd_vals = pd.concat([df["MACD"], df["MACD_SIGNAL"], df["MACD_HIST"]]).dropna()
         if not macd_vals.empty:
             mlo, mhi = float(macd_vals.min()), float(macd_vals.max())
@@ -1053,6 +1057,8 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
                 fig.update_yaxes(
                     minallowed=mlo - pad,
                     maxallowed=mhi + pad,
+                    autorange=True,
+                    range=[mlo - pad, mhi + pad],
                     row=3, col=1,
                 )
 
