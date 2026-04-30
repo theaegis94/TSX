@@ -990,14 +990,27 @@ with tab_screener:
         key="screener_rsi_thresh",
     )
 
-    bb_col, rsi_col = sc_col1.columns(2)
+    bb_col, rsi_col, dip_col = sc_col1.columns(3)
     require_bb = bb_col.checkbox(
         "Bollinger BUY", value=True, key="screener_require_bb",
-        help=f"Bollinger lower-band touch in the lookback window",
+        help="Bollinger lower-band touch in the lookback window",
     )
     require_rsi = rsi_col.checkbox(
         "RSI oversold", value=True, key="screener_require_rsi",
         help="Current RSI ≤ threshold",
+    )
+    require_dip = dip_col.checkbox(
+        "Recent dip", value=False, key="screener_require_dip",
+        help="Price has dropped at least the threshold % over the past N days",
+    )
+
+    dip_a, dip_b = sc_col2.columns(2)
+    dip_window = dip_a.slider(
+        "Dip window (days)", 2, 10, 4, key="screener_dip_window",
+    )
+    dip_threshold = dip_b.slider(
+        "Dip threshold % (≤ to qualify)",
+        -15, -1, -3, key="screener_dip_threshold",
     )
 
     @st.cache_data(ttl=86400 * 7, show_spinner=False)
@@ -1035,7 +1048,7 @@ with tab_screener:
 
     run_col, clear_col = st.columns([3, 1])
     if run_col.button("🎯 Run screener", type="primary",
-                      disabled=not (require_bb or require_rsi),
+                      disabled=not (require_bb or require_rsi or require_dip),
                       use_container_width=True):
         progress = st.progress(0.0, text=f"Scanning {len(universe)} tickers…")
 
@@ -1051,6 +1064,9 @@ with tab_screener:
             lookback_bars=lookback_days,
             require_bollinger=require_bb,
             require_rsi=require_rsi,
+            require_dip=require_dip,
+            dip_window=dip_window,
+            dip_threshold_pct=float(dip_threshold),
             progress_callback=_progress_cb,
         )
         progress.empty()
@@ -1091,14 +1107,13 @@ with tab_screener:
 
         st.caption("💡 **Click any ticker** to open the chart in a popup.")
 
-        # Header row
-        col_widths = [1.2, 1.2, 0.9, 1.3, 1.5, 1.0, 0.9]
+        # Header row — added Dip% column
+        col_widths = [1.2, 1.0, 0.7, 1.2, 1.4, 1.0, 0.8, 0.8]
         h = st.columns(col_widths)
         for col, label in zip(h, ["Ticker", "Price", "RSI", "vs BB Lower",
-                                  "BB BUY Date", "Age", "RSI OS"]):
+                                  "BB BUY Date", "Age", "Dip%", "RSI OS"]):
             col.markdown(f"**{label}**")
 
-        # Data rows — ticker is a clickable button, others are markdown
         for m in matches:
             cols = st.columns(col_widths)
             if cols[0].button(m["ticker"], key=f"sc_view_{m['ticker']}",
@@ -1118,7 +1133,16 @@ with tab_screener:
                 f'<span style="color:{age_color}">{age_label}</span>',
                 unsafe_allow_html=True,
             )
-            cols[6].markdown("✓" if m["rsi_oversold"] else "·")
+            dip = m.get("dip_pct")
+            if dip is None:
+                cols[6].markdown("—")
+            else:
+                dip_color = "#dc2626" if dip < 0 else "#16a34a"
+                cols[6].markdown(
+                    f'<span style="color:{dip_color}">{dip:+.2f}%</span>',
+                    unsafe_allow_html=True,
+                )
+            cols[7].markdown("✓" if m["rsi_oversold"] else "·")
 
 
 # === News tab ===

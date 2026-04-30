@@ -183,6 +183,9 @@ def screen_buy_signals(tickers: list[str], rsi_threshold: float = 35.0,
                        lookback_bars: int = 22,
                        require_bollinger: bool = True,
                        require_rsi: bool = True,
+                       require_dip: bool = False,
+                       dip_window: int = 4,
+                       dip_threshold_pct: float = -3.0,
                        batch_size: int = 100,
                        progress_callback=None) -> list[dict]:
     """Find tickers with confluence buy signals: Bollinger lower-band BUY + RSI oversold.
@@ -200,7 +203,7 @@ def screen_buy_signals(tickers: list[str], rsi_threshold: float = 35.0,
       bb_buy_age (trading-days ago, or None).
     Sorted by most recent BB BUY first, then RSI ascending.
     """
-    if not tickers or not (require_bollinger or require_rsi):
+    if not tickers or not (require_bollinger or require_rsi or require_dip):
         return []
 
     # Deduplicate and chunk into batches (Yahoo handles ~100 tickers per call well)
@@ -225,6 +228,7 @@ def screen_buy_signals(tickers: list[str], rsi_threshold: float = 35.0,
             matches.extend(_screen_batch(
                 df, batch, rsi_threshold, lookback_bars,
                 require_bollinger, require_rsi,
+                require_dip, dip_window, dip_threshold_pct,
             ))
 
         if progress_callback is not None:
@@ -238,7 +242,9 @@ def screen_buy_signals(tickers: list[str], rsi_threshold: float = 35.0,
 
 
 def _screen_batch(df, tickers, rsi_threshold, lookback_bars,
-                  require_bollinger, require_rsi) -> list[dict]:
+                  require_bollinger, require_rsi,
+                  require_dip=False, dip_window=4,
+                  dip_threshold_pct=-3.0) -> list[dict]:
     """Process one batch of yf.download output into match rows."""
     matches: list[dict] = []
     for t in tickers:
@@ -272,9 +278,21 @@ def _screen_batch(df, tickers, rsi_threshold, lookback_bars,
             bb_lo = float(last["BB_LOWER"])
             rsi_oversold = rsi_val <= rsi_threshold
 
+            # N-bar dip: % change from N bars ago to now (negative = dip)
+            dip_pct = None
+            if len(tdf) > dip_window:
+                ref_close = float(tdf["Close"].iloc[-dip_window - 1])
+                if ref_close > 0:
+                    dip_pct = (close_val - ref_close) / ref_close * 100
+            dip_qualifies = (
+                dip_pct is not None and dip_pct <= dip_threshold_pct
+            )
+
             if require_bollinger and not bollinger_buy:
                 continue
             if require_rsi and not rsi_oversold:
+                continue
+            if require_dip and not dip_qualifies:
                 continue
 
             matches.append({
@@ -285,6 +303,8 @@ def _screen_batch(df, tickers, rsi_threshold, lookback_bars,
                 "bb_distance_pct": (close_val - bb_lo) / bb_lo * 100 if bb_lo else 0.0,
                 "bollinger_buy": bollinger_buy,
                 "rsi_oversold": rsi_oversold,
+                "dip_pct": dip_pct,
+                "dip_qualifies": dip_qualifies,
                 "bb_buy_date": bb_buy_date.date().isoformat() if bb_buy_date is not None else None,
                 "bb_buy_age": bb_buy_age,
             })
