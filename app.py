@@ -23,11 +23,76 @@ st.markdown(
         margin-bottom: 14px;
     }
 
-    /* Container padding + outer margin */
+    /* Edge / Windows 11-style soft warm-grey theme on top of Streamlit base */
+    .stApp { background: #202124 !important; }
+
+    /* Bordered containers (popups) styled as soft rounded cards */
     .stApp [data-testid="stVerticalBlockBorderWrapper"] {
         margin-top: 12px !important;
         margin-bottom: 12px !important;
-        padding: 12px 22px !important;
+        padding: 16px 22px !important;
+        background: #2d2e31 !important;
+        border: 1px solid #3a3b3e !important;
+        border-radius: 12px !important;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    }
+
+    /* Buttons — rounded pills with subtle hover */
+    .stApp button[kind="primary"],
+    .stApp .stButton > button {
+        background: #2d2e31 !important;
+        color: #f0f0f0 !important;
+        border: 1px solid #3a3b3e !important;
+        border-radius: 8px !important;
+        font-weight: 500 !important;
+        transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .stApp .stButton > button:hover {
+        background: #3a3b3e !important;
+        border-color: #4a4b4e !important;
+    }
+    .stApp button[kind="primary"] {
+        background: #60a5fa !important;
+        color: #0e1117 !important;
+        border-color: #60a5fa !important;
+    }
+    .stApp button[kind="primary"]:hover {
+        background: #93c5fd !important;
+    }
+
+    /* Inputs, selectboxes, text areas — match card style */
+    .stApp [data-baseweb="select"] > div,
+    .stApp [data-baseweb="input"] input,
+    .stApp [data-baseweb="textarea"] textarea,
+    .stApp .stTextInput > div > div > input,
+    .stApp .stTextArea > div > div > textarea {
+        background: #2d2e31 !important;
+        border: 1px solid #3a3b3e !important;
+        border-radius: 8px !important;
+        color: #f0f0f0 !important;
+    }
+
+    /* Sidebar */
+    .stApp [data-testid="stSidebar"] {
+        background: #1a1b1d !important;
+        border-right: 1px solid #2a2b2e;
+    }
+
+    /* Metric cards */
+    .stApp [data-testid="stMetric"] {
+        background: transparent;
+        padding: 4px 0;
+    }
+
+    /* Dataframe styling */
+    .stApp [data-testid="stDataFrame"] {
+        border-radius: 12px;
+        overflow: hidden;
+    }
+
+    /* Headings — slightly warmer white */
+    .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6 {
+        color: #f0f0f0;
     }
     /* Slightly larger fonts inside the popup */
     .stApp [data-testid="stVerticalBlockBorderWrapper"]
@@ -235,6 +300,46 @@ def render_macro_row(macro: dict, header: str | None = None) -> None:
     )
 
 
+def _inject_double_click_fullscreen():
+    """JS shim: double-click any Plotly chart -> browser fullscreen.
+    Press Esc to exit (browser default behavior)."""
+    import streamlit.components.v1 as components
+    components.html(
+        """
+        <script>
+        (function() {
+            const pdoc = window.parent.document;
+            function attach() {
+                const charts = pdoc.querySelectorAll('.js-plotly-plot');
+                let added = 0;
+                charts.forEach(chart => {
+                    if (chart.dataset.fsAttached === '1') return;
+                    chart.dataset.fsAttached = '1';
+                    chart.addEventListener('dblclick', function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (pdoc.fullscreenElement) {
+                            pdoc.exitFullscreen();
+                        } else if (chart.requestFullscreen) {
+                            chart.style.background = '#0e1117';
+                            chart.requestFullscreen().catch(() => {});
+                        }
+                    }, true);
+                    added++;
+                });
+                return added;
+            }
+            // Retry with backoff so we catch charts that render after this script runs
+            [100, 300, 600, 1000, 1500, 2500, 4000].forEach(
+                d => setTimeout(attach, d)
+            );
+        })();
+        </script>
+        """,
+        height=0,
+    )
+
+
 @st.cache_data(ttl=86400, show_spinner=False)
 def cached_metrics(ticker: str) -> dict:
     """Per-ticker fundamentals cache. 24h TTL — fundamentals update quarterly,
@@ -405,7 +510,7 @@ def show_quick_analysis_dialog(ticker: str):
                         "displayModeBar": True,
                         "displaylogo": False,
                         "scrollZoom": True,
-                        "doubleClick": "autosize",
+                        "doubleClick": False,
                         "modeBarButtonsToRemove": [
                             "select2d", "lasso2d",
                         ],
