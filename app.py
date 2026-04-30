@@ -23,10 +23,31 @@ st.markdown(
         margin-bottom: 14px;
     }
 
-    /* Wider gap above and below containers (popups, dialogs) */
+    /* Wider gap above and below containers (popups, dialogs) + interior padding */
     .stApp [data-testid="stVerticalBlockBorderWrapper"] {
         margin-top: 18px !important;
         margin-bottom: 18px !important;
+        padding: 18px 22px !important;
+    }
+    /* Bump font sizes inside the popup ~15% so it's easier to read */
+    .stApp [data-testid="stVerticalBlockBorderWrapper"]
+        [data-testid="stMarkdownContainer"] p,
+    .stApp [data-testid="stVerticalBlockBorderWrapper"]
+        [data-testid="stMarkdownContainer"] {
+        font-size: 1rem !important;
+    }
+    .stApp [data-testid="stVerticalBlockBorderWrapper"]
+        [data-testid="stCaptionContainer"] {
+        font-size: 0.92rem !important;
+    }
+    /* More vertical spacing between rows inside the popup */
+    .stApp [data-testid="stVerticalBlockBorderWrapper"]
+        [data-testid="stHorizontalBlock"] {
+        margin-bottom: 14px !important;
+    }
+    .stApp [data-testid="stVerticalBlockBorderWrapper"]
+        [data-testid="stVerticalBlock"] > div {
+        margin-bottom: 10px;
     }
 
     /* Space between the watchlist bar rows */
@@ -469,7 +490,7 @@ def render_quick_analysis():
             sig_html = f'<span style="color:#9ca3af;">⚪ HOLD ({int(last["SCORE"]):+d})</span>'
 
         st.markdown(
-            f'<div style="font-size:0.85rem; color:#9ca3af; padding:4px 0;">'
+            f'<div style="font-size:1rem; color:#9ca3af; padding:8px 0; line-height:1.7;">'
             f'{sig_html} &nbsp;·&nbsp; '
             f'Last <b style="color:#e5e7eb;">${float(last["Close"]):.2f}</b> &nbsp;·&nbsp; '
             f'Strategy <b style="color:#e5e7eb;">{stats["total_return"]:+.1%}</b> &nbsp;·&nbsp; '
