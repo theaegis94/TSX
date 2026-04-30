@@ -365,13 +365,6 @@ with st.sidebar:
     )
     stop_loss_pct = None if stop_choice == "None" else int(stop_choice.rstrip("%")) / 100
 
-# Persist these for the quick-view panel to read (it renders earlier in the script)
-st.session_state["_period"] = period
-st.session_state["_interval"] = interval
-st.session_state["_strategy"] = strategy
-st.session_state["_adx_filter"] = adx_filter
-st.session_state["_stop_loss_pct"] = stop_loss_pct
-
     st.divider()
     if st.button("🔄 Clear cache & refresh"):
         st.cache_data.clear()
@@ -385,6 +378,13 @@ st.session_state["_stop_loss_pct"] = stop_loss_pct
         "Free APIs: yfinance (data + .info), Bank of Canada Valet (macro). "
         "Finnhub key required for analyst & news columns."
     )
+
+# Persist sidebar settings so the quick-view panel (rendered earlier) can read them
+st.session_state["_period"] = period
+st.session_state["_interval"] = interval
+st.session_state["_strategy"] = strategy
+st.session_state["_adx_filter"] = adx_filter
+st.session_state["_stop_loss_pct"] = stop_loss_pct
 
 
 # --------- tabs ---------
