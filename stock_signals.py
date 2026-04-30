@@ -729,6 +729,8 @@ STRATEGY_LABELS = {
     "ma_cross": "MA Cross (20/50)",
     "inside_bar": "Inside Bar Breakout",
     "outside_bar": "Outside Bar Reversal",
+    "candlestick": "Candlestick Patterns (Hammer/Engulfing/Star/...)",
+    "double_topbot": "Double Top / Double Bottom",
 }
 
 DEFAULT_STRATEGY_KEY = "bollinger"
@@ -960,6 +962,167 @@ def _strategy_inside_bar(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _detect_candlestick_patterns(df: pd.DataFrame):
+    """Detect ~12 reliable candlestick patterns.
+    Returns (bullish_mask, bearish_mask) — boolean Series.
+    """
+    if not {"Open", "High", "Low", "Close"}.issubset(df.columns):
+        empty = pd.Series(False, index=df.index)
+        return empty, empty
+
+    o, h, l, c = df["Open"], df["High"], df["Low"], df["Close"]
+    body = (c - o).abs()
+    full = (h - l).replace(0, np.nan)
+    upper = h - np.maximum(o, c)
+    lower = np.minimum(o, c) - l
+    bull = c > o
+    bear = o > c
+
+    # Single-candle: small body relative to range
+    small_body = body < (full * 0.30)
+
+    # Hammer: small body at top, long lower shadow (>=2x body), uptrend not required for screen
+    hammer = small_body & (lower > body * 2) & (upper < body)
+    # Inverted Hammer: small body at bottom, long upper shadow
+    inv_hammer = small_body & (upper > body * 2) & (lower < body)
+    # Shooting Star: like inverted hammer but bearish context (after up move)
+    prior_up = c.shift(1) > c.shift(5)
+    shooting_star = small_body & (upper > body * 2) & (lower < body) & prior_up
+
+    # Doji: open ≈ close
+    doji = body < (full * 0.10)
+    dragonfly_doji = doji & (lower > full * 0.6) & (upper < full * 0.1)
+    gravestone_doji = doji & (upper > full * 0.6) & (lower < full * 0.1)
+
+    # Engulfing
+    prev_body = (c.shift(1) - o.shift(1)).abs()
+    bullish_engulfing = (
+        bear.shift(1) & bull
+        & (o < c.shift(1)) & (c > o.shift(1))
+        & (body > prev_body)
+    )
+    bearish_engulfing = (
+        bull.shift(1) & bear
+        & (o > c.shift(1)) & (c < o.shift(1))
+        & (body > prev_body)
+    )
+
+    # Harami (opposite of engulfing — current is inside prior body)
+    bullish_harami = (
+        bear.shift(1) & bull
+        & (o > c.shift(1)) & (c < o.shift(1))
+        & (body < prev_body)
+    )
+    bearish_harami = (
+        bull.shift(1) & bear
+        & (o < c.shift(1)) & (c > o.shift(1))
+        & (body < prev_body)
+    )
+
+    # Three White Soldiers / Three Black Crows
+    three_white_soldiers = (
+        bull.shift(2) & bull.shift(1) & bull
+        & (c > c.shift(1)) & (c.shift(1) > c.shift(2))
+        & (o > o.shift(1)) & (o.shift(1) > o.shift(2))
+    )
+    three_black_crows = (
+        bear.shift(2) & bear.shift(1) & bear
+        & (c < c.shift(1)) & (c.shift(1) < c.shift(2))
+        & (o < o.shift(1)) & (o.shift(1) < o.shift(2))
+    )
+
+    # Morning Star (bull) / Evening Star (bear) — 3-candle reversal
+    star_body_small = body.shift(1) < (full.shift(1) * 0.30)
+    morning_star = (
+        bear.shift(2) & star_body_small & bull
+        & (c > (o.shift(2) + c.shift(2)) / 2)
+    )
+    evening_star = (
+        bull.shift(2) & star_body_small & bear
+        & (c < (o.shift(2) + c.shift(2)) / 2)
+    )
+
+    # Piercing / Dark Cloud Cover
+    piercing = (
+        bear.shift(1) & bull
+        & (o < l.shift(1))
+        & (c > (o.shift(1) + c.shift(1)) / 2)
+        & (c < o.shift(1))
+    )
+    dark_cloud = (
+        bull.shift(1) & bear
+        & (o > h.shift(1))
+        & (c < (o.shift(1) + c.shift(1)) / 2)
+        & (c > o.shift(1))
+    )
+
+    bullish = (
+        hammer.fillna(False) | inv_hammer.fillna(False)
+        | dragonfly_doji.fillna(False)
+        | bullish_engulfing.fillna(False) | bullish_harami.fillna(False)
+        | three_white_soldiers.fillna(False)
+        | morning_star.fillna(False) | piercing.fillna(False)
+    )
+    bearish = (
+        shooting_star.fillna(False) | gravestone_doji.fillna(False)
+        | bearish_engulfing.fillna(False) | bearish_harami.fillna(False)
+        | three_black_crows.fillna(False)
+        | evening_star.fillna(False) | dark_cloud.fillna(False)
+    )
+    return bullish.astype(bool), bearish.astype(bool)
+
+
+def _strategy_candlestick(df: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate of ~12 candlestick patterns. BUY = any bullish, SELL = any bearish."""
+    out = df.copy()
+    bull, bear = _detect_candlestick_patterns(out)
+    out["BUY"] = bull
+    out["SELL"] = bear
+    out["SCORE"] = bull.astype(int) * 2 - bear.astype(int) * 2
+    return out
+
+
+def _strategy_double_topbot(df: pd.DataFrame, window: int = 30,
+                            tolerance: float = 0.03) -> pd.DataFrame:
+    """Naive Double Top / Double Bottom detector.
+    Looks for two local extrema within `window` bars at similar price levels
+    (within `tolerance` percent). Fires SELL on second top, BUY on second bottom.
+    """
+    out = df.copy()
+    close = out["Close"]
+
+    # Rolling local maxima/minima — index where this bar equals window's max/min
+    half = max(2, window // 4)
+    is_peak = (close == close.rolling(2 * half + 1, center=True).max())
+    is_trough = (close == close.rolling(2 * half + 1, center=True).min())
+
+    buy = pd.Series(False, index=out.index)
+    sell = pd.Series(False, index=out.index)
+
+    # For each bar, look back `window` bars and see if there's another peak/trough nearby
+    peak_idx = np.where(is_peak.fillna(False))[0]
+    trough_idx = np.where(is_trough.fillna(False))[0]
+
+    for i in range(1, len(peak_idx)):
+        cur, prev = peak_idx[i], peak_idx[i - 1]
+        if cur - prev > window or cur - prev < 5:
+            continue
+        if abs(close.iloc[cur] - close.iloc[prev]) / close.iloc[prev] <= tolerance:
+            sell.iloc[cur] = True
+
+    for i in range(1, len(trough_idx)):
+        cur, prev = trough_idx[i], trough_idx[i - 1]
+        if cur - prev > window or cur - prev < 5:
+            continue
+        if abs(close.iloc[cur] - close.iloc[prev]) / close.iloc[prev] <= tolerance:
+            buy.iloc[cur] = True
+
+    out["BUY"] = buy
+    out["SELL"] = sell
+    out["SCORE"] = buy.astype(int) * 2 - sell.astype(int) * 2
+    return out
+
+
 def _strategy_outside_bar(df: pd.DataFrame) -> pd.DataFrame:
     """Outside bar = today's high > yesterday's high AND today's low < yesterday's low.
     Buy on outside bar that closes above prior close (bullish reversal);
@@ -992,6 +1155,8 @@ _STRATEGIES = {
     "ma_cross": _strategy_ma_cross,
     "inside_bar": _strategy_inside_bar,
     "outside_bar": _strategy_outside_bar,
+    "candlestick": _strategy_candlestick,
+    "double_topbot": _strategy_double_topbot,
 }
 
 
