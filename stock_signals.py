@@ -1435,14 +1435,14 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
     if compact:
         title = (f"<b>{ticker}</b> &nbsp;·&nbsp; {stats['trades']} trades "
                  f"&nbsp;·&nbsp; {stats['win_rate']:.0%} win")
-        height = 820
+        height = 1050
     else:
         title = (
             f"<b>{ticker}</b> &nbsp;·&nbsp; {stats['trades']} trades "
             f"&nbsp;·&nbsp; {stats['win_rate']:.0%} win &nbsp;·&nbsp; "
             f"strategy {stats['total_return']:+.1%} vs B&H {stats['buy_hold']:+.1%}"
         )
-        height = 1000
+        height = 1250
 
     # Hide Candlestick's default rangeslider (we have rangeselector buttons instead)
     fig.update_xaxes(rangeslider_visible=False, row=1, col=1)
