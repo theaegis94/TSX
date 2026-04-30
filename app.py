@@ -14,6 +14,37 @@ import stock_signals as ss
 st.set_page_config(page_title="Stock Signals", layout="wide", page_icon="📈")
 
 
+# --------- watchlist persistence via URL query param ---------
+# Reads `?wl=AAPL,RY.TO,...` from the URL on first load, syncs back on every run.
+# This means:
+#  - Browser refresh keeps your custom watchlist
+#  - You can bookmark a URL with your specific tickers
+#  - Sharing the URL shares the watchlist (handy for phone)
+
+def _init_watchlist_from_url():
+    if "watchlist_input" not in st.session_state:
+        wl = st.query_params.get("wl")
+        if wl:
+            # Normalize: strip spaces, uppercase
+            parts = [p.strip().upper() for p in wl.split(",") if p.strip()]
+            st.session_state.watchlist_input = ", ".join(parts)
+        else:
+            st.session_state.watchlist_input = ", ".join(ss.DEFAULT_WATCHLIST)
+
+
+def _sync_watchlist_to_url():
+    current = st.session_state.get("watchlist_input", "")
+    parts = [p.strip().upper() for p in current.split(",") if p.strip()]
+    if parts:
+        # URL-compact form: comma-separated, no spaces
+        st.query_params["wl"] = ",".join(parts)
+    elif "wl" in st.query_params:
+        del st.query_params["wl"]
+
+
+_init_watchlist_from_url()
+
+
 # --------- caching wrappers ---------
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -703,3 +734,9 @@ Top bar shows live macro indicators that drive TSX performance:
 This tool is a **screener**, not a trading system. Use signals as
 "investigate further" — never as auto-buy/sell.
 """)
+
+
+# Mirror the current watchlist into the URL so refreshes (and bookmarks /
+# share links) preserve the user's tickers. Runs at the very end so it
+# captures any changes made during this script run.
+_sync_watchlist_to_url()
