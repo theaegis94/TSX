@@ -18,6 +18,12 @@ st.set_page_config(page_title="Stock Signals", layout="wide", page_icon="📈")
 st.markdown(
     """
     <style>
+    /* Comic Sans everywhere — global font override */
+    html, body, .stApp, [class*="st-"], [class*="css-"],
+    button, input, textarea, select, code, pre {
+        font-family: "Comic Sans MS", "Comic Sans", cursive, sans-serif !important;
+    }
+
     /* Tab list container — adds spacing and a subtle bottom border */
     div[data-baseweb="tab-list"] {
         gap: 8px;
@@ -306,7 +312,14 @@ def show_quick_analysis_dialog(ticker: str):
 
     fig = ss.build_chart_plotly(df, norm_ticker, stats, compact=True)
     st.plotly_chart(fig, use_container_width=True,
-                    config={"displayModeBar": False, "scrollZoom": True})
+                    config={
+                        "displayModeBar": True,
+                        "displaylogo": False,
+                        "scrollZoom": True,
+                        "modeBarButtonsToRemove": [
+                            "select2d", "lasso2d", "autoScale2d",
+                        ],
+                    })
 
     metrics = cached_metrics(norm_ticker)
     if metrics:
@@ -408,7 +421,14 @@ def render_quick_analysis():
         # Interactive chart — scroll-zoom, drag-pan, hover tooltips
         fig = ss.build_chart_plotly(df, ticker, stats, compact=True)
         st.plotly_chart(fig, use_container_width=True,
-                        config={"displayModeBar": False, "scrollZoom": True})
+                        config={
+                        "displayModeBar": True,
+                        "displaylogo": False,
+                        "scrollZoom": True,
+                        "modeBarButtonsToRemove": [
+                            "select2d", "lasso2d", "autoScale2d",
+                        ],
+                    })
         st.caption("📰 News + fundamentals → **Single Ticker** tab")
 
 

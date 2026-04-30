@@ -975,13 +975,28 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
         paper_bgcolor="#0e1117",
         bargap=0,
         dragmode="zoom",
+        font=dict(
+            family='"Comic Sans MS", "Comic Sans", cursive',
+            color="#e5e7eb",
+        ),
     )
     fig.update_yaxes(title=dict(text="Price", standoff=2), row=1, col=1,
-                     gridcolor="#1f2937", zerolinecolor="#1f2937")
+                     gridcolor="#1f2937", zerolinecolor="#1f2937",
+                     autorange=True)
     fig.update_yaxes(title=dict(text="RSI", standoff=2), range=[0, 100],
                      row=2, col=1, gridcolor="#1f2937")
     fig.update_yaxes(title=dict(text="MACD", standoff=2), row=3, col=1,
-                     gridcolor="#1f2937", zerolinecolor="#1f2937")
+                     gridcolor="#1f2937", zerolinecolor="#1f2937",
+                     autorange=True)
+
+    # Explicitly set the visible x-range to span all the data we have, on
+    # every panel. Without this, an old zoom state from a previous render
+    # can persist and leave the chart stuck on a tiny slice.
+    if len(df) >= 2:
+        x_start, x_end = df.index[0], df.index[-1]
+        for r in (1, 2, 3):
+            fig.update_xaxes(range=[x_start, x_end], row=r, col=1,
+                             gridcolor="#1f2937")
 
     # Range buttons on bottom x-axis
     fig.update_xaxes(
@@ -1000,9 +1015,6 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
         ),
         row=3, col=1,
     )
-    fig.update_xaxes(gridcolor="#1f2937", row=1, col=1)
-    fig.update_xaxes(gridcolor="#1f2937", row=2, col=1)
-    fig.update_xaxes(gridcolor="#1f2937", row=3, col=1)
 
     return fig
 
