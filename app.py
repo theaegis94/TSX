@@ -145,6 +145,40 @@ st.markdown(
         margin-bottom: 24px !important;
     }
 
+    /* Fade-in animation for UI elements as they appear (fast, ~180ms) */
+    @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(4px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeIn {
+        from { opacity: 0; }
+        to   { opacity: 1; }
+    }
+    /* Major section blocks — popup containers, charts, alerts */
+    .stApp [data-testid="stVerticalBlockBorderWrapper"],
+    .stApp [data-testid="stAlert"],
+    .stApp .stPlotlyChart,
+    .stApp [data-testid="stDataFrame"],
+    .stApp [role="dialog"] {
+        animation: fadeInUp 0.18s ease-out;
+    }
+    /* Lighter fade for general content blocks */
+    .stApp .element-container {
+        animation: fadeIn 0.15s ease-out;
+    }
+    /* Tab content swap */
+    .stApp [data-baseweb="tab-panel"] {
+        animation: fadeIn 0.12s ease-out;
+    }
+    /* Smooth color/transform transitions on hover for interactive elements */
+    .stApp button,
+    .stApp [data-baseweb="select"],
+    .stApp .stSelectbox,
+    .stApp [data-testid="stMetric"] {
+        transition: background 0.15s ease, border-color 0.15s ease,
+                    transform 0.15s ease;
+    }
+
     /* High-contrast text selection — bright yellow on black */
     ::selection {
         background: #fbbf24 !important;
