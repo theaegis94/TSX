@@ -18,6 +18,16 @@ st.set_page_config(page_title="Stock Signals", layout="wide", page_icon="📈")
 st.markdown(
     """
     <style>
+    /* High-contrast text selection — bright yellow on black */
+    ::selection {
+        background: #fbbf24 !important;
+        color: #0e1117 !important;
+    }
+    ::-moz-selection {
+        background: #fbbf24 !important;
+        color: #0e1117 !important;
+    }
+
     /* Comic Sans everywhere — but preserve icon fonts so glyphs render */
     html, body, .stApp, [class*="st-"], [class*="css-"],
     button, input, textarea, select, code, pre {
