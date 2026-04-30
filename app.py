@@ -253,13 +253,14 @@ def show_quick_analysis_dialog(ticker: str):
     adx_filter = st.session_state.get("_adx_filter", False)
     stop_loss_pct = st.session_state.get("_stop_loss_pct")
 
-    # Strategy + lookback selectors at top of dialog (default to trend)
+    # Strategy + lookback selectors at top of dialog (default = Bollinger)
     sel_l, sel_r = st.columns([3, 2])
+    _strategy_keys = list(ss.STRATEGY_LABELS.keys())
     strategy = sel_l.selectbox(
         "Strategy",
-        options=list(ss.STRATEGY_LABELS.keys()),
+        options=_strategy_keys,
         format_func=lambda k: ss.STRATEGY_LABELS[k],
-        index=0,
+        index=_strategy_keys.index(ss.DEFAULT_STRATEGY_KEY),
         key=f"dlg_strategy_{ticker}",
     )
     _period_options = ["6mo", "1y", "2y", "5y"]
@@ -344,11 +345,12 @@ def render_quick_analysis():
         # Compact header row: title + strategy + lookback + close
         h1, h2, h3, h4 = st.columns([2, 2, 1.5, 1])
         h1.markdown(f"#### 🎯 {selected}")
+        _strategy_keys = list(ss.STRATEGY_LABELS.keys())
         strategy = h2.selectbox(
             "Strategy",
-            options=list(ss.STRATEGY_LABELS.keys()),
+            options=_strategy_keys,
             format_func=lambda k: ss.STRATEGY_LABELS[k],
-            index=0,  # always default to trend
+            index=_strategy_keys.index(ss.DEFAULT_STRATEGY_KEY),
             key=f"qv_strategy_{selected}",
             label_visibility="collapsed",
         )

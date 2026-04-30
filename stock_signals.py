@@ -589,11 +589,14 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
 # === Strategy registry ===
 
 STRATEGY_LABELS = {
-    "trend": "Trend (RSI+MACD+SMA, default)",
+    "trend": "Trend (RSI + MACD + SMA)",
     "bollinger": "Bollinger Mean Reversion",
     "donchian": "Donchian 20d Breakout",
     "sma200_dip": "SMA200 Dip Buy",
 }
+
+# Index of the default strategy in the dropdowns above
+DEFAULT_STRATEGY_KEY = "bollinger"
 
 
 def _strategy_trend(df: pd.DataFrame) -> pd.DataFrame:
