@@ -11,20 +11,54 @@ import yfinance as yf
 
 import stock_signals as ss
 
-st.set_page_config(page_title="TSX Signals", layout="wide", page_icon="📈")
+st.set_page_config(page_title="Stock Signals", layout="wide", page_icon="📈")
 
 
 # --------- caching wrappers ---------
 
 @st.cache_data(ttl=900, show_spinner=False)
-def cached_macro() -> dict:
+def cached_macro_ca() -> dict:
     return {
         "USD/CAD": ss.boc_valet("FXUSDCAD"),
         "BoC Rate": ss.boc_valet("V39079"),
-        "10Y Yield": ss.boc_valet("BD.CDN.10YR.DQ.YLD"),
+        "CA 10Y": ss.boc_valet("BD.CDN.10YR.DQ.YLD"),
         "WTI Crude": ss.yf_spot("CL=F"),
         "Gold": ss.yf_spot("GC=F"),
     }
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def cached_macro_us() -> dict:
+    return {
+        "DXY": ss.yf_spot("DX-Y.NYB"),
+        "US 10Y": ss.yf_spot("^TNX"),
+        "VIX": ss.yf_spot("^VIX"),
+        "WTI Crude": ss.yf_spot("CL=F"),
+        "Gold": ss.yf_spot("GC=F"),
+    }
+
+
+def _format_macro_value(label: str, val: float | None) -> str:
+    if val is None:
+        return "—"
+    if label == "USD/CAD":
+        return f"{val:.4f}"
+    if label == "Gold":
+        return f"${val:,.0f}"
+    if "Crude" in label:
+        return f"${val:.2f}"
+    if label == "DXY" or label == "VIX":
+        return f"{val:.2f}"
+    # Rates / yields
+    return f"{val:.2f}%"
+
+
+def render_macro_row(macro: dict, header: str | None = None) -> None:
+    if header:
+        st.caption(header)
+    cols = st.columns(len(macro))
+    for col, (label, val) in zip(cols, macro.items()):
+        col.metric(label, _format_macro_value(label, val))
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
@@ -146,7 +180,7 @@ def cached_news(ticker: str, days: int = 7) -> list:
 
 # --------- header / macro ---------
 
-st.title("📈 TSX Signal Dashboard")
+st.title("📈 Stock Signal Dashboard")
 
 # Watchlist ticker bar — uses session state from the Scan tab's text area,
 # falls back to default on first load.
@@ -164,19 +198,15 @@ for _raw in _wl_str.split(","):
         continue
 render_watchlist_bar(tuple(_wl_normalized[:30]))
 
-macro = cached_macro()
-cols = st.columns(5)
-for col, (label, val) in zip(cols, macro.items()):
-    if val is None:
-        col.metric(label, "—")
-    elif label.startswith("USD"):
-        col.metric(label, f"{val:.4f}")
-    elif label == "Gold":
-        col.metric(label, f"${val:,.0f}")
-    elif "Crude" in label:
-        col.metric(label, f"${val:.2f}")
-    else:
-        col.metric(label, f"{val:.2f}%")
+# Macro context — view selected from sidebar
+_macro_view = st.session_state.get("macro_view", "🇨🇦 Canada")
+if _macro_view == "🇨🇦 Canada":
+    render_macro_row(cached_macro_ca())
+elif _macro_view == "🇺🇸 US":
+    render_macro_row(cached_macro_us())
+else:  # Both
+    render_macro_row(cached_macro_ca(), header="🇨🇦 Canadian macro")
+    render_macro_row(cached_macro_us(), header="🇺🇸 US macro")
 
 st.divider()
 
@@ -188,6 +218,13 @@ with st.sidebar:
     period = st.selectbox("Lookback period", ["6mo", "1y", "2y", "5y", "10y"],
                           index=2)
     interval = st.selectbox("Bar interval", ["1d", "1wk"], index=0)
+    st.radio(
+        "Macro view",
+        options=["🇨🇦 Canada", "🇺🇸 US", "Both"],
+        index=2,
+        key="macro_view",
+        horizontal=True,
+    )
 
     st.subheader("Strategy")
     strategy = st.selectbox(
@@ -240,7 +277,7 @@ with tab_scan:
 
     default_str = ", ".join(ss.DEFAULT_WATCHLIST)
     watchlist_str = st.text_area(
-        "Tickers (comma-separated; bare tickers auto-suffix to .TO)",
+        "Tickers (comma-separated; bare = US, .TO = TSX, .V = TSXV)",
         default_str, height=80, key="watchlist_input",
     )
     tickers = tuple(t.strip() for t in watchlist_str.split(",") if t.strip())
@@ -446,7 +483,9 @@ with tab_help:
 - Click any column header to re-sort
 
 **Single Ticker tab**: drill into one ticker — full chart, backtest, fundamentals.
-- Bare tickers auto-suffix to `.TO`
+- Bare tickers (e.g. `AAPL`) are US listings
+- `.TO` / `.V` / `.CN` are TSX / TSXV / CSE
+- Class shares: type `BRK.B` (auto-converted to Yahoo's `BRK-B`)
 - Period & interval are set in the sidebar
 
 **News tab**: Finnhub headlines. Coverage is best for US-listed names.
