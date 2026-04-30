@@ -964,9 +964,9 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
     fig.update_layout(
         title=dict(text=title, x=0.01, xanchor="left", font=dict(size=14)),
         height=height,
-        # Uniform 50px breathing room on left, right and bottom; top is bigger
-        # because it has to host the title + range buttons + legend.
-        margin=dict(l=50, r=50, t=160, b=50),
+        # Left margin extra-wide for the rotated panel labels (Price/RSI/MACD)
+        # to sit clear of the y-axis tick numbers.
+        margin=dict(l=80, r=50, t=160, b=50),
         hovermode="x unified",
         # Legend on the top-right so it doesn't collide with range buttons (top-left)
         legend=dict(
@@ -1007,7 +1007,7 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
                       family='"Comic Sans MS", "Comic Sans", cursive')
     for label, y_pos in [("Price", 0.81), ("RSI", 0.39), ("MACD", 0.08)]:
         fig.add_annotation(
-            x=-0.045, y=y_pos,
+            x=-0.075, y=y_pos,
             xref="paper", yref="paper",
             text=f"<b>{label}</b>",
             textangle=-90,
