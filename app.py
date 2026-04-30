@@ -119,13 +119,14 @@ with tab_scan:
     bad = [r for r in rows if "error" in r]
 
     if ok:
+        action_label = {"BUY": "🟢 BUY", "SELL": "🔴 SELL", "HOLD": "⚪ HOLD"}
         df_view = pd.DataFrame([
             {
                 "Ticker": r["ticker"],
-                "Action": r["action"],
+                "Action": action_label.get(r["action"], r["action"]),
                 "Score": r["score"],
                 "Close": r["close"],
-                "RSI": round(r["rsi"], 1),
+                "RSI": r["rsi"],
                 "P/E": r.get("pe"),
                 "Yield %": r.get("yield_pct"),
                 "Beta": r.get("beta"),
@@ -135,40 +136,47 @@ with tab_scan:
                 "Holds": r["rec"][1] if r.get("rec") else None,
                 "Sells": r["rec"][2] if r.get("rec") else None,
                 "Trades": r["trades"],
-                "Win %": round(r["win_rate"] * 100, 0),
-                "Strat %": round(r["strat"] * 100, 1),
-                "B&H %": round(r["bh"] * 100, 1),
+                "Win %": r["win_rate"] * 100,
+                "Strat %": r["strat"] * 100,
+                "B&H %": r["bh"] * 100,
             }
             for r in ok
         ])
-        rank = {"BUY": 0, "SELL": 1, "HOLD": 2}
+        rank = {"🟢 BUY": 0, "🔴 SELL": 1, "⚪ HOLD": 2}
         df_view = df_view.sort_values(
             by=["Action", "Score"],
             key=lambda c: c.map(rank) if c.name == "Action" else -c,
         )
 
-        def color_action(val):
-            if val == "BUY":
-                return "background-color: #16a34a; color: white; font-weight: bold"
-            if val == "SELL":
-                return "background-color: #dc2626; color: white; font-weight: bold"
-            return ""
-
-        styled = (
-            df_view.style
-            .map(color_action, subset=["Action"])
-            .format({
-                "Close": "{:.2f}", "P/E": "{:.1f}", "Yield %": "{:.2f}",
-                "Beta": "{:.2f}", "Upside %": "{:+.1f}",
-                "Strat %": "{:+.1f}", "B&H %": "{:+.1f}",
-            }, na_rep="—")
+        st.dataframe(
+            df_view,
+            use_container_width=True,
+            height=720,
+            hide_index=True,
+            column_config={
+                "Score": st.column_config.NumberColumn(format="%+d"),
+                "Close": st.column_config.NumberColumn(format="$%.2f"),
+                "RSI": st.column_config.NumberColumn(format="%.1f"),
+                "P/E": st.column_config.NumberColumn(format="%.1f"),
+                "Yield %": st.column_config.NumberColumn(format="%.2f"),
+                "Beta": st.column_config.NumberColumn(format="%.2f"),
+                "Upside %": st.column_config.NumberColumn(format="%+.1f"),
+                "Earn Days": st.column_config.NumberColumn(format="%d"),
+                "Buys": st.column_config.NumberColumn(format="%d"),
+                "Holds": st.column_config.NumberColumn(format="%d"),
+                "Sells": st.column_config.NumberColumn(format="%d"),
+                "Trades": st.column_config.NumberColumn(format="%d"),
+                "Win %": st.column_config.NumberColumn(format="%.0f"),
+                "Strat %": st.column_config.NumberColumn(format="%+.1f"),
+                "B&H %": st.column_config.NumberColumn(format="%+.1f"),
+            },
         )
-        st.dataframe(styled, use_container_width=True, height=720,
-                     hide_index=True)
 
         c1, c2, c3 = st.columns(3)
-        c1.metric("BUY signals", sum(1 for r in ok if r["action"] == "BUY"))
-        c2.metric("SELL signals", sum(1 for r in ok if r["action"] == "SELL"))
+        c1.metric("🟢 BUY signals",
+                  sum(1 for r in ok if r["action"] == "BUY"))
+        c2.metric("🔴 SELL signals",
+                  sum(1 for r in ok if r["action"] == "SELL"))
         c3.metric("Tickers analyzed", len(ok))
     else:
         st.warning("No tickers analyzed.")
