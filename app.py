@@ -23,16 +23,16 @@ st.markdown(
         margin-bottom: 14px;
     }
 
-    /* Edge / Windows 11-style soft warm-grey theme on top of Streamlit base */
-    .stApp { background: #202124 !important; }
+    /* Lighter Edge / Windows 11-style theme */
+    .stApp { background: #3a3b3e !important; }
 
     /* Bordered containers (popups) styled as soft rounded cards */
     .stApp [data-testid="stVerticalBlockBorderWrapper"] {
         margin-top: 12px !important;
         margin-bottom: 12px !important;
         padding: 16px 22px !important;
-        background: #2d2e31 !important;
-        border: 1px solid #3a3b3e !important;
+        background: #4a4b4e !important;
+        border: 1px solid #5a5b5e !important;
         border-radius: 12px !important;
         box-shadow: 0 1px 2px rgba(0,0,0,0.2);
     }
@@ -40,16 +40,16 @@ st.markdown(
     /* Buttons — rounded pills with subtle hover */
     .stApp button[kind="primary"],
     .stApp .stButton > button {
-        background: #2d2e31 !important;
+        background: #4a4b4e !important;
         color: #f0f0f0 !important;
-        border: 1px solid #3a3b3e !important;
+        border: 1px solid #5a5b5e !important;
         border-radius: 8px !important;
         font-weight: 500 !important;
         transition: background 0.15s ease, border-color 0.15s ease;
     }
     .stApp .stButton > button:hover {
-        background: #3a3b3e !important;
-        border-color: #4a4b4e !important;
+        background: #5a5b5e !important;
+        border-color: #6a6b6e !important;
     }
     .stApp button[kind="primary"] {
         background: #60a5fa !important;
@@ -66,16 +66,16 @@ st.markdown(
     .stApp [data-baseweb="textarea"] textarea,
     .stApp .stTextInput > div > div > input,
     .stApp .stTextArea > div > div > textarea {
-        background: #2d2e31 !important;
-        border: 1px solid #3a3b3e !important;
+        background: #4a4b4e !important;
+        border: 1px solid #5a5b5e !important;
         border-radius: 8px !important;
         color: #f0f0f0 !important;
     }
 
-    /* Sidebar */
+    /* Sidebar — slightly darker than page for separation */
     .stApp [data-testid="stSidebar"] {
-        background: #1a1b1d !important;
-        border-right: 1px solid #2a2b2e;
+        background: #33343a !important;
+        border-right: 1px solid #44454a;
     }
 
     /* Metric cards */

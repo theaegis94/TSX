@@ -1626,8 +1626,8 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
             font=dict(size=11),
         ),
         template="plotly_dark",
-        plot_bgcolor="#2d2e31",
-        paper_bgcolor="#2d2e31",
+        plot_bgcolor="#4a4b4e",
+        paper_bgcolor="#4a4b4e",
         bargap=0,
         # "pan" lets users drag to scroll horizontally without drawing a
         # 2D zoom box. Scroll wheel still zooms in/out.
@@ -1639,12 +1639,12 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
     )
     # Remove inline y-axis titles — we'll use centered annotations below
     fig.update_yaxes(title="", row=1, col=1,
-                     gridcolor="#3a3b3e", zerolinecolor="#1f2937",
+                     gridcolor="#5a5b5e", zerolinecolor="#1f2937",
                      autorange=True)
     fig.update_yaxes(title="", range=[0, 100],
-                     row=2, col=1, gridcolor="#3a3b3e")
+                     row=2, col=1, gridcolor="#5a5b5e")
     fig.update_yaxes(title="", row=3, col=1,
-                     gridcolor="#3a3b3e", zerolinecolor="#1f2937",
+                     gridcolor="#5a5b5e", zerolinecolor="#1f2937",
                      autorange=True)
 
     # Vertical labels centered on each panel (paper-coordinate annotations).
@@ -1674,7 +1674,7 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
                 range=[x_start, x_end],
                 minallowed=x_start,
                 maxallowed=x_end,
-                row=r, col=1, gridcolor="#3a3b3e",
+                row=r, col=1, gridcolor="#5a5b5e",
             )
 
         # Price panel Y bounds: data range with 10% padding.
