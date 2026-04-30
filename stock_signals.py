@@ -161,6 +161,50 @@ def boc_valet(series: str) -> float | None:
         return None
 
 
+def fetch_watchlist_quotes(tickers: list[str]) -> dict:
+    """Latest price + day change for a list of tickers, in ONE batched yf.download
+    call (rate-limit-friendly). Returns {ticker: {price, prev, change_pct}}.
+    """
+    if not tickers:
+        return {}
+    try:
+        df = yf.download(
+            " ".join(tickers),
+            period="5d",
+            interval="1d",
+            auto_adjust=True,
+            progress=False,
+            group_by="ticker",
+        )
+    except Exception:
+        return {}
+    if df is None or df.empty:
+        return {}
+
+    out: dict = {}
+    for t in tickers:
+        try:
+            if len(tickers) == 1:
+                tdf = df
+            elif isinstance(df.columns, pd.MultiIndex) and t in df.columns.get_level_values(0):
+                tdf = df[t]
+            else:
+                continue
+            closes = tdf["Close"].dropna()
+            if len(closes) < 2:
+                continue
+            last = float(closes.iloc[-1])
+            prev = float(closes.iloc[-2])
+            out[t] = {
+                "price": last,
+                "prev": prev,
+                "change_pct": (last - prev) / prev * 100 if prev else 0.0,
+            }
+        except (KeyError, AttributeError, ValueError, IndexError):
+            continue
+    return out
+
+
 def yf_spot(symbol: str) -> float | None:
     try:
         df = yf.download(symbol, period="2d", interval="1d",

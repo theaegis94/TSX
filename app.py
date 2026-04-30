@@ -34,6 +34,85 @@ def cached_metrics(ticker: str) -> dict:
     return ss.yf_metrics(ticker)
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def cached_quotes(tickers: tuple) -> dict:
+    """Watchlist tile prices. 10 min TTL — refreshed often enough to feel live
+    during market hours but not so often we burn API quota."""
+    return ss.fetch_watchlist_quotes(list(tickers))
+
+
+def render_watchlist_bar(tickers: tuple) -> None:
+    if not tickers:
+        return
+    quotes = cached_quotes(tickers)
+    tiles_html = []
+    for t in tickers:
+        q = quotes.get(t)
+        if not q:
+            tiles_html.append(
+                f'<div class="ticker-tile">'
+                f'<div class="tt-code">{t}</div>'
+                f'<div class="tt-price">—</div>'
+                f'<div class="tt-change">—</div>'
+                f'</div>'
+            )
+            continue
+        chg = q["change_pct"]
+        color = "#16a34a" if chg >= 0 else "#dc2626"
+        arrow = "▲" if chg >= 0 else "▼"
+        sign = "+" if chg >= 0 else ""
+        tiles_html.append(
+            f'<div class="ticker-tile">'
+            f'<div class="tt-code">{t}</div>'
+            f'<div class="tt-price">${q["price"]:.2f}</div>'
+            f'<div class="tt-change" style="color:{color}">'
+            f'{arrow} {sign}{chg:.2f}%</div>'
+            f'</div>'
+        )
+
+    html = (
+        "<style>"
+        ".ticker-bar {"
+        "  display: flex;"
+        "  overflow-x: auto;"
+        "  gap: 6px;"
+        "  padding: 4px 0 12px 0;"
+        "  margin-bottom: 4px;"
+        "  -webkit-overflow-scrolling: touch;"
+        "}"
+        ".ticker-bar::-webkit-scrollbar { height: 6px; }"
+        ".ticker-bar::-webkit-scrollbar-thumb {"
+        "  background: #4b5563; border-radius: 3px;"
+        "}"
+        ".ticker-tile {"
+        "  background: #1f2937;"
+        "  padding: 6px 10px;"
+        "  border-radius: 6px;"
+        "  min-width: 105px;"
+        "  flex-shrink: 0;"
+        "  border: 1px solid #374151;"
+        "}"
+        ".tt-code {"
+        "  font-size: 0.7rem;"
+        "  color: #9ca3af;"
+        "  font-weight: 600;"
+        "  letter-spacing: 0.5px;"
+        "}"
+        ".tt-price {"
+        "  font-size: 1rem;"
+        "  color: #e5e7eb;"
+        "  font-weight: 500;"
+        "}"
+        ".tt-change {"
+        "  font-size: 0.75rem;"
+        "  font-weight: 600;"
+        "}"
+        "</style>"
+        '<div class="ticker-bar">' + "".join(tiles_html) + "</div>"
+    )
+    st.markdown(html, unsafe_allow_html=True)
+
+
 @st.cache_data(ttl=900, show_spinner=False)
 def cached_scan(tickers: tuple, period: str, interval: str,
                 strategy: str, adx_filter: bool,
@@ -68,6 +147,22 @@ def cached_news(ticker: str, days: int = 7) -> list:
 # --------- header / macro ---------
 
 st.title("📈 TSX Signal Dashboard")
+
+# Watchlist ticker bar — uses session state from the Scan tab's text area,
+# falls back to default on first load.
+_wl_str = st.session_state.get(
+    "watchlist_input", ", ".join(ss.DEFAULT_WATCHLIST)
+)
+_wl_normalized = []
+for _raw in _wl_str.split(","):
+    _raw = _raw.strip()
+    if not _raw:
+        continue
+    try:
+        _wl_normalized.append(ss.normalize_tsx_ticker(_raw))
+    except SystemExit:
+        continue
+render_watchlist_bar(tuple(_wl_normalized[:30]))
 
 macro = cached_macro()
 cols = st.columns(5)
