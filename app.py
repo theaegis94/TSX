@@ -750,8 +750,10 @@ with tab_screener:
 
     st.caption(f"Will scan **{len(universe)}** tickers (one batched API call).")
 
-    if st.button("🎯 Run screener", type="primary",
-                 disabled=not (require_bb or require_rsi)):
+    run_col, clear_col = st.columns([3, 1])
+    if run_col.button("🎯 Run screener", type="primary",
+                      disabled=not (require_bb or require_rsi),
+                      use_container_width=True):
         with st.spinner(f"Scanning {len(universe)} tickers…"):
             matches = ss.screen_buy_signals(
                 universe,
@@ -760,79 +762,71 @@ with tab_screener:
                 require_bollinger=require_bb,
                 require_rsi=require_rsi,
             )
+        # Persist results so they survive across reruns triggered by row clicks
+        st.session_state["_screener_matches"] = matches
+    if clear_col.button("Clear results", use_container_width=True,
+                        disabled="_screener_matches" not in st.session_state):
+        st.session_state.pop("_screener_matches", None)
+        st.rerun()
 
-        if not matches:
-            st.info(
-                "No matches. Try a wider lookback window, higher RSI threshold, "
-                "or untick one filter."
+    matches = st.session_state.get("_screener_matches")
+    if matches is None:
+        pass  # nothing to show
+    elif not matches:
+        st.info(
+            "No matches. Try a wider lookback window, higher RSI threshold, "
+            "or untick one filter."
+        )
+    else:
+        today_matches = [m for m in matches if m.get("bb_buy_age") == 0]
+        earlier_matches = [m for m in matches if m.get("bb_buy_age") and m["bb_buy_age"] > 0]
+
+        summary_parts = [f"**{len(matches)}** total"]
+        if today_matches:
+            summary_parts.append(f"🎯 **{len(today_matches)} TODAY**")
+        if earlier_matches:
+            summary_parts.append(f"{len(earlier_matches)} within window")
+        st.success(" · ".join(summary_parts))
+
+        def _fmt_age(age):
+            if age is None:
+                return "—"
+            if age == 0:
+                return "today"
+            if age == 1:
+                return "1d ago"
+            return f"{age}d ago"
+
+        st.caption("💡 **Click any ticker** to open the chart in a popup.")
+
+        # Header row
+        col_widths = [1.2, 1.2, 0.9, 1.3, 1.5, 1.0, 0.9]
+        h = st.columns(col_widths)
+        for col, label in zip(h, ["Ticker", "Price", "RSI", "vs BB Lower",
+                                  "BB BUY Date", "Age", "RSI OS"]):
+            col.markdown(f"**{label}**")
+
+        # Data rows — ticker is a clickable button, others are markdown
+        for m in matches:
+            cols = st.columns(col_widths)
+            if cols[0].button(m["ticker"], key=f"sc_view_{m['ticker']}",
+                              use_container_width=True):
+                show_quick_analysis_dialog(m["ticker"])
+            cols[1].markdown(f"${m['price']:.2f}")
+            cols[2].markdown(f"{m['rsi']:.1f}")
+            bb_color = "#dc2626" if m["bb_distance_pct"] < 0 else "#9ca3af"
+            cols[3].markdown(
+                f'<span style="color:{bb_color}">{m["bb_distance_pct"]:+.2f}%</span>',
+                unsafe_allow_html=True,
             )
-        else:
-            # Split into "today" and "earlier"
-            today_matches = [m for m in matches if m.get("bb_buy_age") == 0]
-            earlier_matches = [m for m in matches if m.get("bb_buy_age") and m["bb_buy_age"] > 0]
-            no_bb_matches = [m for m in matches if m.get("bb_buy_age") is None]
-
-            summary_parts = [f"**{len(matches)}** total"]
-            if today_matches:
-                summary_parts.append(f"🎯 **{len(today_matches)} TODAY**")
-            if earlier_matches:
-                summary_parts.append(f"{len(earlier_matches)} within window")
-            st.success(" · ".join(summary_parts))
-
-            def _fmt_age(age):
-                if age is None:
-                    return "—"
-                if age == 0:
-                    return "today"
-                if age == 1:
-                    return "1d ago"
-                return f"{age}d ago"
-
-            df_m = pd.DataFrame([{
-                "Ticker": m["ticker"],
-                "Price": m["price"],
-                "RSI": m["rsi"],
-                "vs BB Lower": m["bb_distance_pct"],
-                "BB BUY Date": m.get("bb_buy_date") or "—",
-                "BB BUY Age": _fmt_age(m.get("bb_buy_age")),
-                "RSI Oversold": "✓" if m["rsi_oversold"] else "·",
-            } for m in matches])
-
-            st.caption(
-                "💡 **Click any row** to see chart + signal + metrics in a popup."
+            cols[4].markdown(m.get("bb_buy_date") or "—")
+            age_label = _fmt_age(m.get("bb_buy_age"))
+            age_color = "#16a34a" if m.get("bb_buy_age") == 0 else "#e5e7eb"
+            cols[5].markdown(
+                f'<span style="color:{age_color}">{age_label}</span>',
+                unsafe_allow_html=True,
             )
-            event = st.dataframe(
-                df_m,
-                use_container_width=True,
-                hide_index=True,
-                selection_mode="single-row",
-                on_select="rerun",
-                key="screener_results_table",
-                column_config={
-                    "Price": st.column_config.NumberColumn(format="$%.2f"),
-                    "RSI": st.column_config.NumberColumn(format="%.1f"),
-                    "vs BB Lower": st.column_config.NumberColumn(
-                        format="%+.2f%%",
-                        help="Price relative to Bollinger lower band. "
-                             "Negative = below lower band (oversold).",
-                    ),
-                    "BB BUY Date": st.column_config.TextColumn(
-                        help="Date of most recent Bollinger lower-band touch in the lookback window",
-                    ),
-                    "BB BUY Age": st.column_config.TextColumn(
-                        help="Trading days since the BUY signal — 'today' = fired on the latest bar",
-                    ),
-                },
-            )
-
-            # Open dialog when a row is selected — but only on a NEW selection
-            # (avoid re-opening on every rerun while selection persists).
-            if event.selection.rows:
-                selected_idx = event.selection.rows[0]
-                selected_ticker = df_m.iloc[selected_idx]["Ticker"]
-                if st.session_state.get("_screener_dialog_for") != selected_ticker:
-                    st.session_state["_screener_dialog_for"] = selected_ticker
-                    show_quick_analysis_dialog(selected_ticker)
+            cols[6].markdown("✓" if m["rsi_oversold"] else "·")
 
 
 # === News tab ===
