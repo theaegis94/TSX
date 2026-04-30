@@ -1150,6 +1150,8 @@ with tab_screener:
             "S&P 500 (~500)",
             "TSX 60 (~60)",
             "TSX Composite (~250)",
+            "Entire TSX (~1500)",
+            "Entire TSX Venture (~1500)",
             "Popular ETFs (~80)",
             "All US + TSX + ETFs (~850)",
             "Custom watchlist",
@@ -1204,6 +1206,10 @@ with tab_screener:
     def _cached_tsx_composite() -> list:
         return ss.get_tsx_composite()
 
+    @st.cache_data(ttl=86400, show_spinner=False)
+    def _cached_full_tsx(market: str) -> list:
+        return ss.get_full_tsx_listing(market)
+
     if universe_choice.startswith("S&P 100"):
         universe = ss.UNIVERSE_SP100
     elif universe_choice.startswith("S&P 500"):
@@ -1212,6 +1218,10 @@ with tab_screener:
         universe = ss.UNIVERSE_TSX60
     elif universe_choice.startswith("TSX Composite"):
         universe = _cached_tsx_composite()
+    elif universe_choice.startswith("Entire TSX Venture"):
+        universe = _cached_full_tsx("tsxv")
+    elif universe_choice.startswith("Entire TSX"):
+        universe = _cached_full_tsx("tsx")
     elif universe_choice.startswith("Popular ETFs"):
         universe = ss.UNIVERSE_POPULAR_ETFS
     elif universe_choice.startswith("All US"):

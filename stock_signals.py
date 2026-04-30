@@ -406,6 +406,75 @@ def _finnhub_sym(ticker: str) -> str:
     return ticker.upper()
 
 
+def get_full_tsx_listing(market: str = "tsx") -> list[str]:
+    """All listed companies on TSX (or TSXV) via TMX Group's directory.
+    market='tsx' for the main board (~1000 names), 'tsxv' for Venture (~1700).
+    Returns Yahoo-format tickers (e.g. 'RY.TO', 'GRT-UN.TO').
+    """
+    suffix = ".TO" if market == "tsx" else ".V"
+    try:
+        r = requests.get(
+            f"https://www.tsx.com/json/company-directory/search/{market}/.*",
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Accept": "application/json",
+            },
+            timeout=20,
+        )
+        if r.status_code != 200:
+            return []
+        data = r.json()
+        results = data.get("results") or []
+        out: list[str] = []
+        for row in results:
+            sym = (row.get("symbol") or "").upper().strip()
+            if not sym:
+                continue
+            # TMX uses dots for class shares + unit suffixes (RDS.A, IGBT.UN);
+            # Yahoo expects all of these as hyphens (RDS-A.TO, IGBT-UN.TO).
+            sym = sym.replace(".", "-")
+            out.append(f"{sym}{suffix}")
+        return out
+    except (requests.RequestException, ValueError):
+        return []
+
+
+def finnhub_exchange_symbols(exchange: str) -> list[str]:
+    """All listed symbols on a Finnhub-supported exchange.
+    'TO' = TSX, 'V' = TSX Venture, 'US' = NYSE+NASDAQ, etc.
+    Returns Yahoo-format tickers (e.g. RY.TO).
+    Free Finnhub endpoint — but the full list is huge so cache aggressively.
+    """
+    if not FINNHUB_API_KEY:
+        return []
+    try:
+        r = requests.get(
+            "https://finnhub.io/api/v1/stock/symbol",
+            params={"exchange": exchange, "token": FINNHUB_API_KEY},
+            timeout=30,
+        )
+        if r.status_code != 200:
+            return []
+        data = r.json() or []
+        out: list[str] = []
+        for s in data:
+            sym = (s.get("displaySymbol") or s.get("symbol") or "").upper().strip()
+            if not sym:
+                continue
+            # Drop warrants, rights, noise
+            up = sym.upper()
+            if any(x in up for x in (".WT", ".W", ".R", ".RT", ".UN.", "WS")):
+                # be conservative — keep .UN (REIT units) but drop generic .W warrants
+                if up.endswith(".UN"):
+                    pass
+                else:
+                    continue
+            out.append(sym)
+        return out
+    except (requests.RequestException, ValueError):
+        return []
+
+
 def finnhub_search(query: str, limit: int = 15) -> list[dict]:
     """Search tickers by symbol or company name. Returns list of
     {symbol, display_symbol, description, type}."""
