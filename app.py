@@ -358,7 +358,9 @@ def render_quick_analysis():
                        f"{stats['trades']} trades, win {stats['win_rate']:.0%}")
 
         fig = ss.build_chart(df, ticker, stats, compact=True)
-        st.pyplot(fig, use_container_width=True)
+        # Constrain to ~half-width so it doesn't dominate the page
+        chart_col, _spacer = st.columns([1, 1])
+        chart_col.pyplot(fig, use_container_width=True)
         plt_close_cleanup(fig)
         st.caption(
             "For news, analyst data & fundamentals → use the **Single Ticker** tab."

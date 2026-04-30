@@ -791,7 +791,7 @@ def build_chart(df: pd.DataFrame, ticker: str, stats: dict, compact: bool = Fals
 
     compact=True returns a smaller figure suitable for embedded popups.
     """
-    figsize = (10, 5.5) if compact else (14, 10)
+    figsize = (8, 4) if compact else (14, 10)
     fig, (ax_price, ax_rsi, ax_macd) = plt.subplots(
         3, 1, figsize=figsize, sharex=True,
         gridspec_kw={"height_ratios": [3, 1, 1]},
