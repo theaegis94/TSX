@@ -312,23 +312,32 @@ def render_quick_analysis():
     if not selected:
         return
     interval = st.session_state.get("_interval", "1d")
-    strategy = st.session_state.get("_strategy", "trend")
     adx_filter = st.session_state.get("_adx_filter", False)
     stop_loss_pct = st.session_state.get("_stop_loss_pct")
+    sidebar_strategy = st.session_state.get("_strategy", "trend")
 
     with st.container(border=True):
-        # Compact header: title + lookback selector + close button
-        head_l, head_m, head_r = st.columns([3, 2, 1])
-        head_l.markdown(f"#### 🎯 {selected}")
-        period = head_m.selectbox(
+        # Compact header row: title + strategy + lookback + close
+        h1, h2, h3, h4 = st.columns([2, 2, 1.5, 1])
+        h1.markdown(f"#### 🎯 {selected}")
+        strategy = h2.selectbox(
+            "Strategy",
+            options=list(ss.STRATEGY_LABELS.keys()),
+            format_func=lambda k: ss.STRATEGY_LABELS[k],
+            index=list(ss.STRATEGY_LABELS.keys()).index(sidebar_strategy)
+                  if sidebar_strategy in ss.STRATEGY_LABELS else 0,
+            key=f"qv_strategy_{selected}",
+            label_visibility="collapsed",
+        )
+        period = h3.selectbox(
             "Lookback",
             ["6mo", "1y", "2y", "5y"],
             index=1,
             key=f"qv_period_{selected}",
             label_visibility="collapsed",
         )
-        if head_r.button("✖ Close", key="close_quick_view",
-                         use_container_width=True):
+        if h4.button("✖ Close", key="close_quick_view",
+                     use_container_width=True):
             st.session_state.pop("selected_tile", None)
             st.rerun()
 
@@ -347,45 +356,32 @@ def render_quick_analysis():
 
         last = df.iloc[-1]
 
-        # Layout: chart on left (3/4), info panel on right (1/4)
-        chart_col, info_col = st.columns([3, 1])
+        # Single condensed stats line above the chart
+        if bool(last["BUY"]):
+            sig_html = '<span style="color:#16a34a; font-weight:700;">🟢 BUY</span>'
+        elif bool(last["SELL"]):
+            sig_html = '<span style="color:#dc2626; font-weight:700;">🔴 SELL</span>'
+        else:
+            sig_html = f'<span style="color:#9ca3af;">⚪ HOLD ({int(last["SCORE"]):+d})</span>'
 
-        with chart_col:
-            fig = ss.build_chart(df, ticker, stats, compact=True)
-            st.pyplot(fig, use_container_width=True)
-            plt_close_cleanup(fig)
+        st.markdown(
+            f'<div style="font-size:0.85rem; color:#9ca3af; padding:4px 0;">'
+            f'{sig_html} &nbsp;·&nbsp; '
+            f'Last <b style="color:#e5e7eb;">${float(last["Close"]):.2f}</b> &nbsp;·&nbsp; '
+            f'Strategy <b style="color:#e5e7eb;">{stats["total_return"]:+.1%}</b> &nbsp;·&nbsp; '
+            f'B&H <b style="color:#e5e7eb;">{stats["buy_hold"]:+.1%}</b> &nbsp;·&nbsp; '
+            f'Max DD <b style="color:#e5e7eb;">{stats.get("max_drawdown", 0):.1%}</b> &nbsp;·&nbsp; '
+            f'Win <b style="color:#e5e7eb;">{stats["win_rate"]:.0%}</b> &nbsp;·&nbsp; '
+            f'<b style="color:#e5e7eb;">{stats["trades"]}</b> trades'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
-        with info_col:
-            if bool(last["BUY"]):
-                st.success("🟢 BUY today")
-            elif bool(last["SELL"]):
-                st.error("🔴 SELL today")
-            else:
-                st.info(f"⚪ HOLD ({int(last['SCORE']):+d})")
-
-            # Compact stacked stats — single column to fit narrow panel
-            stat_lines = [
-                ("Last", f"${float(last['Close']):.2f}"),
-                ("Strategy", f"{stats['total_return']:+.1%}"),
-                ("B&H", f"{stats['buy_hold']:+.1%}"),
-                ("Max DD", f"{stats.get('max_drawdown', 0):.1%}"),
-                ("Win", f"{stats['win_rate']:.0%}"),
-                ("Trades", f"{stats['trades']}"),
-            ]
-            stat_html = (
-                '<div style="font-size:0.85rem; line-height:1.45;">'
-                + "".join(
-                    f'<div style="display:flex; justify-content:space-between; '
-                    f'border-bottom:1px solid #1f2937; padding:2px 0;">'
-                    f'<span style="color:#9ca3af;">{label}</span>'
-                    f'<span style="color:#e5e7eb; font-weight:500;">{val}</span>'
-                    f'</div>'
-                    for label, val in stat_lines
-                )
-                + "</div>"
-            )
-            st.markdown(stat_html, unsafe_allow_html=True)
-            st.caption("📰 News → Single Ticker tab")
+        # Chart full-width but short (no side panel)
+        fig = ss.build_chart(df, ticker, stats, compact=True)
+        st.pyplot(fig, use_container_width=True)
+        plt_close_cleanup(fig)
+        st.caption("📰 News + fundamentals → **Single Ticker** tab")
 
 
 def plt_close_cleanup(fig):

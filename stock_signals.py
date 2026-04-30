@@ -792,9 +792,9 @@ def build_chart(df: pd.DataFrame, ticker: str, stats: dict, compact: bool = Fals
     compact=True returns a smaller figure suitable for embedded popups.
     """
     if compact:
-        figsize = (7, 4)
+        figsize = (12, 4.5)  # wide + short, fills full popup width
         title_fs, label_fs, tick_fs, legend_fs = 9, 8, 7, 7
-        marker_size, lw = 60, 0.9
+        marker_size, lw = 50, 0.9
     else:
         figsize = (14, 10)
         title_fs, label_fs, tick_fs, legend_fs = 12, 11, 10, 10
