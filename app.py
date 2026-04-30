@@ -75,6 +75,31 @@ def cached_quotes(tickers: tuple) -> dict:
     return ss.fetch_watchlist_quotes(list(tickers))
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def cached_search(query: str) -> list:
+    """Ticker search via Finnhub. 5 min TTL — short queries change often."""
+    return ss.finnhub_search(query)
+
+
+def _add_search_result(symbol: str):
+    """on_click handler for search-result Add buttons."""
+    try:
+        sym = ss.normalize_ticker(symbol)
+    except SystemExit:
+        return
+    current = st.session_state.get(
+        "watchlist_input", ", ".join(ss.DEFAULT_WATCHLIST)
+    )
+    parts = [p.strip() for p in current.split(",") if p.strip()]
+    if not any(p.upper() == sym for p in parts):
+        parts.append(sym)
+        st.session_state.watchlist_input = ", ".join(parts)
+        st.session_state["_add_msg"] = f"✅ Added {sym}"
+    else:
+        st.session_state["_add_msg"] = f"ℹ️ {sym} already in watchlist"
+    st.session_state["search_query"] = ""
+
+
 def _on_tile_click(ticker: str):
     st.session_state["selected_tile"] = ticker
 
@@ -399,12 +424,40 @@ with tab_scan:
     st.subheader("Watchlist Scan")
 
     default_str = ", ".join(ss.DEFAULT_WATCHLIST)
-    with st.expander("Edit watchlist (bulk)", expanded=False):
-        watchlist_str = st.text_area(
+
+    # --- Ticker search & add ---
+    search_query = st.text_input(
+        "🔍 Search tickers (by symbol or company name)",
+        placeholder="e.g. AAPL, royal bank, tesla, RY.TO",
+        key="search_query",
+    )
+    if search_query and len(search_query) >= 2:
+        with st.spinner("Searching…"):
+            results = cached_search(search_query)
+        if results:
+            st.caption(f"Top {min(8, len(results))} matches — click to add:")
+            res_cols = st.columns(2)
+            for i, r in enumerate(results[:8]):
+                with res_cols[i % 2]:
+                    desc = r["description"][:35] + ("…" if len(r["description"]) > 35 else "")
+                    st.button(
+                        f"➕ **{r['symbol']}** — {desc}",
+                        key=f"add_search_{r['symbol']}",
+                        on_click=_add_search_result,
+                        args=(r["symbol"],),
+                        use_container_width=True,
+                    )
+        else:
+            st.caption("No matches. Tip: Finnhub free-tier coverage is best for US + cross-listed names.")
+
+    # --- Bulk edit (hidden by default) ---
+    with st.expander("Bulk edit watchlist (paste/clear all)", expanded=False):
+        st.text_area(
             "Comma-separated tickers — bare = US, .TO = TSX, .V = TSXV",
             default_str, height=68, key="watchlist_input",
             label_visibility="collapsed",
         )
+
     watchlist_str = st.session_state.get("watchlist_input", default_str)
     tickers = tuple(t.strip() for t in watchlist_str.split(",") if t.strip())
 

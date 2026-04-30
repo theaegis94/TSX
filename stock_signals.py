@@ -272,6 +272,39 @@ def _finnhub_sym(ticker: str) -> str:
     return ticker.upper()
 
 
+def finnhub_search(query: str, limit: int = 15) -> list[dict]:
+    """Search tickers by symbol or company name. Returns list of
+    {symbol, display_symbol, description, type}."""
+    if not FINNHUB_API_KEY or not query.strip():
+        return []
+    try:
+        r = requests.get(
+            "https://finnhub.io/api/v1/search",
+            params={"q": query.strip(), "token": FINNHUB_API_KEY},
+            timeout=10,
+        )
+        if r.status_code != 200:
+            return []
+        data = r.json() or {}
+        seen: set = set()
+        out: list[dict] = []
+        for row in (data.get("result") or []):
+            sym = (row.get("displaySymbol") or row.get("symbol") or "").strip().upper()
+            if not sym or sym in seen:
+                continue
+            seen.add(sym)
+            out.append({
+                "symbol": sym,
+                "description": row.get("description", "").strip(),
+                "type": row.get("type", "").strip(),
+            })
+            if len(out) >= limit:
+                break
+        return out
+    except (requests.RequestException, ValueError):
+        return []
+
+
 def finnhub_news(ticker: str, days: int = 7) -> list[dict]:
     if not FINNHUB_API_KEY:
         return []
