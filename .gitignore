@@ -1,0 +1,22 @@
+# Secrets — NEVER commit
+.env
+.streamlit/secrets.toml
+
+# Editor / tooling
+.claude/
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Generated charts
+*.png
+
+# OS
+.DS_Store
+Thumbs.db

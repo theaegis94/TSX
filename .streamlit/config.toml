@@ -1,0 +1,12 @@
+[browser]
+gatherUsageStats = false
+
+[server]
+headless = false
+runOnSave = true
+
+[client]
+toolbarMode = "viewer"
+
+[theme]
+base = "dark"
