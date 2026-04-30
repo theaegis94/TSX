@@ -121,9 +121,17 @@ st.markdown(
         margin-bottom: 0 !important;
     }
 
-    /* Space between the watchlist bar rows */
+    /* Space between the watchlist bar rows + vertically center column contents
+       so ticker buttons align with adjacent text cells. */
     .stApp [data-testid="stHorizontalBlock"] {
         margin-bottom: 8px;
+        align-items: center !important;
+    }
+    /* Make column children fill the column so vertical centering works */
+    .stApp [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
     }
 
     /* Macro caption rows: a small gap between Canadian and US lines */
