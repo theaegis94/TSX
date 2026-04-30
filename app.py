@@ -351,8 +351,9 @@ def show_quick_analysis_dialog(ticker: str):
                         "displayModeBar": True,
                         "displaylogo": False,
                         "scrollZoom": True,
+                        "doubleClick": "autosize",
                         "modeBarButtonsToRemove": [
-                            "select2d", "lasso2d", "autoScale2d",
+                            "select2d", "lasso2d",
                         ],
                     })
 
@@ -460,11 +461,15 @@ def render_quick_analysis():
                         "displayModeBar": True,
                         "displaylogo": False,
                         "scrollZoom": True,
+                        "doubleClick": "autosize",
                         "modeBarButtonsToRemove": [
-                            "select2d", "lasso2d", "autoScale2d",
+                            "select2d", "lasso2d",
                         ],
                     })
-        st.caption("📰 News + fundamentals → **Single Ticker** tab")
+        st.caption(
+            "💡 Scroll to zoom · drag to pan · **double-click** to auto-fit Y "
+            "to the visible window · 📰 news + fundamentals → **Single Ticker** tab"
+        )
 
 
 def plt_close_cleanup(fig):
