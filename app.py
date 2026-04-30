@@ -693,7 +693,10 @@ with tab_scan:
 with tab_single:
     st.subheader("Single Ticker Analysis")
 
-    raw = st.text_input("Ticker", "RY", key="single_ticker")
+    raw = st.text_input(
+        "Ticker", value="", placeholder="e.g. AAPL, RY.TO, BRK.B",
+        key="single_ticker",
+    )
     if raw:
         try:
             ticker = ss.normalize_tsx_ticker(raw)
