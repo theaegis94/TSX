@@ -980,14 +980,30 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
             color="#e5e7eb",
         ),
     )
-    fig.update_yaxes(title=dict(text="Price", standoff=2), row=1, col=1,
+    # Remove inline y-axis titles — we'll use centered annotations below
+    fig.update_yaxes(title="", row=1, col=1,
                      gridcolor="#1f2937", zerolinecolor="#1f2937",
                      autorange=True)
-    fig.update_yaxes(title=dict(text="RSI", standoff=2), range=[0, 100],
+    fig.update_yaxes(title="", range=[0, 100],
                      row=2, col=1, gridcolor="#1f2937")
-    fig.update_yaxes(title=dict(text="MACD", standoff=2), row=3, col=1,
+    fig.update_yaxes(title="", row=3, col=1,
                      gridcolor="#1f2937", zerolinecolor="#1f2937",
                      autorange=True)
+
+    # Vertical labels centered on each panel (paper-coordinate annotations).
+    # Y values match the geometric center of each subplot given:
+    #   row_heights=[0.55, 0.22, 0.22] and vertical_spacing=0.10
+    label_font = dict(size=13, color="#9ca3af",
+                      family='"Comic Sans MS", "Comic Sans", cursive')
+    for label, y_pos in [("Price", 0.78), ("RSI", 0.37), ("MACD", 0.09)]:
+        fig.add_annotation(
+            x=-0.045, y=y_pos,
+            xref="paper", yref="paper",
+            text=f"<b>{label}</b>",
+            textangle=-90,
+            showarrow=False,
+            font=label_font,
+        )
 
     # Explicitly set the visible x-range to span all the data we have, on
     # every panel. Without this, an old zoom state from a previous render
