@@ -865,6 +865,148 @@ def build_chart(df: pd.DataFrame, ticker: str, stats: dict, compact: bool = Fals
     return fig
 
 
+def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
+                       compact: bool = False):
+    """Interactive Plotly version of the price/RSI/MACD chart.
+    Supports mousewheel zoom, click+drag pan, hover tooltips, and range buttons.
+    """
+    from plotly.subplots import make_subplots
+    import plotly.graph_objects as go
+
+    fig = make_subplots(
+        rows=3, cols=1, shared_xaxes=True,
+        vertical_spacing=0.03,
+        row_heights=[0.6, 0.2, 0.2],
+    )
+
+    # --- Price panel ---
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df["Close"], mode="lines", name="Close",
+        line=dict(color="#e5e7eb", width=1.5),
+        hovertemplate="<b>%{x|%Y-%m-%d}</b><br>Close: $%{y:.2f}<extra></extra>",
+    ), row=1, col=1)
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df["SMA50"], mode="lines", name="SMA50",
+        line=dict(color="#3b82f6", width=1),
+        hovertemplate="SMA50: $%{y:.2f}<extra></extra>",
+    ), row=1, col=1)
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df["SMA200"], mode="lines", name="SMA200",
+        line=dict(color="#f59e0b", width=1),
+        hovertemplate="SMA200: $%{y:.2f}<extra></extra>",
+    ), row=1, col=1)
+
+    buys = df[df["BUY"]]
+    if not buys.empty:
+        fig.add_trace(go.Scatter(
+            x=buys.index, y=buys["Close"], mode="markers", name="BUY",
+            marker=dict(symbol="triangle-up", color="#16a34a", size=14,
+                        line=dict(color="black", width=1)),
+            hovertemplate="<b>BUY</b><br>%{x|%Y-%m-%d}<br>$%{y:.2f}<extra></extra>",
+        ), row=1, col=1)
+    sells = df[df["SELL"]]
+    if not sells.empty:
+        fig.add_trace(go.Scatter(
+            x=sells.index, y=sells["Close"], mode="markers", name="SELL",
+            marker=dict(symbol="triangle-down", color="#dc2626", size=14,
+                        line=dict(color="black", width=1)),
+            hovertemplate="<b>SELL</b><br>%{x|%Y-%m-%d}<br>$%{y:.2f}<extra></extra>",
+        ), row=1, col=1)
+
+    # --- RSI panel ---
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df["RSI"], mode="lines", name="RSI",
+        line=dict(color="#a855f7", width=1.2),
+        showlegend=False,
+        hovertemplate="RSI: %{y:.1f}<extra></extra>",
+    ), row=2, col=1)
+    fig.add_hline(y=70, line_dash="dash", line_color="#ef4444",
+                  line_width=1, opacity=0.6, row=2, col=1)
+    fig.add_hline(y=30, line_dash="dash", line_color="#22c55e",
+                  line_width=1, opacity=0.6, row=2, col=1)
+
+    # --- MACD panel ---
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df["MACD"], mode="lines", name="MACD",
+        line=dict(color="#3b82f6", width=1),
+        showlegend=False,
+        hovertemplate="MACD: %{y:.3f}<extra></extra>",
+    ), row=3, col=1)
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df["MACD_SIGNAL"], mode="lines", name="Signal",
+        line=dict(color="#f59e0b", width=1),
+        showlegend=False,
+        hovertemplate="Signal: %{y:.3f}<extra></extra>",
+    ), row=3, col=1)
+    hist = df["MACD_HIST"].fillna(0)
+    colors = ["#22c55e" if v >= 0 else "#ef4444" for v in hist]
+    fig.add_trace(go.Bar(
+        x=df.index, y=hist, name="Hist",
+        marker_color=colors, opacity=0.5,
+        showlegend=False,
+        hovertemplate="Hist: %{y:.3f}<extra></extra>",
+    ), row=3, col=1)
+    fig.add_hline(y=0, line_color="#6b7280", line_width=0.5, row=3, col=1)
+
+    # --- Layout ---
+    if compact:
+        title = (f"<b>{ticker}</b> &nbsp;·&nbsp; {stats['trades']} trades "
+                 f"&nbsp;·&nbsp; {stats['win_rate']:.0%} win")
+        height = 520
+    else:
+        title = (
+            f"<b>{ticker}</b> &nbsp;·&nbsp; {stats['trades']} trades "
+            f"&nbsp;·&nbsp; {stats['win_rate']:.0%} win &nbsp;·&nbsp; "
+            f"strategy {stats['total_return']:+.1%} vs B&H {stats['buy_hold']:+.1%}"
+        )
+        height = 720
+
+    fig.update_layout(
+        title=dict(text=title, x=0.01, xanchor="left", font=dict(size=14)),
+        height=height,
+        margin=dict(l=10, r=10, t=60, b=40),
+        hovermode="x unified",
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
+            bgcolor="rgba(0,0,0,0)",
+        ),
+        template="plotly_dark",
+        plot_bgcolor="#111827",
+        paper_bgcolor="#0e1117",
+        bargap=0,
+        dragmode="zoom",
+    )
+    fig.update_yaxes(title=dict(text="Price", standoff=2), row=1, col=1,
+                     gridcolor="#1f2937", zerolinecolor="#1f2937")
+    fig.update_yaxes(title=dict(text="RSI", standoff=2), range=[0, 100],
+                     row=2, col=1, gridcolor="#1f2937")
+    fig.update_yaxes(title=dict(text="MACD", standoff=2), row=3, col=1,
+                     gridcolor="#1f2937", zerolinecolor="#1f2937")
+
+    # Range buttons on bottom x-axis
+    fig.update_xaxes(
+        rangeselector=dict(
+            buttons=[
+                dict(count=1, label="1m", step="month", stepmode="backward"),
+                dict(count=3, label="3m", step="month", stepmode="backward"),
+                dict(count=6, label="6m", step="month", stepmode="backward"),
+                dict(count=1, label="YTD", step="year", stepmode="todate"),
+                dict(count=1, label="1y", step="year", stepmode="backward"),
+                dict(step="all", label="All"),
+            ],
+            bgcolor="#1f2937",
+            activecolor="#3b82f6",
+            font=dict(color="#e5e7eb", size=11),
+        ),
+        row=3, col=1,
+    )
+    fig.update_xaxes(gridcolor="#1f2937", row=1, col=1)
+    fig.update_xaxes(gridcolor="#1f2937", row=2, col=1)
+    fig.update_xaxes(gridcolor="#1f2937", row=3, col=1)
+
+    return fig
+
+
 def plot(df: pd.DataFrame, ticker: str, stats: dict, show: bool = True) -> None:
     fig = build_chart(df, ticker, stats)
     out_path = f"{ticker}_signals.png"

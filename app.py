@@ -304,9 +304,9 @@ def show_quick_analysis_dialog(ticker: str):
         unsafe_allow_html=True,
     )
 
-    fig = ss.build_chart(df, norm_ticker, stats, compact=True)
-    st.pyplot(fig, use_container_width=True)
-    plt_close_cleanup(fig)
+    fig = ss.build_chart_plotly(df, norm_ticker, stats, compact=True)
+    st.plotly_chart(fig, use_container_width=True,
+                    config={"displayModeBar": False, "scrollZoom": True})
 
     metrics = cached_metrics(norm_ticker)
     if metrics:
@@ -405,10 +405,10 @@ def render_quick_analysis():
             unsafe_allow_html=True,
         )
 
-        # Chart full-width but short (no side panel)
-        fig = ss.build_chart(df, ticker, stats, compact=True)
-        st.pyplot(fig, use_container_width=True)
-        plt_close_cleanup(fig)
+        # Interactive chart — scroll-zoom, drag-pan, hover tooltips
+        fig = ss.build_chart_plotly(df, ticker, stats, compact=True)
+        st.plotly_chart(fig, use_container_width=True,
+                        config={"displayModeBar": False, "scrollZoom": True})
         st.caption("📰 News + fundamentals → **Single Ticker** tab")
 
 
@@ -810,8 +810,10 @@ with tab_single:
                               f"{metrics.get('earn_days')}d"
                               if metrics.get("earn_days") is not None else "—")
 
-                fig = ss.build_chart(df, ticker, stats)
-                st.pyplot(fig, use_container_width=True)
+                fig = ss.build_chart_plotly(df, ticker, stats)
+                st.plotly_chart(fig, use_container_width=True,
+                                config={"displayModeBar": True,
+                                        "scrollZoom": True})
 
 
 # === Screener tab ===
