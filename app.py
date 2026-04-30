@@ -245,15 +245,32 @@ def render_watchlist_bar(tickers: tuple) -> None:
                 )
 
 
-@st.dialog("📊 Quick Analysis", width="large")
+@st.dialog("📊 Quick Analysis", width="medium")
 def show_quick_analysis_dialog(ticker: str):
     """Modal popup with chart, signal, and key metrics for a ticker.
     Used by the Screener tab when a row is clicked."""
-    period = st.session_state.get("_period", "2y")
     interval = st.session_state.get("_interval", "1d")
-    strategy = st.session_state.get("_strategy", "trend")
     adx_filter = st.session_state.get("_adx_filter", False)
     stop_loss_pct = st.session_state.get("_stop_loss_pct")
+
+    # Strategy + lookback selectors at top of dialog (default to trend)
+    sel_l, sel_r = st.columns([3, 2])
+    strategy = sel_l.selectbox(
+        "Strategy",
+        options=list(ss.STRATEGY_LABELS.keys()),
+        format_func=lambda k: ss.STRATEGY_LABELS[k],
+        index=0,
+        key=f"dlg_strategy_{ticker}",
+    )
+    _period_options = ["6mo", "1y", "2y", "5y"]
+    _sidebar_period = st.session_state.get("_period", "2y")
+    period = sel_r.selectbox(
+        "Lookback",
+        _period_options,
+        index=(_period_options.index(_sidebar_period)
+               if _sidebar_period in _period_options else 2),
+        key=f"dlg_period_{ticker}",
+    )
 
     try:
         norm_ticker = ss.normalize_ticker(ticker)
@@ -268,42 +285,48 @@ def show_quick_analysis_dialog(ticker: str):
         st.error(f"No data for {norm_ticker}.")
         return
 
-    st.markdown(f"### {norm_ticker}")
-
     last = df.iloc[-1]
     if bool(last["BUY"]):
-        st.success(f"🟢 BUY signal today ({df.index[-1].date()})")
+        sig = '<span style="color:#16a34a; font-weight:700;">🟢 BUY</span>'
     elif bool(last["SELL"]):
-        st.error(f"🔴 SELL signal today ({df.index[-1].date()})")
+        sig = '<span style="color:#dc2626; font-weight:700;">🔴 SELL</span>'
     else:
-        st.info(f"⚪ HOLD — score {int(last['SCORE']):+d}")
+        sig = f'<span style="color:#9ca3af;">⚪ HOLD ({int(last["SCORE"]):+d})</span>'
+    st.markdown(
+        f'<div style="font-size:0.85rem; color:#9ca3af; padding:4px 0;">'
+        f'{sig} &nbsp;·&nbsp; '
+        f'<b style="color:#e5e7eb;">${float(last["Close"]):.2f}</b> &nbsp;·&nbsp; '
+        f'Strat <b style="color:#e5e7eb;">{stats["total_return"]:+.1%}</b> &nbsp;·&nbsp; '
+        f'B&H <b style="color:#e5e7eb;">{stats["buy_hold"]:+.1%}</b> &nbsp;·&nbsp; '
+        f'DD <b style="color:#e5e7eb;">{stats.get("max_drawdown", 0):.1%}</b>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Trades", stats["trades"])
-    c2.metric("Win Rate", f"{stats['win_rate']:.0%}")
-    c3.metric("Strategy", f"{stats['total_return']:+.1%}")
-    c4.metric("Buy & Hold", f"{stats['buy_hold']:+.1%}")
-    c5.metric("Max DD", f"{stats.get('max_drawdown', 0):.1%}")
+    fig = ss.build_chart(df, norm_ticker, stats, compact=True)
+    st.pyplot(fig, use_container_width=True)
+    plt_close_cleanup(fig)
 
     metrics = cached_metrics(norm_ticker)
     if metrics:
-        m1, m2, m3, m4 = st.columns(4)
+        bits = []
         if metrics.get("pe") is not None:
-            m1.metric("P/E", f"{metrics['pe']:.1f}")
+            bits.append(f"P/E <b>{metrics['pe']:.1f}</b>")
         if metrics.get("yield_pct") is not None:
-            m2.metric("Yield", f"{metrics['yield_pct']:.2f}%")
+            bits.append(f"Yield <b>{metrics['yield_pct']:.2f}%</b>")
         if metrics.get("upside_pct") is not None:
-            m3.metric("Analyst Upside", f"{metrics['upside_pct']:+.1f}%")
+            bits.append(f"Upside <b>{metrics['upside_pct']:+.1f}%</b>")
         if metrics.get("earn_days") is not None:
-            m4.metric("Earnings In", f"{metrics['earn_days']}d")
+            bits.append(f"Earn in <b>{metrics['earn_days']}d</b>")
+        if bits:
+            st.markdown(
+                '<div style="font-size:0.8rem; color:#9ca3af;">'
+                + " &nbsp;·&nbsp; ".join(bits)
+                + "</div>",
+                unsafe_allow_html=True,
+            )
 
-    fig = ss.build_chart(df, norm_ticker, stats)
-    st.pyplot(fig, use_container_width=True)
-
-    st.caption(
-        "For news headlines, open the Single Ticker / News tab. "
-        "Close this popup with the ✖ in the corner or click outside."
-    )
+    st.caption("📰 News → Single Ticker tab")
 
 
 def render_quick_analysis():
@@ -314,9 +337,10 @@ def render_quick_analysis():
     interval = st.session_state.get("_interval", "1d")
     adx_filter = st.session_state.get("_adx_filter", False)
     stop_loss_pct = st.session_state.get("_stop_loss_pct")
-    sidebar_strategy = st.session_state.get("_strategy", "trend")
 
-    with st.container(border=True):
+    # Constrain the inline popup to ~70% of page width, centered
+    _l, popup_col, _r = st.columns([1, 5, 1])
+    with popup_col, st.container(border=True):
         # Compact header row: title + strategy + lookback + close
         h1, h2, h3, h4 = st.columns([2, 2, 1.5, 1])
         h1.markdown(f"#### 🎯 {selected}")
@@ -324,8 +348,7 @@ def render_quick_analysis():
             "Strategy",
             options=list(ss.STRATEGY_LABELS.keys()),
             format_func=lambda k: ss.STRATEGY_LABELS[k],
-            index=list(ss.STRATEGY_LABELS.keys()).index(sidebar_strategy)
-                  if sidebar_strategy in ss.STRATEGY_LABELS else 0,
+            index=0,  # always default to trend
             key=f"qv_strategy_{selected}",
             label_visibility="collapsed",
         )
