@@ -1013,14 +1013,43 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
             font=label_font,
         )
 
-    # Explicitly set the visible x-range to span all the data we have, on
-    # every panel. Without this, an old zoom state from a previous render
-    # can persist and leave the chart stuck on a tiny slice.
+    # Explicitly set the visible x-range AND lock pan/zoom bounds to the
+    # data range so users can't drag off into empty space.
     if len(df) >= 2:
         x_start, x_end = df.index[0], df.index[-1]
         for r in (1, 2, 3):
-            fig.update_xaxes(range=[x_start, x_end], row=r, col=1,
-                             gridcolor="#1f2937")
+            fig.update_xaxes(
+                range=[x_start, x_end],
+                minallowed=x_start,
+                maxallowed=x_end,
+                row=r, col=1, gridcolor="#1f2937",
+            )
+
+        # Price panel Y bounds: data range with 10% padding
+        price_min = float(df["Close"].min())
+        price_max = float(df["Close"].max())
+        if price_max > price_min:
+            pad = (price_max - price_min) * 0.10
+            fig.update_yaxes(
+                minallowed=price_min - pad,
+                maxallowed=price_max + pad,
+                row=1, col=1,
+            )
+
+        # RSI is bounded 0..100 by definition
+        fig.update_yaxes(minallowed=0, maxallowed=100, row=2, col=1)
+
+        # MACD bounds: data range with 30% padding (it can swing widely)
+        macd_vals = pd.concat([df["MACD"], df["MACD_SIGNAL"], df["MACD_HIST"]]).dropna()
+        if not macd_vals.empty:
+            mlo, mhi = float(macd_vals.min()), float(macd_vals.max())
+            if mhi > mlo:
+                pad = (mhi - mlo) * 0.30
+                fig.update_yaxes(
+                    minallowed=mlo - pad,
+                    maxallowed=mhi + pad,
+                    row=3, col=1,
+                )
 
     # Range buttons above the chart, top-left (legend sits at top-right)
     fig.update_xaxes(
