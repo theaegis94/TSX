@@ -565,6 +565,112 @@ def macd(series: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9):
     return macd_line, signal_line, hist
 
 
+def atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    """Average True Range — used by Keltner, Supertrend, Parabolic SAR."""
+    high, low, close = df["High"], df["Low"], df["Close"]
+    tr = pd.concat([
+        high - low,
+        (high - close.shift()).abs(),
+        (low - close.shift()).abs(),
+    ], axis=1).max(axis=1)
+    return tr.ewm(alpha=1 / period, adjust=False).mean()
+
+
+def stochastic(df: pd.DataFrame, k_period: int = 14, d_period: int = 3,
+               slow_k: int = 3):
+    """Slow Stochastic Oscillator. Returns (%K, %D)."""
+    low_min = df["Low"].rolling(k_period).min()
+    high_max = df["High"].rolling(k_period).max()
+    range_ = (high_max - low_min).replace(0, np.nan)
+    fast_k = 100 * (df["Close"] - low_min) / range_
+    slow_k_line = fast_k.rolling(slow_k).mean()
+    slow_d = slow_k_line.rolling(d_period).mean()
+    return slow_k_line, slow_d
+
+
+def parabolic_sar(df: pd.DataFrame, af_init: float = 0.02,
+                  af_max: float = 0.2, af_step: float = 0.02) -> pd.Series:
+    """Parabolic SAR — trailing-stop indicator. Returns the SAR series."""
+    high, low = df["High"].values, df["Low"].values
+    n = len(df)
+    sar = np.zeros(n)
+    if n < 2:
+        return pd.Series(sar, index=df.index)
+    bull = True
+    af = af_init
+    ep = high[0]
+    sar[0] = low[0]
+    for i in range(1, n):
+        prev_sar = sar[i - 1]
+        if bull:
+            cur_sar = prev_sar + af * (ep - prev_sar)
+            cur_sar = min(cur_sar, low[i - 1], low[max(i - 2, 0)])
+            if low[i] < cur_sar:
+                bull = False
+                cur_sar = ep
+                ep = low[i]
+                af = af_init
+            else:
+                if high[i] > ep:
+                    ep = high[i]
+                    af = min(af + af_step, af_max)
+        else:
+            cur_sar = prev_sar + af * (ep - prev_sar)
+            cur_sar = max(cur_sar, high[i - 1], high[max(i - 2, 0)])
+            if high[i] > cur_sar:
+                bull = True
+                cur_sar = ep
+                ep = high[i]
+                af = af_init
+            else:
+                if low[i] < ep:
+                    ep = low[i]
+                    af = min(af + af_step, af_max)
+        sar[i] = cur_sar
+    return pd.Series(sar, index=df.index)
+
+
+def supertrend(df: pd.DataFrame, period: int = 10, multiplier: float = 3.0):
+    """Supertrend — ATR-based trailing stop. Returns (supertrend, direction).
+    direction: +1 = uptrend (price > supertrend), -1 = downtrend.
+    """
+    a = atr(df, period)
+    hl2 = (df["High"] + df["Low"]) / 2
+    upper_band = hl2 + multiplier * a
+    lower_band = hl2 - multiplier * a
+
+    n = len(df)
+    st_line = pd.Series(np.nan, index=df.index)
+    direction = pd.Series(0, index=df.index)
+    if n < 2:
+        return st_line, direction
+
+    direction.iloc[0] = 1
+    st_line.iloc[0] = lower_band.iloc[0]
+    for i in range(1, n):
+        if pd.isna(upper_band.iloc[i]) or pd.isna(lower_band.iloc[i]):
+            direction.iloc[i] = direction.iloc[i - 1]
+            st_line.iloc[i] = st_line.iloc[i - 1]
+            continue
+        if direction.iloc[i - 1] == 1:
+            new_lb = max(lower_band.iloc[i], st_line.iloc[i - 1])
+            if df["Close"].iloc[i] < new_lb:
+                direction.iloc[i] = -1
+                st_line.iloc[i] = upper_band.iloc[i]
+            else:
+                direction.iloc[i] = 1
+                st_line.iloc[i] = new_lb
+        else:
+            new_ub = min(upper_band.iloc[i], st_line.iloc[i - 1])
+            if df["Close"].iloc[i] > new_ub:
+                direction.iloc[i] = 1
+                st_line.iloc[i] = lower_band.iloc[i]
+            else:
+                direction.iloc[i] = -1
+                st_line.iloc[i] = new_ub
+    return st_line, direction
+
+
 def adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
     """Average Directional Index — values >25 indicate a trending market."""
     high, low, close = df["High"], df["Low"], df["Close"]
@@ -613,9 +719,18 @@ STRATEGY_LABELS = {
     "bollinger": "Bollinger Mean Reversion",
     "donchian": "Donchian 20d Breakout",
     "sma200_dip": "SMA200 Dip Buy",
+    "rsi": "RSI Strategy (oversold/overbought)",
+    "macd": "MACD Strategy (signal cross)",
+    "momentum": "Momentum (10-day rate of change)",
+    "stochastic": "Stochastic Slow",
+    "keltner": "Keltner Channels",
+    "supertrend": "Supertrend",
+    "psar": "Parabolic SAR",
+    "ma_cross": "MA Cross (20/50)",
+    "inside_bar": "Inside Bar Breakout",
+    "outside_bar": "Outside Bar Reversal",
 }
 
-# Index of the default strategy in the dropdowns above
 DEFAULT_STRATEGY_KEY = "bollinger"
 
 
@@ -706,11 +821,177 @@ def _strategy_sma200_dip(df: pd.DataFrame, dip: float = 0.05) -> pd.DataFrame:
     return out
 
 
+def _strategy_rsi(df: pd.DataFrame) -> pd.DataFrame:
+    """Buy on RSI cross up through 30 (oversold reversal); sell on cross down through 70."""
+    out = df.copy()
+    out["BUY"] = (out["RSI"].shift(1) < 30) & (out["RSI"] >= 30)
+    out["SELL"] = (out["RSI"].shift(1) > 70) & (out["RSI"] <= 70)
+    out["SCORE"] = out["BUY"].astype(int) * 2 - out["SELL"].astype(int) * 2
+    return out
+
+
+def _strategy_macd(df: pd.DataFrame) -> pd.DataFrame:
+    """MACD line crossing its signal line."""
+    out = df.copy()
+    out["BUY"] = (
+        (out["MACD"].shift(1) < out["MACD_SIGNAL"].shift(1))
+        & (out["MACD"] >= out["MACD_SIGNAL"])
+    )
+    out["SELL"] = (
+        (out["MACD"].shift(1) > out["MACD_SIGNAL"].shift(1))
+        & (out["MACD"] <= out["MACD_SIGNAL"])
+    )
+    out["SCORE"] = out["BUY"].astype(int) * 2 - out["SELL"].astype(int) * 2
+    return out
+
+
+def _strategy_momentum(df: pd.DataFrame, period: int = 10,
+                       buy_threshold: float = 5.0,
+                       sell_threshold: float = -5.0) -> pd.DataFrame:
+    """N-day rate of change crosses thresholds."""
+    out = df.copy()
+    roc = (out["Close"] / out["Close"].shift(period) - 1) * 100
+    out["BUY"] = (roc.shift(1) < buy_threshold) & (roc >= buy_threshold)
+    out["SELL"] = (roc.shift(1) > sell_threshold) & (roc <= sell_threshold)
+    out["SCORE"] = out["BUY"].astype(int) * 2 - out["SELL"].astype(int) * 2
+    return out
+
+
+def _strategy_stochastic(df: pd.DataFrame) -> pd.DataFrame:
+    """Stochastic %K crosses %D in oversold/overbought zones."""
+    out = df.copy()
+    if {"High", "Low", "Close"}.issubset(out.columns):
+        k, d = stochastic(out)
+    else:
+        out["BUY"] = False
+        out["SELL"] = False
+        out["SCORE"] = 0
+        return out
+    cross_up = (k.shift(1) < d.shift(1)) & (k >= d)
+    cross_dn = (k.shift(1) > d.shift(1)) & (k <= d)
+    out["BUY"] = cross_up & (k < 30)
+    out["SELL"] = cross_dn & (k > 70)
+    out["SCORE"] = out["BUY"].astype(int) * 2 - out["SELL"].astype(int) * 2
+    return out
+
+
+def _strategy_keltner(df: pd.DataFrame, period: int = 20,
+                      atr_mult: float = 2.0) -> pd.DataFrame:
+    """Keltner channels: EMA ± (ATR × multiplier). Mean-reversion at bands."""
+    out = df.copy()
+    if not {"High", "Low", "Close"}.issubset(out.columns):
+        out["BUY"] = False
+        out["SELL"] = False
+        out["SCORE"] = 0
+        return out
+    mid = out["Close"].ewm(span=period, adjust=False).mean()
+    a = atr(out, period)
+    upper = mid + atr_mult * a
+    lower = mid - atr_mult * a
+    out["BUY"] = (out["Close"].shift(1) > lower.shift(1)) & (out["Close"] <= lower)
+    out["SELL"] = (out["Close"].shift(1) < upper.shift(1)) & (out["Close"] >= upper)
+    out["SCORE"] = out["BUY"].astype(int) * 2 - out["SELL"].astype(int) * 2
+    return out
+
+
+def _strategy_supertrend(df: pd.DataFrame) -> pd.DataFrame:
+    """Buy when supertrend flips to uptrend (-1 -> +1); sell on flip to downtrend."""
+    out = df.copy()
+    if not {"High", "Low", "Close"}.issubset(out.columns):
+        out["BUY"] = False
+        out["SELL"] = False
+        out["SCORE"] = 0
+        return out
+    _, direction = supertrend(out)
+    out["BUY"] = (direction.shift(1) == -1) & (direction == 1)
+    out["SELL"] = (direction.shift(1) == 1) & (direction == -1)
+    out["SCORE"] = out["BUY"].astype(int) * 2 - out["SELL"].astype(int) * 2
+    return out
+
+
+def _strategy_psar(df: pd.DataFrame) -> pd.DataFrame:
+    """Buy when close crosses above PSAR; sell when close crosses below."""
+    out = df.copy()
+    if not {"High", "Low", "Close"}.issubset(out.columns):
+        out["BUY"] = False
+        out["SELL"] = False
+        out["SCORE"] = 0
+        return out
+    psar = parabolic_sar(out)
+    above = out["Close"] > psar
+    out["BUY"] = (~above.shift(1).fillna(False)) & above
+    out["SELL"] = above.shift(1).fillna(False) & (~above)
+    out["SCORE"] = out["BUY"].astype(int) * 2 - out["SELL"].astype(int) * 2
+    return out
+
+
+def _strategy_ma_cross(df: pd.DataFrame, fast: int = 20,
+                       slow: int = 50) -> pd.DataFrame:
+    """Fast SMA crosses slow SMA — classic golden/death cross variant."""
+    out = df.copy()
+    sma_fast = out["Close"].rolling(fast).mean()
+    sma_slow = out["Close"].rolling(slow).mean()
+    out["BUY"] = (sma_fast.shift(1) < sma_slow.shift(1)) & (sma_fast >= sma_slow)
+    out["SELL"] = (sma_fast.shift(1) > sma_slow.shift(1)) & (sma_fast <= sma_slow)
+    out["SCORE"] = out["BUY"].astype(int) * 2 - out["SELL"].astype(int) * 2
+    return out
+
+
+def _strategy_inside_bar(df: pd.DataFrame) -> pd.DataFrame:
+    """Inside bar = today's high < yesterday's high AND today's low > yesterday's low.
+    Buy when price breaks above the inside-bar's high; sell on break below."""
+    out = df.copy()
+    if not {"High", "Low", "Close"}.issubset(out.columns):
+        out["BUY"] = False
+        out["SELL"] = False
+        out["SCORE"] = 0
+        return out
+    inside = (out["High"] < out["High"].shift(1)) & (out["Low"] > out["Low"].shift(1))
+    inside_high = out["High"].where(inside)
+    inside_low = out["Low"].where(inside)
+    last_high = inside_high.ffill().shift(1)
+    last_low = inside_low.ffill().shift(1)
+    out["BUY"] = out["Close"] > last_high
+    out["SELL"] = out["Close"] < last_low
+    # Only fire once per breakout — when first crossing
+    out["BUY"] = out["BUY"] & ~out["BUY"].shift(1).fillna(False)
+    out["SELL"] = out["SELL"] & ~out["SELL"].shift(1).fillna(False)
+    out["SCORE"] = out["BUY"].astype(int) * 2 - out["SELL"].astype(int) * 2
+    return out
+
+
+def _strategy_outside_bar(df: pd.DataFrame) -> pd.DataFrame:
+    """Outside bar = today's high > yesterday's high AND today's low < yesterday's low.
+    Buy on outside bar that closes above prior close (bullish reversal);
+    sell on outside bar that closes below prior close (bearish reversal)."""
+    out = df.copy()
+    if not {"High", "Low", "Close"}.issubset(out.columns):
+        out["BUY"] = False
+        out["SELL"] = False
+        out["SCORE"] = 0
+        return out
+    outside = (out["High"] > out["High"].shift(1)) & (out["Low"] < out["Low"].shift(1))
+    out["BUY"] = outside & (out["Close"] > out["Close"].shift(1))
+    out["SELL"] = outside & (out["Close"] < out["Close"].shift(1))
+    out["SCORE"] = out["BUY"].astype(int) * 2 - out["SELL"].astype(int) * 2
+    return out
+
+
 _STRATEGIES = {
     "trend": _strategy_trend,
     "bollinger": _strategy_bollinger,
     "donchian": _strategy_donchian,
     "sma200_dip": _strategy_sma200_dip,
+    "rsi": _strategy_rsi,
+    "macd": _strategy_macd,
+    "momentum": _strategy_momentum,
+    "stochastic": _strategy_stochastic,
+    "keltner": _strategy_keltner,
+    "supertrend": _strategy_supertrend,
+    "psar": _strategy_psar,
+    "ma_cross": _strategy_ma_cross,
+    "inside_bar": _strategy_inside_bar,
+    "outside_bar": _strategy_outside_bar,
 }
 
 
