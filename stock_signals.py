@@ -964,7 +964,9 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
     fig.update_layout(
         title=dict(text=title, x=0.01, xanchor="left", font=dict(size=14)),
         height=height,
-        margin=dict(l=10, r=10, t=160, b=40),
+        # Uniform 50px breathing room on left, right and bottom; top is bigger
+        # because it has to host the title + range buttons + legend.
+        margin=dict(l=50, r=50, t=160, b=50),
         hovermode="x unified",
         # Legend on the top-right so it doesn't collide with range buttons (top-left)
         legend=dict(
