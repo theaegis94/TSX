@@ -18,6 +18,33 @@ st.set_page_config(page_title="Stock Signals", layout="wide", page_icon="📈")
 st.markdown(
     """
     <style>
+    /* Extra breathing room between major page sections */
+    .stApp .main .block-container > div > div > div[data-testid="stVerticalBlock"] > div {
+        margin-bottom: 14px;
+    }
+
+    /* Wider gap above and below containers (popups, dialogs) */
+    .stApp [data-testid="stVerticalBlockBorderWrapper"] {
+        margin-top: 18px !important;
+        margin-bottom: 18px !important;
+    }
+
+    /* Space between the watchlist bar rows */
+    .stApp [data-testid="stHorizontalBlock"] {
+        margin-bottom: 8px;
+    }
+
+    /* Macro caption rows: a small gap between Canadian and US lines */
+    .stApp .element-container > div[data-testid="stMarkdownContainer"] {
+        margin-bottom: 4px;
+    }
+
+    /* Top headline title needs extra room before content */
+    .stApp .main h1:first-child,
+    .stApp .main [data-testid="stHeading"]:first-child {
+        margin-bottom: 24px !important;
+    }
+
     /* High-contrast text selection — bright yellow on black */
     ::selection {
         background: #fbbf24 !important;
