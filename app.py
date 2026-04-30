@@ -711,7 +711,15 @@ with tab_screener:
     sc_col1, sc_col2 = st.columns([1, 1])
     universe_choice = sc_col1.radio(
         "Universe",
-        options=["S&P 100 (~100)", "TSX 60 (~60)", "Custom watchlist"],
+        options=[
+            "S&P 100 (~100)",
+            "S&P 500 (~500)",
+            "TSX 60 (~60)",
+            "TSX Composite (~250)",
+            "Popular ETFs (~80)",
+            "All US + TSX + ETFs (~850)",
+            "Custom watchlist",
+        ],
         index=0,
         key="screener_universe",
     )
@@ -741,27 +749,60 @@ with tab_screener:
         help="Current RSI ≤ threshold",
     )
 
-    if universe_choice.startswith("S&P"):
+    @st.cache_data(ttl=86400 * 7, show_spinner=False)
+    def _cached_sp500() -> list:
+        return ss.get_sp500()
+
+    @st.cache_data(ttl=86400 * 7, show_spinner=False)
+    def _cached_tsx_composite() -> list:
+        return ss.get_tsx_composite()
+
+    if universe_choice.startswith("S&P 100"):
         universe = ss.UNIVERSE_SP100
-    elif universe_choice.startswith("TSX"):
+    elif universe_choice.startswith("S&P 500"):
+        universe = _cached_sp500()
+    elif universe_choice.startswith("TSX 60"):
         universe = ss.UNIVERSE_TSX60
+    elif universe_choice.startswith("TSX Composite"):
+        universe = _cached_tsx_composite()
+    elif universe_choice.startswith("Popular ETFs"):
+        universe = ss.UNIVERSE_POPULAR_ETFS
+    elif universe_choice.startswith("All US"):
+        universe = list(dict.fromkeys(
+            list(_cached_sp500()) + list(_cached_tsx_composite())
+            + list(ss.UNIVERSE_POPULAR_ETFS)
+        ))
     else:
         universe = list(tickers)
 
-    st.caption(f"Will scan **{len(universe)}** tickers (one batched API call).")
+    n_batches = (len(universe) + 99) // 100
+    eta_seconds = n_batches * 5
+    st.caption(
+        f"Will scan **{len(universe)}** tickers in {n_batches} batched API call"
+        f"{'s' if n_batches != 1 else ''}. ETA ~{eta_seconds}s."
+    )
 
     run_col, clear_col = st.columns([3, 1])
     if run_col.button("🎯 Run screener", type="primary",
                       disabled=not (require_bb or require_rsi),
                       use_container_width=True):
-        with st.spinner(f"Scanning {len(universe)} tickers…"):
-            matches = ss.screen_buy_signals(
-                universe,
-                rsi_threshold=rsi_thresh,
-                lookback_bars=lookback_days,
-                require_bollinger=require_bb,
-                require_rsi=require_rsi,
+        progress = st.progress(0.0, text=f"Scanning {len(universe)} tickers…")
+
+        def _progress_cb(frac: float, hits: int):
+            progress.progress(
+                frac,
+                text=f"Scanning… {int(frac*100)}% — {hits} match{'es' if hits != 1 else ''} so far",
             )
+
+        matches = ss.screen_buy_signals(
+            universe,
+            rsi_threshold=rsi_thresh,
+            lookback_bars=lookback_days,
+            require_bollinger=require_bb,
+            require_rsi=require_rsi,
+            progress_callback=_progress_cb,
+        )
+        progress.empty()
         # Persist results so they survive across reruns triggered by row clicks
         st.session_state["_screener_matches"] = matches
     if clear_col.button("Clear results", use_container_width=True,

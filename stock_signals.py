@@ -182,7 +182,9 @@ def _quote_from_df(df, t: str) -> dict | None:
 def screen_buy_signals(tickers: list[str], rsi_threshold: float = 35.0,
                        lookback_bars: int = 22,
                        require_bollinger: bool = True,
-                       require_rsi: bool = True) -> list[dict]:
+                       require_rsi: bool = True,
+                       batch_size: int = 100,
+                       progress_callback=None) -> list[dict]:
     """Find tickers with confluence buy signals: Bollinger lower-band BUY + RSI oversold.
 
     rsi_threshold: RSI must be at or below this value (default 35 — relaxed oversold).
@@ -201,20 +203,43 @@ def screen_buy_signals(tickers: list[str], rsi_threshold: float = 35.0,
     if not tickers or not (require_bollinger or require_rsi):
         return []
 
-    try:
-        df = yf.download(
-            " ".join(tickers),
-            period="1y",
-            interval="1d",
-            auto_adjust=True,
-            progress=False,
-            group_by="ticker",
-        )
-    except Exception:
-        return []
-    if df is None or df.empty:
-        return []
+    # Deduplicate and chunk into batches (Yahoo handles ~100 tickers per call well)
+    unique = list(dict.fromkeys(tickers))
+    batches = [unique[i:i + batch_size] for i in range(0, len(unique), batch_size)]
 
+    matches: list[dict] = []
+    for batch_idx, batch in enumerate(batches):
+        try:
+            df = yf.download(
+                " ".join(batch),
+                period="1y",
+                interval="1d",
+                auto_adjust=True,
+                progress=False,
+                group_by="ticker",
+            )
+        except Exception:
+            df = None
+
+        if df is not None and not df.empty:
+            matches.extend(_screen_batch(
+                df, batch, rsi_threshold, lookback_bars,
+                require_bollinger, require_rsi,
+            ))
+
+        if progress_callback is not None:
+            progress_callback((batch_idx + 1) / len(batches), len(matches))
+
+    matches.sort(key=lambda r: (
+        r["bb_buy_age"] if r["bb_buy_age"] is not None else 9999,
+        r["rsi"],
+    ))
+    return matches
+
+
+def _screen_batch(df, tickers, rsi_threshold, lookback_bars,
+                  require_bollinger, require_rsi) -> list[dict]:
+    """Process one batch of yf.download output into match rows."""
     matches: list[dict] = []
     for t in tickers:
         try:
@@ -265,12 +290,7 @@ def screen_buy_signals(tickers: list[str], rsi_threshold: float = 35.0,
             })
         except (KeyError, AttributeError, ValueError, IndexError, TypeError):
             continue
-
-    # Sort: most recent BB BUY first (lower age = more recent), tie-break by lower RSI
-    return sorted(matches, key=lambda r: (
-        r["bb_buy_age"] if r["bb_buy_age"] is not None else 9999,
-        r["rsi"],
-    ))
+    return matches
 
 
 def fetch_watchlist_quotes(tickers: list[str]) -> dict:
@@ -866,6 +886,105 @@ def normalize_ticker(raw: str) -> str:
 
 # Back-compat alias (older code paths called the TSX-only name).
 normalize_tsx_ticker = normalize_ticker
+
+
+# --- Universe lists for the screener ---
+# Larger lists fetched from Wikipedia (cached for a week). Hardcoded fallbacks
+# in case Wikipedia is unreachable from the deploy environment.
+
+_SP500_FALLBACK_NOTE = "(fetch from Wikipedia failed — using a smaller fallback list)"
+
+
+_WIKI_UA = "Mozilla/5.0 (compatible; SignalDashboard/1.0)"
+
+
+def _wiki_tables(url: str) -> list:
+    """Fetch a Wikipedia page with a proper UA, then parse all tables."""
+    import io
+    resp = requests.get(url, headers={"User-Agent": _WIKI_UA}, timeout=15)
+    resp.raise_for_status()
+    return pd.read_html(io.StringIO(resp.text))
+
+
+def get_sp500() -> list[str]:
+    """Live S&P 500 tickers from Wikipedia. Yahoo-format (BRK.B -> BRK-B)."""
+    try:
+        tables = _wiki_tables(
+            "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+        )
+        df = tables[0]
+        symbols = df["Symbol"].astype(str).str.upper().str.replace(".", "-", regex=False).tolist()
+        symbols = [s for s in symbols if s and s.replace("-", "").isalnum()]
+        return symbols
+    except Exception:
+        return UNIVERSE_SP100
+
+
+def get_tsx_composite() -> list[str]:
+    """Live S&P/TSX Composite tickers from Wikipedia, suffixed .TO."""
+    try:
+        tables = _wiki_tables(
+            "https://en.wikipedia.org/wiki/S%26P/TSX_Composite_Index"
+        )
+        # The constituent table column may be named "Symbol" or "Ticker"
+        for t in tables:
+            cols_lc = [str(c).strip().lower() for c in t.columns]
+            sym_col = None
+            for cand in ("symbol", "ticker"):
+                if cand in cols_lc:
+                    sym_col = t.columns[cols_lc.index(cand)]
+                    break
+            if sym_col is None:
+                continue
+            symbols = t[sym_col].fillna("").astype(str).str.upper().str.strip().tolist()
+            cleaned = []
+            for s in symbols:
+                if not isinstance(s, str) or not s or s in ("NAN", "NONE"):
+                    continue
+                if s.endswith((".A", ".B", ".U", ".UN")):
+                    s = s.replace(".", "-")
+                if len(s) > 12 or "—" in s:
+                    continue
+                if not s.endswith(".TO") and "." not in s:
+                    s = f"{s}.TO"
+                cleaned.append(s)
+            if len(cleaned) > 100:  # plausible composite size
+                return cleaned
+        raise ValueError("no constituent table found")
+    except Exception:
+        return UNIVERSE_TSX60
+
+
+# Curated popular ETFs from US + Canadian markets
+UNIVERSE_POPULAR_ETFS = [
+    # US broad market
+    "SPY", "VOO", "IVV", "VTI", "ITOT", "SPLG",
+    # US sectors
+    "QQQ", "QQQM", "DIA", "IWM", "MDY", "VTV", "VUG", "IWF", "IWD",
+    "XLK", "XLF", "XLE", "XLV", "XLI", "XLY", "XLP", "XLU", "XLB", "XLRE", "XLC",
+    # US fixed income
+    "AGG", "BND", "TLT", "IEF", "SHY", "LQD", "HYG", "MUB", "TIP",
+    # US international / EM
+    "VXUS", "EFA", "VEA", "EEM", "VWO", "IEMG",
+    # US commodities / alts
+    "GLD", "SLV", "GDX", "USO", "UNG", "DBC",
+    # US thematic
+    "ARKK", "ARKG", "SOXX", "SMH", "XBI", "IBB", "XOP", "TAN", "ICLN", "JETS", "KWEB",
+    # CA broad market
+    "XIC.TO", "XIU.TO", "VCN.TO", "ZCN.TO", "XEQT.TO", "VEQT.TO", "HEQT.TO",
+    # CA US-exposure
+    "VFV.TO", "ZSP.TO", "HXS.TO", "XSP.TO", "VSP.TO",
+    # CA NASDAQ
+    "QQC.TO", "ZQQ.TO", "HXQ.TO",
+    # CA sector / thematic
+    "XEG.TO", "XFN.TO", "XGD.TO", "XIT.TO", "XMA.TO",
+    # CA fixed income
+    "XBB.TO", "ZAG.TO", "VAB.TO", "XSB.TO",
+    # CA dividend
+    "VDY.TO", "XEI.TO", "CDZ.TO", "ZDV.TO",
+    # CA inverse / leveraged
+    "HOD.TO", "HOU.TO", "HXD.TO", "HXU.TO",
+]
 
 
 # Predefined universes for the screener
