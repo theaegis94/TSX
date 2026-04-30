@@ -1345,27 +1345,12 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
         row_heights=[0.60, 0.20, 0.20],
     )
 
-    # --- Price panel — candlesticks ---
-    has_ohlc = {"Open", "High", "Low"}.issubset(df.columns)
-    if has_ohlc:
-        fig.add_trace(go.Candlestick(
-            x=df.index,
-            open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"],
-            name="OHLC",
-            increasing_line_color="#26a69a",
-            decreasing_line_color="#ef5350",
-            increasing_fillcolor="#26a69a",
-            decreasing_fillcolor="#ef5350",
-            line=dict(width=0.8),
-            whiskerwidth=0.5,
-            showlegend=True,
-        ), row=1, col=1)
-    else:
-        fig.add_trace(go.Scatter(
-            x=df.index, y=df["Close"], mode="lines", name="Close",
-            line=dict(color="#e5e7eb", width=1.0),
-            hovertemplate="<b>%{x|%Y-%m-%d}</b><br>Close: $%{y:.2f}<extra></extra>",
-        ), row=1, col=1)
+    # --- Price panel — single Close line ---
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df["Close"], mode="lines", name="Close",
+        line=dict(color="#e5e7eb", width=1.2),
+        hovertemplate="<b>%{x|%Y-%m-%d}</b><br>Close: $%{y:.2f}<extra></extra>",
+    ), row=1, col=1)
 
     # Overlay SMAs — thin lines so they don't drown the candles
     fig.add_trace(go.Scatter(
