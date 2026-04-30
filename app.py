@@ -27,13 +27,27 @@ def cached_macro() -> dict:
     }
 
 
+@st.cache_data(ttl=86400, show_spinner=False)
+def cached_metrics(ticker: str) -> dict:
+    """Per-ticker fundamentals cache. 24h TTL — fundamentals update quarterly,
+    and Yahoo rate-limits aggressively from cloud data centers."""
+    return ss.yf_metrics(ticker)
+
+
 @st.cache_data(ttl=900, show_spinner=False)
-def cached_scan(tickers: tuple, period: str, interval: str) -> list:
-    return ss.scan(list(tickers), period, interval)
+def cached_scan(tickers: tuple, period: str, interval: str,
+                strategy: str, adx_filter: bool,
+                stop_loss_pct: float | None) -> list:
+    return ss.scan(list(tickers), period, interval,
+                   strategy=strategy, adx_filter=adx_filter,
+                   stop_loss_pct=stop_loss_pct,
+                   metrics_fn=cached_metrics)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def cached_single(ticker: str, period: str, interval: str):
+def cached_single(ticker: str, period: str, interval: str,
+                  strategy: str, adx_filter: bool,
+                  stop_loss_pct: float | None):
     df = yf.download(ticker, period=period, interval=interval,
                      auto_adjust=True, progress=False)
     if df.empty:
@@ -41,8 +55,8 @@ def cached_single(ticker: str, period: str, interval: str):
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     df = ss.compute_indicators(df)
-    df = ss.generate_signals(df)
-    stats = ss.backtest(df)
+    df = ss.generate_signals(df, strategy=strategy, adx_filter=adx_filter)
+    stats = ss.backtest(df, stop_loss_pct=stop_loss_pct)
     return df, stats
 
 
@@ -79,12 +93,36 @@ with st.sidebar:
     period = st.selectbox("Lookback period", ["6mo", "1y", "2y", "5y", "10y"],
                           index=2)
     interval = st.selectbox("Bar interval", ["1d", "1wk"], index=0)
+
+    st.subheader("Strategy")
+    strategy = st.selectbox(
+        "Signal strategy",
+        options=list(ss.STRATEGY_LABELS.keys()),
+        format_func=lambda k: ss.STRATEGY_LABELS[k],
+        index=0,
+    )
+    adx_filter = st.checkbox(
+        "ADX trend filter (>25)",
+        value=False,
+        help="Suppresses signals in choppy/range-bound markets. "
+             "Improves quality, reduces frequency.",
+    )
+
+    st.subheader("Risk")
+    stop_choice = st.selectbox(
+        "Stop loss",
+        options=["None", "5%", "7%", "10%", "15%"],
+        index=0,
+        help="Exit if cumulative drawdown from entry hits this level.",
+    )
+    stop_loss_pct = None if stop_choice == "None" else int(stop_choice.rstrip("%")) / 100
+
     st.divider()
     if st.button("🔄 Clear cache & refresh"):
         st.cache_data.clear()
         st.rerun()
     st.caption(
-        f"Cached for 15 min (scan/macro/news), 1 hr (single ticker). "
+        f"Cached 15 min (scan/macro/news), 1 hr (single). "
         f"Last loaded: {datetime.now().strftime('%H:%M:%S')}"
     )
     st.divider()
@@ -113,7 +151,8 @@ with tab_scan:
     tickers = tuple(t.strip() for t in watchlist_str.split(",") if t.strip())
 
     with st.spinner(f"Scanning {len(tickers)} tickers…"):
-        rows = cached_scan(tickers, period, interval)
+        rows = cached_scan(tickers, period, interval,
+                           strategy, adx_filter, stop_loss_pct)
 
     ok = [r for r in rows if "error" not in r]
     bad = [r for r in rows if "error" in r]
@@ -136,9 +175,12 @@ with tab_scan:
                 "Holds": r["rec"][1] if r.get("rec") else None,
                 "Sells": r["rec"][2] if r.get("rec") else None,
                 "Trades": r["trades"],
+                "Stops": r.get("stops", 0),
                 "Win %": r["win_rate"] * 100,
                 "Strat %": r["strat"] * 100,
+                "Max DD %": r.get("max_dd", 0) * 100,
                 "B&H %": r["bh"] * 100,
+                "ADX": r.get("adx"),
             }
             for r in ok
         ])
@@ -166,9 +208,18 @@ with tab_scan:
                 "Holds": st.column_config.NumberColumn(format="%d"),
                 "Sells": st.column_config.NumberColumn(format="%d"),
                 "Trades": st.column_config.NumberColumn(format="%d"),
+                "Stops": st.column_config.NumberColumn(format="%d"),
                 "Win %": st.column_config.NumberColumn(format="%.0f"),
                 "Strat %": st.column_config.NumberColumn(format="%+.1f"),
+                "Max DD %": st.column_config.NumberColumn(
+                    format="%.1f",
+                    help="Worst peak-to-trough drawdown of the strategy",
+                ),
                 "B&H %": st.column_config.NumberColumn(format="%+.1f"),
+                "ADX": st.column_config.NumberColumn(
+                    format="%.1f",
+                    help="Trend strength: <20 weak, >25 strong, >40 very strong",
+                ),
             },
         )
 
@@ -199,7 +250,8 @@ with tab_single:
             st.error(str(e))
         else:
             with st.spinner(f"Loading {ticker}…"):
-                df, stats = cached_single(ticker, period, interval)
+                df, stats = cached_single(ticker, period, interval,
+                                          strategy, adx_filter, stop_loss_pct)
 
             if df is None:
                 st.error(f"No data for {ticker}.")
@@ -212,12 +264,17 @@ with tab_single:
                 else:
                     st.info(f"⚪ HOLD — score {int(last['SCORE']):+d}")
 
-                c1, c2, c3, c4 = st.columns(4)
+                c1, c2, c3, c4, c5 = st.columns(5)
                 c1.metric("Trades", stats["trades"])
                 c2.metric("Win Rate", f"{stats['win_rate']:.0%}")
                 c3.metric("Strategy", f"{stats['total_return']:+.1%}")
                 c4.metric("Buy & Hold", f"{stats['buy_hold']:+.1%}",
                           delta=f"{(stats['total_return']-stats['buy_hold'])*100:+.1f}%")
+                c5.metric("Max DD", f"{stats.get('max_drawdown', 0):.1%}",
+                          help="Worst peak-to-trough drawdown of the strategy")
+                if stats.get("stops_hit", 0) > 0:
+                    st.caption(f"⚠️ {stats['stops_hit']} of {stats['trades']} "
+                               f"trades exited via stop-loss")
 
                 metrics = ss.yf_metrics(ticker)
                 if metrics:

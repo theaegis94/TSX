@@ -80,11 +80,15 @@ def yf_metrics(ticker: str) -> dict:
 
     Free, no API key, full TSX coverage including ETFs.
     Returns dict with optional keys: pe, yield_pct, beta, upside_pct, earn_days.
+    Returns {} on any error (rate limit, network, parse) so the scan continues.
     """
     out: dict = {}
     try:
         info = yf.Ticker(ticker).info or {}
-    except (requests.RequestException, ValueError, KeyError, AttributeError):
+    except Exception:
+        # Broad catch: yfinance has many custom exception types (YFRateLimitError,
+        # YFTickerMissingError, etc.) plus network/parse errors. We never want
+        # an info fetch to break the scan.
         return out
 
     pe = info.get("trailingPE") or info.get("forwardPE")
@@ -327,30 +331,59 @@ def macd(series: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9):
     return macd_line, signal_line, hist
 
 
+def adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    """Average Directional Index — values >25 indicate a trending market."""
+    high, low, close = df["High"], df["Low"], df["Close"]
+    up_move = high.diff()
+    down_move = -low.diff()
+    plus_dm = up_move.where((up_move > down_move) & (up_move > 0), 0.0)
+    minus_dm = down_move.where((down_move > up_move) & (down_move > 0), 0.0)
+
+    tr = pd.concat([
+        high - low,
+        (high - close.shift()).abs(),
+        (low - close.shift()).abs(),
+    ], axis=1).max(axis=1)
+
+    atr = tr.ewm(alpha=1 / period, adjust=False).mean()
+    plus_di = 100 * plus_dm.ewm(alpha=1 / period, adjust=False).mean() / atr
+    minus_di = 100 * minus_dm.ewm(alpha=1 / period, adjust=False).mean() / atr
+    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan)
+    return dx.ewm(alpha=1 / period, adjust=False).mean()
+
+
+def bollinger(series: pd.Series, period: int = 20, std: float = 2.0):
+    mid = series.rolling(period).mean()
+    dev = series.rolling(period).std()
+    return mid - std * dev, mid, mid + std * dev
+
+
 def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     out["SMA50"] = out["Close"].rolling(50).mean()
     out["SMA200"] = out["Close"].rolling(200).mean()
     out["RSI"] = rsi(out["Close"])
     out["MACD"], out["MACD_SIGNAL"], out["MACD_HIST"] = macd(out["Close"])
+    out["BB_LOWER"], out["BB_MID"], out["BB_UPPER"] = bollinger(out["Close"])
+    out["DC_HIGH"] = out["High"].rolling(20).max()
+    out["DC_LOW"] = out["Low"].rolling(20).min()
+    if {"High", "Low", "Close"}.issubset(out.columns):
+        out["ADX"] = adx(out)
     return out
 
 
-def generate_signals(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Score-based signals (no lookahead). Each bar gets a score in [-3, +3]:
-      +1 when RSI crosses up through 30  (oversold bounce)
-      +1 when MACD line crosses above its signal line
-      +1 when SMA50 crosses above SMA200 (golden cross)
-      -1 when RSI crosses down through 70 (overbought)
-      -1 when MACD line crosses below its signal line
-      -1 when SMA50 crosses below SMA200 (death cross)
+# === Strategy registry ===
 
-    BUY  when score >= +2 (>=2 confirmations same bar/window)
-    SELL when score <= -2
+STRATEGY_LABELS = {
+    "trend": "Trend (RSI+MACD+SMA, default)",
+    "bollinger": "Bollinger Mean Reversion",
+    "donchian": "Donchian 20d Breakout",
+    "sma200_dip": "SMA200 Dip Buy",
+}
 
-    To avoid noise we look at confirmations within a 5-bar window.
-    """
+
+def _strategy_trend(df: pd.DataFrame) -> pd.DataFrame:
+    """Original confirmation-based trend strategy."""
     out = df.copy()
     window = 5
 
@@ -375,16 +408,12 @@ def generate_signals(df: pd.DataFrame) -> pd.DataFrame:
         & (out["SMA50"] <= out["SMA200"])
     ).astype(int)
 
-    bull = (
-        rsi_up.rolling(window).max().fillna(0)
-        + macd_up.rolling(window).max().fillna(0)
-        + sma_up.rolling(window).max().fillna(0)
-    )
-    bear = (
-        rsi_dn.rolling(window).max().fillna(0)
-        + macd_dn.rolling(window).max().fillna(0)
-        + sma_dn.rolling(window).max().fillna(0)
-    )
+    bull = (rsi_up.rolling(window).max().fillna(0)
+            + macd_up.rolling(window).max().fillna(0)
+            + sma_up.rolling(window).max().fillna(0))
+    bear = (rsi_dn.rolling(window).max().fillna(0)
+            + macd_dn.rolling(window).max().fillna(0)
+            + sma_dn.rolling(window).max().fillna(0))
 
     out["SCORE"] = bull - bear
     out["BUY"] = (out["SCORE"] >= 2) & (out["SCORE"].shift(1) < 2)
@@ -392,41 +421,152 @@ def generate_signals(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def backtest(df: pd.DataFrame) -> dict:
-    """Long-only: enter on BUY close, exit on SELL close. Cash otherwise."""
+def _strategy_bollinger(df: pd.DataFrame) -> pd.DataFrame:
+    """Mean reversion: buy at lower band touch, sell at upper band touch."""
+    out = df.copy()
+    out["BUY"] = (
+        (out["Close"].shift(1) > out["BB_LOWER"].shift(1))
+        & (out["Close"] <= out["BB_LOWER"])
+    )
+    out["SELL"] = (
+        (out["Close"].shift(1) < out["BB_UPPER"].shift(1))
+        & (out["Close"] >= out["BB_UPPER"])
+    )
+    out["SCORE"] = out["BUY"].astype(int) * 2 - out["SELL"].astype(int) * 2
+    return out
+
+
+def _strategy_donchian(df: pd.DataFrame) -> pd.DataFrame:
+    """Breakout: buy on 20d high break, sell on 20d low break (compares to prior day's channel)."""
+    out = df.copy()
+    out["BUY"] = (
+        (out["Close"] > out["DC_HIGH"].shift(1))
+        & (out["Close"].shift(1) <= out["DC_HIGH"].shift(2))
+    )
+    out["SELL"] = (
+        (out["Close"] < out["DC_LOW"].shift(1))
+        & (out["Close"].shift(1) >= out["DC_LOW"].shift(2))
+    )
+    out["SCORE"] = out["BUY"].astype(int) * 2 - out["SELL"].astype(int) * 2
+    return out
+
+
+def _strategy_sma200_dip(df: pd.DataFrame, dip: float = 0.05) -> pd.DataFrame:
+    """In a long-term uptrend (rising SMA200), buy 5%+ dips below SMA200, sell on SMA50 recovery."""
+    out = df.copy()
+    in_uptrend = out["SMA200"] > out["SMA200"].shift(20)
+    dip_threshold = out["SMA200"] * (1 - dip)
+    out["BUY"] = (
+        in_uptrend
+        & (out["Close"] < dip_threshold)
+        & (out["Close"].shift(1) >= dip_threshold.shift(1))
+    )
+    out["SELL"] = (
+        (out["Close"] >= out["SMA50"])
+        & (out["Close"].shift(1) < out["SMA50"].shift(1))
+    )
+    out["SCORE"] = out["BUY"].astype(int) * 2 - out["SELL"].astype(int) * 2
+    return out
+
+
+_STRATEGIES = {
+    "trend": _strategy_trend,
+    "bollinger": _strategy_bollinger,
+    "donchian": _strategy_donchian,
+    "sma200_dip": _strategy_sma200_dip,
+}
+
+
+def generate_signals(df: pd.DataFrame, strategy: str = "trend",
+                     adx_filter: bool = False,
+                     adx_threshold: float = 25.0) -> pd.DataFrame:
+    """Generate BUY/SELL/SCORE columns for the chosen strategy.
+
+    If adx_filter=True, signals are zeroed out where ADX < adx_threshold
+    (suppresses signals in choppy/range-bound markets)."""
+    fn = _STRATEGIES.get(strategy, _strategy_trend)
+    out = fn(df)
+    if adx_filter and "ADX" in out.columns:
+        weak = out["ADX"] < adx_threshold
+        out.loc[weak, "BUY"] = False
+        out.loc[weak, "SELL"] = False
+    return out
+
+
+def backtest(df: pd.DataFrame, stop_loss_pct: float | None = None) -> dict:
+    """Long-only: enter on BUY close, exit on SELL close (or stop). Cash otherwise.
+
+    stop_loss_pct: e.g. 0.07 = exit if drawdown from entry hits -7%. None disables.
+    Returns trades, win_rate, total_return, buy_hold, max_drawdown, stops_hit.
+    """
+    bh = (float(df["Close"].iloc[-1] / df["Close"].iloc[0] - 1)
+          if len(df) >= 2 else 0.0)
+
+    equity = 1.0
+    peak = 1.0
+    max_dd = 0.0
     position = 0
     entry = 0.0
+    entry_ts = None
     trades = []
+
     for ts, row in df.iterrows():
         price = float(row["Close"])
+
+        # Mark-to-market equity for drawdown tracking
+        if position == 1 and entry > 0:
+            cur_equity = equity * (price / entry)
+        else:
+            cur_equity = equity
+        peak = max(peak, cur_equity)
+        if peak > 0:
+            dd = (cur_equity - peak) / peak
+            if dd < max_dd:
+                max_dd = dd
+
         if position == 0 and bool(row["BUY"]):
             position = 1
             entry = price
             entry_ts = ts
-        elif position == 1 and bool(row["SELL"]):
-            ret = (price - entry) / entry
-            trades.append({"entry": entry_ts, "exit": ts, "return": ret})
-            position = 0
+            continue
+
+        if position == 1:
+            stopped = False
+            if stop_loss_pct is not None:
+                stop_price = entry * (1 - stop_loss_pct)
+                if price <= stop_price:
+                    stopped = True
+
+            if stopped or bool(row["SELL"]):
+                ret = (price - entry) / entry
+                trades.append({"entry": entry_ts, "exit": ts,
+                               "return": ret, "stopped": stopped})
+                equity *= (1 + ret)
+                position = 0
 
     if position == 1:
         last_price = float(df["Close"].iloc[-1])
         ret = (last_price - entry) / entry
-        trades.append(
-            {"entry": entry_ts, "exit": df.index[-1], "return": ret, "open": True}
-        )
+        trades.append({"entry": entry_ts, "exit": df.index[-1],
+                       "return": ret, "open": True, "stopped": False})
+        equity *= (1 + ret)
+
+    stops_hit = sum(1 for t in trades if t.get("stopped"))
 
     if not trades:
-        return {"trades": 0, "win_rate": 0.0, "total_return": 0.0, "buy_hold": 0.0}
+        return {"trades": 0, "win_rate": 0.0, "total_return": 0.0,
+                "buy_hold": bh, "max_drawdown": max_dd, "stops_hit": 0}
 
     rets = np.array([t["return"] for t in trades])
-    total = float(np.prod(1 + rets) - 1)
+    total = float(equity - 1)
     win_rate = float((rets > 0).mean())
-    bh = float(df["Close"].iloc[-1] / df["Close"].iloc[0] - 1)
     return {
         "trades": len(trades),
         "win_rate": win_rate,
         "total_return": total,
         "buy_hold": bh,
+        "max_drawdown": max_dd,
+        "stops_hit": stops_hit,
         "detail": trades,
     }
 
@@ -525,7 +665,13 @@ DEFAULT_WATCHLIST = [
 ]
 
 
-def scan(tickers: list[str], period: str, interval: str) -> list[dict]:
+def scan(tickers: list[str], period: str, interval: str,
+         strategy: str = "trend", adx_filter: bool = False,
+         stop_loss_pct: float | None = None,
+         metrics_fn=None) -> list[dict]:
+    """metrics_fn: optional override for fundamentals lookup (defaults to yf_metrics).
+    Allows the Streamlit layer to inject its own cached version."""
+    metrics_fn = metrics_fn or yf_metrics
     rows = []
     for raw in tickers:
         try:
@@ -546,8 +692,8 @@ def scan(tickers: list[str], period: str, interval: str) -> list[dict]:
             df.columns = df.columns.get_level_values(0)
 
         df = compute_indicators(df)
-        df = generate_signals(df)
-        stats = backtest(df)
+        df = generate_signals(df, strategy=strategy, adx_filter=adx_filter)
+        stats = backtest(df, stop_loss_pct=stop_loss_pct)
 
         last = df.iloc[-1]
         score = float(last["SCORE"])
@@ -562,14 +708,17 @@ def scan(tickers: list[str], period: str, interval: str) -> list[dict]:
             "ticker": ticker,
             "close": float(last["Close"]),
             "rsi": float(last["RSI"]),
+            "adx": float(last["ADX"]) if "ADX" in df.columns and pd.notna(last.get("ADX")) else None,
             "score": score,
             "action": action,
             "trades": stats["trades"],
             "win_rate": stats["win_rate"],
             "strat": stats["total_return"],
             "bh": stats["buy_hold"],
+            "max_dd": stats["max_drawdown"],
+            "stops": stats.get("stops_hit", 0),
             "rec": finnhub_recommendation(ticker),
-            **yf_metrics(ticker),
+            **metrics_fn(ticker),
         })
     return rows
 
