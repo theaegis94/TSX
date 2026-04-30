@@ -1080,6 +1080,16 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
         row=1, col=1,
     )
 
+    # Box border around each subplot panel. With `mirror=True` Plotly draws
+    # a line on every side of the plot area, sitting right at the plot edge.
+    # The spacing between panels is split evenly: half above the lower
+    # panel's top border, half below the upper panel's bottom border.
+    border_color = "#4b5563"
+    fig.update_xaxes(showline=True, linecolor=border_color,
+                     linewidth=1, mirror=True)
+    fig.update_yaxes(showline=True, linecolor=border_color,
+                     linewidth=1, mirror=True)
+
     return fig
 
 
