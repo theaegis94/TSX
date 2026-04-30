@@ -1341,8 +1341,8 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
 
     fig = make_subplots(
         rows=3, cols=1, shared_xaxes=True,
-        vertical_spacing=0.16,
-        row_heights=[0.55, 0.22, 0.22],
+        vertical_spacing=0.06,
+        row_heights=[0.60, 0.20, 0.20],
     )
 
     # --- Price panel — candlesticks ---
@@ -1450,9 +1450,9 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
     fig.update_layout(
         title=dict(text=title, x=0.01, xanchor="left", font=dict(size=14)),
         height=height,
-        # Left margin extra-wide for the rotated panel labels (Price/RSI/MACD)
-        # to sit clear of the y-axis tick numbers.
-        margin=dict(l=80, r=50, t=160, b=50),
+        # Left margin wide for rotated panel labels; trim top now that
+        # panels are tightly packed.
+        margin=dict(l=80, r=50, t=110, b=40),
         hovermode="x unified",
         # Legend on the top-right so it doesn't collide with range buttons (top-left)
         legend=dict(
@@ -1488,10 +1488,10 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
 
     # Vertical labels centered on each panel (paper-coordinate annotations).
     # Y values match the geometric center of each subplot given:
-    #   row_heights=[0.55, 0.22, 0.22] and vertical_spacing=0.16
+    #   row_heights=[0.60, 0.20, 0.20] and vertical_spacing=0.06
     label_font = dict(size=13, color="#9ca3af",
                       family='"Comic Sans MS", "Comic Sans", cursive')
-    for label, y_pos in [("Price", 0.81), ("RSI", 0.39), ("MACD", 0.08)]:
+    for label, y_pos in [("Price", 0.74), ("RSI", 0.32), ("MACD", 0.10)]:
         fig.add_annotation(
             x=-0.075, y=y_pos,
             xref="paper", yref="paper",

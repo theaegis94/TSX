@@ -23,13 +23,13 @@ st.markdown(
         margin-bottom: 14px;
     }
 
-    /* Wider gap above and below containers (popups, dialogs) + interior padding */
+    /* Container padding + outer margin */
     .stApp [data-testid="stVerticalBlockBorderWrapper"] {
-        margin-top: 18px !important;
-        margin-bottom: 18px !important;
-        padding: 18px 22px !important;
+        margin-top: 12px !important;
+        margin-bottom: 12px !important;
+        padding: 12px 22px !important;
     }
-    /* Bump font sizes inside the popup ~15% so it's easier to read */
+    /* Slightly larger fonts inside the popup */
     .stApp [data-testid="stVerticalBlockBorderWrapper"]
         [data-testid="stMarkdownContainer"] p,
     .stApp [data-testid="stVerticalBlockBorderWrapper"]
@@ -40,14 +40,20 @@ st.markdown(
         [data-testid="stCaptionContainer"] {
         font-size: 0.92rem !important;
     }
-    /* More vertical spacing between rows inside the popup */
+    /* TIGHTER vertical spacing between rows inside the popup */
     .stApp [data-testid="stVerticalBlockBorderWrapper"]
         [data-testid="stHorizontalBlock"] {
-        margin-bottom: 14px !important;
+        margin-bottom: 4px !important;
     }
     .stApp [data-testid="stVerticalBlockBorderWrapper"]
         [data-testid="stVerticalBlock"] > div {
-        margin-bottom: 10px;
+        margin-bottom: 2px;
+    }
+    /* Plotly chart's outer wrapper — kill default spacing */
+    .stApp [data-testid="stVerticalBlockBorderWrapper"]
+        .element-container:has(.js-plotly-plot) {
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
     }
 
     /* Space between the watchlist bar rows */
