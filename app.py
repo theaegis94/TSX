@@ -347,8 +347,8 @@ def render_quick_analysis():
 
         last = df.iloc[-1]
 
-        # Layout: chart on left (2/3), info panel on right (1/3)
-        chart_col, info_col = st.columns([2, 1])
+        # Layout: chart on left (3/4), info panel on right (1/4)
+        chart_col, info_col = st.columns([3, 1])
 
         with chart_col:
             fig = ss.build_chart(df, ticker, stats, compact=True)
@@ -357,25 +357,35 @@ def render_quick_analysis():
 
         with info_col:
             if bool(last["BUY"]):
-                st.success("🟢 BUY signal today")
+                st.success("🟢 BUY today")
             elif bool(last["SELL"]):
-                st.error("🔴 SELL signal today")
+                st.error("🔴 SELL today")
             else:
-                st.info(f"⚪ HOLD — score {int(last['SCORE']):+d}")
+                st.info(f"⚪ HOLD ({int(last['SCORE']):+d})")
 
-            m1, m2 = st.columns(2)
-            m1.metric("Strategy", f"{stats['total_return']:+.1%}")
-            m2.metric("B&H", f"{stats['buy_hold']:+.1%}")
-            m3, m4 = st.columns(2)
-            m3.metric("Max DD", f"{stats.get('max_drawdown', 0):.1%}")
-            m4.metric("Win Rate", f"{stats['win_rate']:.0%}")
-            st.caption(
-                f"{stats['trades']} trade{'s' if stats['trades'] != 1 else ''}"
-                f" · last close ${float(last['Close']):.2f}"
+            # Compact stacked stats — single column to fit narrow panel
+            stat_lines = [
+                ("Last", f"${float(last['Close']):.2f}"),
+                ("Strategy", f"{stats['total_return']:+.1%}"),
+                ("B&H", f"{stats['buy_hold']:+.1%}"),
+                ("Max DD", f"{stats.get('max_drawdown', 0):.1%}"),
+                ("Win", f"{stats['win_rate']:.0%}"),
+                ("Trades", f"{stats['trades']}"),
+            ]
+            stat_html = (
+                '<div style="font-size:0.85rem; line-height:1.45;">'
+                + "".join(
+                    f'<div style="display:flex; justify-content:space-between; '
+                    f'border-bottom:1px solid #1f2937; padding:2px 0;">'
+                    f'<span style="color:#9ca3af;">{label}</span>'
+                    f'<span style="color:#e5e7eb; font-weight:500;">{val}</span>'
+                    f'</div>'
+                    for label, val in stat_lines
+                )
+                + "</div>"
             )
-            st.caption(
-                "📰 News · 📊 fundamentals → **Single Ticker** tab"
-            )
+            st.markdown(stat_html, unsafe_allow_html=True)
+            st.caption("📰 News → Single Ticker tab")
 
 
 def plt_close_cleanup(fig):

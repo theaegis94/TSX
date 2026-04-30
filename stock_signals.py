@@ -791,48 +791,67 @@ def build_chart(df: pd.DataFrame, ticker: str, stats: dict, compact: bool = Fals
 
     compact=True returns a smaller figure suitable for embedded popups.
     """
-    figsize = (8, 4) if compact else (14, 10)
+    if compact:
+        figsize = (7, 4)
+        title_fs, label_fs, tick_fs, legend_fs = 9, 8, 7, 7
+        marker_size, lw = 60, 0.9
+    else:
+        figsize = (14, 10)
+        title_fs, label_fs, tick_fs, legend_fs = 12, 11, 10, 10
+        marker_size, lw = 120, 1.2
+
     fig, (ax_price, ax_rsi, ax_macd) = plt.subplots(
         3, 1, figsize=figsize, sharex=True,
         gridspec_kw={"height_ratios": [3, 1, 1]},
     )
 
-    ax_price.plot(df.index, df["Close"], label="Close", color="black", linewidth=1.2)
-    ax_price.plot(df.index, df["SMA50"], label="SMA50", color="tab:blue", linewidth=1)
-    ax_price.plot(df.index, df["SMA200"], label="SMA200", color="tab:orange", linewidth=1)
+    ax_price.plot(df.index, df["Close"], label="Close", color="black", linewidth=lw)
+    ax_price.plot(df.index, df["SMA50"], label="SMA50", color="tab:blue", linewidth=lw * 0.85)
+    ax_price.plot(df.index, df["SMA200"], label="SMA200", color="tab:orange", linewidth=lw * 0.85)
 
     buys = df[df["BUY"]]
     sells = df[df["SELL"]]
-    ax_price.scatter(buys.index, buys["Close"], marker="^", s=120,
-                     color="green", label="BUY", zorder=5, edgecolors="black")
-    ax_price.scatter(sells.index, sells["Close"], marker="v", s=120,
-                     color="red", label="SELL", zorder=5, edgecolors="black")
+    ax_price.scatter(buys.index, buys["Close"], marker="^", s=marker_size,
+                     color="green", label="BUY", zorder=5, edgecolors="black",
+                     linewidths=0.6)
+    ax_price.scatter(sells.index, sells["Close"], marker="v", s=marker_size,
+                     color="red", label="SELL", zorder=5, edgecolors="black",
+                     linewidths=0.6)
 
-    ax_price.set_title(
-        f"{ticker} — signals: {stats['trades']} trades | "
-        f"win rate {stats['win_rate']:.0%} | "
-        f"strategy {stats['total_return']:+.1%} vs buy&hold {stats['buy_hold']:+.1%}"
-    )
-    ax_price.set_ylabel("Price")
-    ax_price.legend(loc="upper left")
+    if compact:
+        title = f"{ticker} ({stats['trades']} trades, {stats['win_rate']:.0%} win)"
+    else:
+        title = (
+            f"{ticker} — signals: {stats['trades']} trades | "
+            f"win rate {stats['win_rate']:.0%} | "
+            f"strategy {stats['total_return']:+.1%} vs buy&hold {stats['buy_hold']:+.1%}"
+        )
+    ax_price.set_title(title, fontsize=title_fs)
+    ax_price.set_ylabel("Price", fontsize=label_fs)
+    ax_price.legend(loc="upper left", fontsize=legend_fs, ncol=2 if compact else 1,
+                    framealpha=0.85)
     ax_price.grid(alpha=0.3)
+    ax_price.tick_params(axis="both", labelsize=tick_fs)
 
-    ax_rsi.plot(df.index, df["RSI"], color="purple", linewidth=1)
-    ax_rsi.axhline(70, color="red", linestyle="--", alpha=0.5)
-    ax_rsi.axhline(30, color="green", linestyle="--", alpha=0.5)
+    ax_rsi.plot(df.index, df["RSI"], color="purple", linewidth=lw * 0.85)
+    ax_rsi.axhline(70, color="red", linestyle="--", alpha=0.5, linewidth=0.8)
+    ax_rsi.axhline(30, color="green", linestyle="--", alpha=0.5, linewidth=0.8)
     ax_rsi.set_ylim(0, 100)
-    ax_rsi.set_ylabel("RSI(14)")
+    ax_rsi.set_ylabel("RSI(14)", fontsize=label_fs)
     ax_rsi.grid(alpha=0.3)
+    ax_rsi.tick_params(axis="both", labelsize=tick_fs)
 
-    ax_macd.plot(df.index, df["MACD"], label="MACD", color="tab:blue", linewidth=1)
+    ax_macd.plot(df.index, df["MACD"], label="MACD", color="tab:blue", linewidth=lw * 0.85)
     ax_macd.plot(df.index, df["MACD_SIGNAL"], label="Signal",
-                 color="tab:orange", linewidth=1)
+                 color="tab:orange", linewidth=lw * 0.85)
     colors = ["green" if v >= 0 else "red" for v in df["MACD_HIST"].fillna(0)]
     ax_macd.bar(df.index, df["MACD_HIST"], color=colors, alpha=0.4, width=1.0)
     ax_macd.axhline(0, color="black", linewidth=0.5)
-    ax_macd.set_ylabel("MACD")
-    ax_macd.legend(loc="upper left")
+    ax_macd.set_ylabel("MACD", fontsize=label_fs)
+    ax_macd.legend(loc="upper left", fontsize=legend_fs, ncol=2 if compact else 1,
+                   framealpha=0.85)
     ax_macd.grid(alpha=0.3)
+    ax_macd.tick_params(axis="both", labelsize=tick_fs)
 
     ax_macd.xaxis.set_major_locator(mdates.AutoDateLocator())
     ax_macd.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
