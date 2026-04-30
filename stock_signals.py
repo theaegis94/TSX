@@ -1263,12 +1263,12 @@ def build_chart(df: pd.DataFrame, ticker: str, stats: dict, compact: bool = Fals
     if compact:
         figsize = (12, 6)
         dpi = 150
-        title_fs, label_fs, tick_fs, legend_fs = 10, 9, 8, 8
+        title_fs, label_fs, tick_fs, legend_fs = 12, 11, 10, 10
         marker_size, lw = 120, 1.1
     else:
         figsize = (14, 10)
         dpi = 120
-        title_fs, label_fs, tick_fs, legend_fs = 12, 11, 10, 10
+        title_fs, label_fs, tick_fs, legend_fs = 14, 13, 12, 12
         marker_size, lw = 140, 1.2
 
     fig, (ax_price, ax_rsi, ax_macd) = plt.subplots(
@@ -1448,21 +1448,23 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
     fig.update_xaxes(rangeslider_visible=False, row=1, col=1)
 
     fig.update_layout(
-        title=dict(text=title, x=0.01, xanchor="left", font=dict(size=14)),
+        title=dict(text=title, x=0.01, xanchor="left", font=dict(size=16)),
         height=height,
         # Left margin wide for rotated panel labels; trim top now that
         # panels are tightly packed.
         margin=dict(l=80, r=50, t=110, b=40),
         hovermode="x unified",
-        # Legend on the top-right so it doesn't collide with range buttons (top-left)
+        # Legend INSIDE the chart at top-right with a translucent background.
+        # This way it never collides with Plotly's modebar (top-right outside)
+        # or the range buttons (top-left outside).
         legend=dict(
             orientation="h",
-            yanchor="bottom", y=1.08,
-            xanchor="right", x=1,
-            bgcolor="rgba(15,23,42,0.7)",
+            yanchor="top", y=0.98,
+            xanchor="right", x=0.99,
+            bgcolor="rgba(15,23,42,0.85)",
             bordercolor="#374151",
             borderwidth=1,
-            font=dict(size=11),
+            font=dict(size=13),
         ),
         template="plotly_dark",
         plot_bgcolor="#111827",
@@ -1474,6 +1476,7 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
         font=dict(
             family='"Comic Sans MS", "Comic Sans", cursive',
             color="#e5e7eb",
+            size=13,
         ),
     )
     # Remove inline y-axis titles — we'll use centered annotations below
@@ -1489,7 +1492,7 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
     # Vertical labels centered on each panel (paper-coordinate annotations).
     # Y values match the geometric center of each subplot given:
     #   row_heights=[0.60, 0.20, 0.20] and vertical_spacing=0.06
-    label_font = dict(size=13, color="#9ca3af",
+    label_font = dict(size=15, color="#9ca3af",
                       family='"Comic Sans MS", "Comic Sans", cursive')
     for label, y_pos in [("Price", 0.74), ("RSI", 0.32), ("MACD", 0.10)]:
         fig.add_annotation(
@@ -1563,7 +1566,7 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
             activecolor="#3b82f6",
             bordercolor="#374151",
             borderwidth=1,
-            font=dict(color="#e5e7eb", size=11),
+            font=dict(color="#e5e7eb", size=13),
             x=0,
             xanchor="left",
             y=1.08,
