@@ -812,53 +812,65 @@ with tab_scan:
             key=lambda c: c.map(rank) if c.name == "Action" else -c,
         )
 
-        st.caption(
-            "💡 **Click a row's checkbox** to open the chart in a popup."
-        )
-        scan_event = st.dataframe(
-            df_view,
-            use_container_width=True,
-            height=720,
-            hide_index=True,
-            selection_mode="single-row",
-            on_select="rerun",
-            key="scan_results_table",
-            column_config={
-                "Score": st.column_config.NumberColumn(format="%+d"),
-                "Close": st.column_config.NumberColumn(format="$%.2f"),
-                "RSI": st.column_config.NumberColumn(format="%.1f"),
-                "P/E": st.column_config.NumberColumn(format="%.1f"),
-                "Yield %": st.column_config.NumberColumn(format="%.2f"),
-                "Beta": st.column_config.NumberColumn(format="%.2f"),
-                "Upside %": st.column_config.NumberColumn(format="%+.1f"),
-                "Earn Days": st.column_config.NumberColumn(format="%d"),
-                "Buys": st.column_config.NumberColumn(format="%d"),
-                "Holds": st.column_config.NumberColumn(format="%d"),
-                "Sells": st.column_config.NumberColumn(format="%d"),
-                "Trades": st.column_config.NumberColumn(format="%d"),
-                "Stops": st.column_config.NumberColumn(format="%d"),
-                "Win %": st.column_config.NumberColumn(format="%.0f"),
-                "Strat %": st.column_config.NumberColumn(format="%+.1f"),
-                "Max DD %": st.column_config.NumberColumn(
-                    format="%.1f",
-                    help="Worst peak-to-trough drawdown of the strategy",
-                ),
-                "B&H %": st.column_config.NumberColumn(format="%+.1f"),
-                "ADX": st.column_config.NumberColumn(
-                    format="%.1f",
-                    help="Trend strength: <20 weak, >25 strong, >40 very strong",
-                ),
-            },
-        )
+        st.caption("💡 **Click any ticker** to open the chart in a popup.")
 
-        # Open popup when a scan row is selected (only on a fresh selection
-        # so we don't re-open the dialog on every rerun).
-        if scan_event.selection.rows:
-            sel_idx = scan_event.selection.rows[0]
-            sel_ticker = df_view.iloc[sel_idx]["Ticker"]
-            if st.session_state.get("_scan_dialog_for") != sel_ticker:
-                st.session_state["_scan_dialog_for"] = sel_ticker
-                show_quick_analysis_dialog(sel_ticker)
+        # Column widths — Ticker, Action, Score, Close, RSI, P/E, Yield, Beta,
+        # Upside, Earn, B/H/S, Trades, Win, Strat, MaxDD, B&H, ADX
+        col_widths = [1.0, 0.9, 0.6, 0.9, 0.6, 0.7, 0.7, 0.6,
+                      0.7, 0.6, 1.0, 0.6, 0.6, 0.7, 0.7, 0.7, 0.6]
+        headers = ["Ticker", "Action", "Score", "Close", "RSI", "P/E",
+                   "Yield", "Beta", "Up%", "Earn", "B/H/S", "Trd",
+                   "Win%", "Strat%", "MaxDD%", "B&H%", "ADX"]
+        h = st.columns(col_widths)
+        for col, label in zip(h, headers):
+            col.markdown(
+                f'<span style="font-size:0.85rem; color:#9ca3af; '
+                f'font-weight:600;">{label}</span>',
+                unsafe_allow_html=True,
+            )
+
+        def _fmt(val, kind="num", default="—"):
+            if val is None or (isinstance(val, float) and pd.isna(val)):
+                return default
+            if kind == "money":
+                return f"${val:.2f}"
+            if kind == "pct":
+                return f"{val:.2f}"
+            if kind == "spct":
+                return f"{val:+.1f}"
+            if kind == "int":
+                return f"{int(val)}"
+            if kind == "f1":
+                return f"{val:.1f}"
+            if kind == "f2":
+                return f"{val:.2f}"
+            return str(val)
+
+        for r in ok:
+            cols = st.columns(col_widths)
+            # Ticker — clickable button
+            if cols[0].button(r["ticker"], key=f"scan_btn_{r['ticker']}",
+                              use_container_width=True):
+                show_quick_analysis_dialog(r["ticker"])
+            cols[1].markdown(r["action"])
+            cols[2].markdown(f"{int(r['score']):+d}")
+            cols[3].markdown(_fmt(r.get("close"), "money"))
+            cols[4].markdown(_fmt(r.get("rsi"), "f1"))
+            cols[5].markdown(_fmt(r.get("pe"), "f1"))
+            cols[6].markdown(_fmt(r.get("yield_pct"), "pct"))
+            cols[7].markdown(_fmt(r.get("beta"), "f2"))
+            up = r.get("upside_pct")
+            cols[8].markdown(_fmt(up, "spct") if up is not None else "—")
+            ed = r.get("earn_days")
+            cols[9].markdown(f"{int(ed)}d" if ed is not None else "—")
+            rec = r.get("rec")
+            cols[10].markdown(f"{rec[0]}/{rec[1]}/{rec[2]}" if rec else "—")
+            cols[11].markdown(_fmt(r.get("trades"), "int"))
+            cols[12].markdown(_fmt(r["win_rate"] * 100, "f1"))
+            cols[13].markdown(_fmt(r["strat"] * 100, "spct"))
+            cols[14].markdown(_fmt(r.get("max_dd", 0) * 100, "f1"))
+            cols[15].markdown(_fmt(r["bh"] * 100, "spct"))
+            cols[16].markdown(_fmt(r.get("adx"), "f1"))
 
         c1, c2, c3 = st.columns(3)
         c1.metric("🟢 BUY signals",
