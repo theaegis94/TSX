@@ -245,7 +245,7 @@ def render_watchlist_bar(tickers: tuple) -> None:
                 )
 
 
-@st.dialog("📊 Quick Analysis", width="medium")
+@st.dialog("📊 Quick Analysis", width="large")
 def show_quick_analysis_dialog(ticker: str):
     """Modal popup with chart, signal, and key metrics for a ticker.
     Used by the Screener tab when a row is clicked."""
@@ -338,8 +338,8 @@ def render_quick_analysis():
     adx_filter = st.session_state.get("_adx_filter", False)
     stop_loss_pct = st.session_state.get("_stop_loss_pct")
 
-    # Constrain the inline popup to ~70% of page width, centered
-    _l, popup_col, _r = st.columns([1, 5, 1])
+    # Constrain the inline popup to ~85% of page width, centered
+    _l, popup_col, _r = st.columns([0.5, 6, 0.5])
     with popup_col, st.container(border=True):
         # Compact header row: title + strategy + lookback + close
         h1, h2, h3, h4 = st.columns([2, 2, 1.5, 1])
