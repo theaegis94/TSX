@@ -495,8 +495,8 @@ def show_quick_analysis_dialog(ticker: str):
     adx_filter = st.session_state.get("_adx_filter", False)
     stop_loss_pct = st.session_state.get("_stop_loss_pct")
 
-    # Strategy + lookback selectors at top of dialog (default = Bollinger)
-    sel_l, sel_r = st.columns([3, 2])
+    # Strategy + lookback + expand selectors
+    sel_l, sel_r, sel_btn = st.columns([3, 2, 1.2])
     _strategy_keys = list(ss.STRATEGY_LABELS.keys())
     strategy = sel_l.selectbox(
         "Strategy",
@@ -514,6 +514,19 @@ def show_quick_analysis_dialog(ticker: str):
                if _sidebar_period in _period_options else 2),
         key=f"dlg_period_{ticker}",
     )
+    dlg_expanded_key = f"_dlg_expanded_{ticker}"
+    dlg_expanded = st.session_state.get(dlg_expanded_key, False)
+    sel_btn.markdown(
+        '<div style="margin-top: 28px;"></div>',
+        unsafe_allow_html=True,
+    )
+    if sel_btn.button(
+        "↩ Collapse" if dlg_expanded else "🔍 Expand",
+        key=f"dlg_expand_{ticker}",
+        use_container_width=True,
+    ):
+        st.session_state[dlg_expanded_key] = not dlg_expanded
+        st.rerun()
     dlg_indicators = st.multiselect(
         "Indicators",
         options=list(ss.INDICATOR_LABELS.keys()),
@@ -561,7 +574,8 @@ def show_quick_analysis_dialog(ticker: str):
         f'</div>',
         unsafe_allow_html=True,
     )
-    fig = ss.build_chart_plotly(df, norm_ticker, stats, compact=True,
+    fig = ss.build_chart_plotly(df, norm_ticker, stats,
+                                compact=not dlg_expanded,
                                 indicators=dlg_indicators)
     st.plotly_chart(fig, use_container_width=True,
                     config={
