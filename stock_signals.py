@@ -875,7 +875,7 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
 
     fig = make_subplots(
         rows=3, cols=1, shared_xaxes=True,
-        vertical_spacing=0.10,
+        vertical_spacing=0.16,
         row_heights=[0.55, 0.22, 0.22],
     )
 
@@ -952,14 +952,14 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
     if compact:
         title = (f"<b>{ticker}</b> &nbsp;·&nbsp; {stats['trades']} trades "
                  f"&nbsp;·&nbsp; {stats['win_rate']:.0%} win")
-        height = 580
+        height = 660
     else:
         title = (
             f"<b>{ticker}</b> &nbsp;·&nbsp; {stats['trades']} trades "
             f"&nbsp;·&nbsp; {stats['win_rate']:.0%} win &nbsp;·&nbsp; "
             f"strategy {stats['total_return']:+.1%} vs B&H {stats['buy_hold']:+.1%}"
         )
-        height = 780
+        height = 860
 
     fig.update_layout(
         title=dict(text=title, x=0.01, xanchor="left", font=dict(size=14)),
@@ -1000,10 +1000,10 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
 
     # Vertical labels centered on each panel (paper-coordinate annotations).
     # Y values match the geometric center of each subplot given:
-    #   row_heights=[0.55, 0.22, 0.22] and vertical_spacing=0.10
+    #   row_heights=[0.55, 0.22, 0.22] and vertical_spacing=0.16
     label_font = dict(size=13, color="#9ca3af",
                       family='"Comic Sans MS", "Comic Sans", cursive')
-    for label, y_pos in [("Price", 0.78), ("RSI", 0.37), ("MACD", 0.09)]:
+    for label, y_pos in [("Price", 0.81), ("RSI", 0.39), ("MACD", 0.08)]:
         fig.add_annotation(
             x=-0.045, y=y_pos,
             xref="paper", yref="paper",
