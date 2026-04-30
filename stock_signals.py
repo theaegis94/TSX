@@ -671,6 +671,34 @@ def supertrend(df: pd.DataFrame, period: int = 10, multiplier: float = 3.0):
     return st_line, direction
 
 
+def ichimoku(df: pd.DataFrame, tenkan: int = 9, kijun: int = 26,
+             senkou: int = 52):
+    """Ichimoku Cloud — returns (tenkan, kijun, senkou_a, senkou_b, chikou)."""
+    high, low, close = df["High"], df["Low"], df["Close"]
+    tk = (high.rolling(tenkan).max() + low.rolling(tenkan).min()) / 2
+    kj = (high.rolling(kijun).max() + low.rolling(kijun).min()) / 2
+    sa = ((tk + kj) / 2).shift(kijun)
+    sb = ((high.rolling(senkou).max() + low.rolling(senkou).min()) / 2).shift(kijun)
+    chikou = close.shift(-kijun)
+    return tk, kj, sa, sb, chikou
+
+
+def fib_levels(df: pd.DataFrame) -> dict:
+    """Fibonacci retracement levels for the period (uses period high/low)."""
+    high = float(df["High"].max())
+    low = float(df["Low"].min())
+    rng = high - low
+    return {
+        "0.0%": high,
+        "23.6%": high - rng * 0.236,
+        "38.2%": high - rng * 0.382,
+        "50.0%": high - rng * 0.5,
+        "61.8%": high - rng * 0.618,
+        "78.6%": high - rng * 0.786,
+        "100.0%": low,
+    }
+
+
 def adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
     """Average Directional Index — values >25 indicate a trending market."""
     high, low, close = df["High"], df["Low"], df["Close"]
@@ -1331,8 +1359,21 @@ def build_chart(df: pd.DataFrame, ticker: str, stats: dict, compact: bool = Fals
     return fig
 
 
+INDICATOR_LABELS = {
+    "sma50": "SMA 50",
+    "sma200": "SMA 200",
+    "ema20": "EMA 20",
+    "ema50": "EMA 50",
+    "bollinger": "Bollinger Bands",
+    "ichimoku": "Ichimoku Cloud",
+    "fibonacci": "Fibonacci levels",
+}
+DEFAULT_INDICATORS = ["sma50", "sma200"]
+
+
 def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
-                       compact: bool = False):
+                       compact: bool = False,
+                       indicators: list[str] | None = None):
     """Interactive Plotly version of the price/RSI/MACD chart.
     Supports mousewheel zoom, click+drag pan, hover tooltips, and range buttons.
     """
@@ -1352,17 +1393,89 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
         hovertemplate="<b>%{x|%Y-%m-%d}</b><br>Close: $%{y:.2f}<extra></extra>",
     ), row=1, col=1)
 
-    # Overlay SMAs — thin lines so they don't drown the candles
-    fig.add_trace(go.Scatter(
-        x=df.index, y=df["SMA50"], mode="lines", name="SMA50",
-        line=dict(color="#3b82f6", width=0.8),
-        hovertemplate="SMA50: $%{y:.2f}<extra></extra>",
-    ), row=1, col=1)
-    fig.add_trace(go.Scatter(
-        x=df.index, y=df["SMA200"], mode="lines", name="SMA200",
-        line=dict(color="#f59e0b", width=0.8),
-        hovertemplate="SMA200: $%{y:.2f}<extra></extra>",
-    ), row=1, col=1)
+    # Overlay indicators — render only the user-selected ones
+    if indicators is None:
+        indicators = list(DEFAULT_INDICATORS)
+    indicators_set = set(indicators)
+
+    if "sma50" in indicators_set:
+        fig.add_trace(go.Scatter(
+            x=df.index, y=df["SMA50"], mode="lines", name="SMA50",
+            line=dict(color="#3b82f6", width=0.8),
+            hovertemplate="SMA50: $%{y:.2f}<extra></extra>",
+        ), row=1, col=1)
+    if "sma200" in indicators_set:
+        fig.add_trace(go.Scatter(
+            x=df.index, y=df["SMA200"], mode="lines", name="SMA200",
+            line=dict(color="#f59e0b", width=0.8),
+            hovertemplate="SMA200: $%{y:.2f}<extra></extra>",
+        ), row=1, col=1)
+    if "ema20" in indicators_set:
+        fig.add_trace(go.Scatter(
+            x=df.index, y=df["Close"].ewm(span=20, adjust=False).mean(),
+            mode="lines", name="EMA20",
+            line=dict(color="#10b981", width=0.8),
+            hovertemplate="EMA20: $%{y:.2f}<extra></extra>",
+        ), row=1, col=1)
+    if "ema50" in indicators_set:
+        fig.add_trace(go.Scatter(
+            x=df.index, y=df["Close"].ewm(span=50, adjust=False).mean(),
+            mode="lines", name="EMA50",
+            line=dict(color="#a855f7", width=0.8),
+            hovertemplate="EMA50: $%{y:.2f}<extra></extra>",
+        ), row=1, col=1)
+    if "bollinger" in indicators_set and "BB_LOWER" in df.columns:
+        fig.add_trace(go.Scatter(
+            x=df.index, y=df["BB_UPPER"], mode="lines", name="BB Upper",
+            line=dict(color="#94a3b8", width=0.8, dash="dot"),
+            hovertemplate="BB Upper: $%{y:.2f}<extra></extra>",
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=df.index, y=df["BB_LOWER"], mode="lines", name="BB Lower",
+            line=dict(color="#94a3b8", width=0.8, dash="dot"),
+            fill="tonexty", fillcolor="rgba(148,163,184,0.08)",
+            hovertemplate="BB Lower: $%{y:.2f}<extra></extra>",
+        ), row=1, col=1)
+    if "ichimoku" in indicators_set and {"High", "Low"}.issubset(df.columns):
+        tk, kj, sa, sb, _chikou = ichimoku(df)
+        fig.add_trace(go.Scatter(
+            x=df.index, y=tk, mode="lines", name="Tenkan",
+            line=dict(color="#3b82f6", width=0.8),
+            hovertemplate="Tenkan: $%{y:.2f}<extra></extra>",
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=df.index, y=kj, mode="lines", name="Kijun",
+            line=dict(color="#ef4444", width=0.8),
+            hovertemplate="Kijun: $%{y:.2f}<extra></extra>",
+        ), row=1, col=1)
+        # Cloud: SA and SB as filled area
+        fig.add_trace(go.Scatter(
+            x=df.index, y=sa, mode="lines", name="Senkou A",
+            line=dict(color="#22c55e", width=0.6),
+            hovertemplate="Senkou A: $%{y:.2f}<extra></extra>",
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=df.index, y=sb, mode="lines", name="Senkou B",
+            line=dict(color="#dc2626", width=0.6),
+            fill="tonexty", fillcolor="rgba(34,197,94,0.10)",
+            hovertemplate="Senkou B: $%{y:.2f}<extra></extra>",
+        ), row=1, col=1)
+    if "fibonacci" in indicators_set and {"High", "Low"}.issubset(df.columns):
+        levels = fib_levels(df)
+        fib_colors = {
+            "0.0%": "#9ca3af", "23.6%": "#fbbf24", "38.2%": "#f59e0b",
+            "50.0%": "#a855f7", "61.8%": "#3b82f6",
+            "78.6%": "#10b981", "100.0%": "#9ca3af",
+        }
+        x_start, x_end = df.index[0], df.index[-1]
+        for label, value in levels.items():
+            fig.add_trace(go.Scatter(
+                x=[x_start, x_end], y=[value, value],
+                mode="lines", name=f"Fib {label}",
+                line=dict(color=fib_colors.get(label, "#9ca3af"),
+                          width=0.6, dash="dash"),
+                hovertemplate=f"Fib {label}: ${value:.2f}<extra></extra>",
+            ), row=1, col=1)
 
     buys = df[df["BUY"]]
     if not buys.empty:

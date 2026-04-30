@@ -480,6 +480,13 @@ def show_quick_analysis_dialog(ticker: str):
                if _sidebar_period in _period_options else 2),
         key=f"dlg_period_{ticker}",
     )
+    dlg_indicators = st.multiselect(
+        "Indicators",
+        options=list(ss.INDICATOR_LABELS.keys()),
+        default=list(ss.DEFAULT_INDICATORS),
+        format_func=lambda k: ss.INDICATOR_LABELS[k],
+        key=f"dlg_indicators_{ticker}",
+    )
 
     try:
         norm_ticker = ss.normalize_ticker(ticker)
@@ -520,7 +527,8 @@ def show_quick_analysis_dialog(ticker: str):
         f'</div>',
         unsafe_allow_html=True,
     )
-    fig = ss.build_chart_plotly(df, norm_ticker, stats, compact=True)
+    fig = ss.build_chart_plotly(df, norm_ticker, stats, compact=True,
+                                indicators=dlg_indicators)
     st.plotly_chart(fig, use_container_width=True,
                     config={
                         "displayModeBar": True,
@@ -602,6 +610,16 @@ def render_quick_analysis():
             st.session_state.pop(f"_qv_expanded_{selected}", None)
             st.rerun()
 
+        # Indicator multiselect (full row below header)
+        indicators = st.multiselect(
+            "Indicators",
+            options=list(ss.INDICATOR_LABELS.keys()),
+            default=list(ss.DEFAULT_INDICATORS),
+            format_func=lambda k: ss.INDICATOR_LABELS[k],
+            key=f"qv_indicators_{selected}",
+            label_visibility="collapsed",
+        )
+
         try:
             ticker = ss.normalize_ticker(selected)
         except SystemExit as e:
@@ -653,7 +671,9 @@ def render_quick_analysis():
             )
 
         # Build chart — non-compact (taller) version when expanded
-        fig = ss.build_chart_plotly(df, ticker, stats, compact=not expanded)
+        fig = ss.build_chart_plotly(df, ticker, stats,
+                                    compact=not expanded,
+                                    indicators=indicators)
         st.plotly_chart(fig, use_container_width=True,
                         config={
                             "displayModeBar": True,
