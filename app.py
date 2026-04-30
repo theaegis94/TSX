@@ -146,16 +146,29 @@ def _format_macro_value(label: str, val: float | None) -> str:
         return f"${val:.2f}"
     if label == "DXY" or label == "VIX":
         return f"{val:.2f}"
-    # Rates / yields
     return f"{val:.2f}%"
 
 
 def render_macro_row(macro: dict, header: str | None = None) -> None:
-    if header:
-        st.caption(header)
-    cols = st.columns(len(macro))
-    for col, (label, val) in zip(cols, macro.items()):
-        col.metric(label, _format_macro_value(label, val))
+    """Compact single-line macro display — much smaller than st.metric tiles."""
+    parts = []
+    for label, val in macro.items():
+        v = _format_macro_value(label, val)
+        parts.append(
+            f'<span style="color:#9ca3af;">{label}</span> '
+            f'<b style="color:#e5e7eb;">{v}</b>'
+        )
+    prefix = (
+        f'<span style="color:#9ca3af; font-weight:600; margin-right:10px;">'
+        f'{header}</span>'
+        if header else ""
+    )
+    st.markdown(
+        f'<div style="font-size:0.85rem; padding:2px 0; line-height:1.6;">'
+        f'{prefix}{" &nbsp;·&nbsp; ".join(parts)}'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
