@@ -1015,8 +1015,11 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
 
     # Explicitly set the visible x-range AND lock pan/zoom bounds to the
     # data range so users can't drag off into empty space.
+    # The right boundary extends 1 month past the last data point — gives
+    # visual headroom on the right side and room for upcoming events.
     if len(df) >= 2:
-        x_start, x_end = df.index[0], df.index[-1]
+        x_start = df.index[0]
+        x_end = df.index[-1] + pd.Timedelta(days=30)
         for r in (1, 2, 3):
             fig.update_xaxes(
                 range=[x_start, x_end],
