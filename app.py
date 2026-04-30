@@ -18,10 +18,22 @@ st.set_page_config(page_title="Stock Signals", layout="wide", page_icon="📈")
 st.markdown(
     """
     <style>
-    /* Comic Sans everywhere — global font override */
+    /* Comic Sans everywhere — but preserve icon fonts so glyphs render */
     html, body, .stApp, [class*="st-"], [class*="css-"],
     button, input, textarea, select, code, pre {
         font-family: "Comic Sans MS", "Comic Sans", cursive, sans-serif !important;
+    }
+    /* Material Icons / Symbols must keep their original font so the icon
+       glyphs (▼, ▶, etc.) render — otherwise their names appear as literal
+       text like "arrow_drop_down" or "expand_more". */
+    [class*="material-icons"],
+    [class*="material-symbols"],
+    [class*="MuiSvgIcon"],
+    .material-icons, .material-icons-outlined, .material-icons-round,
+    .material-symbols-outlined, .material-symbols-rounded,
+    span[data-testid*="Icon"], span[data-testid*="icon"] {
+        font-family: "Material Symbols Rounded", "Material Symbols Outlined",
+                     "Material Icons Outlined", "Material Icons" !important;
     }
 
     /* Tab list container — adds spacing and a subtle bottom border */
