@@ -504,6 +504,14 @@ def show_quick_analysis_dialog(ticker: str):
         unsafe_allow_html=True,
     )
 
+    st.markdown(
+        f'<div style="font-size:0.9rem; color:#9ca3af; margin-bottom:6px;">'
+        f'<b style="color:#f0f0f0;">{norm_ticker}</b> &nbsp;·&nbsp; '
+        f'{stats["trades"]} trades &nbsp;·&nbsp; '
+        f'{stats["win_rate"]:.0%} win'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
     fig = ss.build_chart_plotly(df, norm_ticker, stats, compact=True)
     st.plotly_chart(fig, use_container_width=True,
                     config={
@@ -619,6 +627,19 @@ def render_quick_analysis():
                 f'Max DD <b style="color:#e5e7eb;">{stats.get("max_drawdown", 0):.1%}</b> &nbsp;·&nbsp; '
                 f'Win <b style="color:#e5e7eb;">{stats["win_rate"]:.0%}</b> &nbsp;·&nbsp; '
                 f'<b style="color:#e5e7eb;">{stats["trades"]}</b> trades'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+        # Title rendered above the chart so it doesn't collide with range buttons
+        if expanded:
+            st.markdown(
+                f'<div style="font-size:1rem; color:#9ca3af; margin-bottom:6px;">'
+                f'<b style="color:#f0f0f0;">{ticker}</b> &nbsp;·&nbsp; '
+                f'{stats["trades"]} trades &nbsp;·&nbsp; '
+                f'{stats["win_rate"]:.0%} win &nbsp;·&nbsp; '
+                f'strategy {stats["total_return"]:+.1%} vs '
+                f'B&H {stats["buy_hold"]:+.1%}'
                 f'</div>',
                 unsafe_allow_html=True,
             )
@@ -1068,6 +1089,17 @@ with tab_single:
                               f"{metrics.get('earn_days')}d"
                               if metrics.get("earn_days") is not None else "—")
 
+                st.markdown(
+                    f'<div style="font-size:1rem; color:#9ca3af; '
+                    f'margin-bottom:6px;">'
+                    f'<b style="color:#f0f0f0;">{ticker}</b> &nbsp;·&nbsp; '
+                    f'{stats["trades"]} trades &nbsp;·&nbsp; '
+                    f'{stats["win_rate"]:.0%} win &nbsp;·&nbsp; '
+                    f'strategy {stats["total_return"]:+.1%} vs '
+                    f'B&H {stats["buy_hold"]:+.1%}'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
                 fig = ss.build_chart_plotly(df, ticker, stats)
                 st.plotly_chart(fig, use_container_width=True,
                                 config={"displayModeBar": True,

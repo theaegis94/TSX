@@ -1418,25 +1418,18 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
 
     # --- Layout ---
     if compact:
-        title = (f"<b>{ticker}</b> &nbsp;·&nbsp; {stats['trades']} trades "
-                 f"&nbsp;·&nbsp; {stats['win_rate']:.0%} win")
         height = 1200
     else:
-        title = (
-            f"<b>{ticker}</b> &nbsp;·&nbsp; {stats['trades']} trades "
-            f"&nbsp;·&nbsp; {stats['win_rate']:.0%} win &nbsp;·&nbsp; "
-            f"strategy {stats['total_return']:+.1%} vs B&H {stats['buy_hold']:+.1%}"
-        )
         height = 1400
 
     # Hide Candlestick's default rangeslider (we have rangeselector buttons instead)
     fig.update_xaxes(rangeslider_visible=False, row=1, col=1)
 
+    # Chart title is rendered as Streamlit markdown above the chart instead
+    # of inside the figure — avoids collisions with the range-selector buttons.
     fig.update_layout(
-        title=dict(text=title, x=0.01, xanchor="left", font=dict(size=14)),
         height=height,
-        # Top margin must fit title + range buttons without overlap.
-        margin=dict(l=80, r=50, t=110, b=40),
+        margin=dict(l=80, r=50, t=50, b=40),
         hovermode="x unified",
         # Legend INSIDE the chart at top-right with a translucent background.
         # This way it never collides with Plotly's modebar (top-right outside)
