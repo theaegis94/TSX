@@ -1749,33 +1749,29 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
                 row=r, col=1, gridcolor="#5a5b5e",
             )
 
-        # Price panel Y bounds: data range with 10% padding.
-        # autorange="max" ensures the axis goes low->high (high values at top).
+        # Price panel — let Plotly autorange to data; tight 3% padding only
+        # when the user has not zoomed. The JS auto-rescaler then takes over
+        # on every X zoom/pan to compute Y from only visible data.
         price_min = float(df["Close"].min())
         price_max = float(df["Close"].max())
         if price_max > price_min:
-            pad = (price_max - price_min) * 0.10
+            pad = (price_max - price_min) * 0.03
             fig.update_yaxes(
-                minallowed=price_min - pad,
-                maxallowed=price_max + pad,
                 autorange=True,
                 range=[price_min - pad, price_max + pad],
                 row=1, col=1,
             )
 
-        # RSI bounded 0..100 with high values at top
-        fig.update_yaxes(minallowed=0, maxallowed=100,
-                         autorange=True, range=[0, 100], row=2, col=1)
+        # RSI bounded 0..100 — natural range
+        fig.update_yaxes(autorange=True, range=[0, 100], row=2, col=1)
 
-        # MACD bounds: data range with 30% padding, low->high orientation
+        # MACD: data range with 5% padding (was 30% — too much)
         macd_vals = pd.concat([df["MACD"], df["MACD_SIGNAL"], df["MACD_HIST"]]).dropna()
         if not macd_vals.empty:
             mlo, mhi = float(macd_vals.min()), float(macd_vals.max())
             if mhi > mlo:
-                pad = (mhi - mlo) * 0.30
+                pad = (mhi - mlo) * 0.05
                 fig.update_yaxes(
-                    minallowed=mlo - pad,
-                    maxallowed=mhi + pad,
                     autorange=True,
                     range=[mlo - pad, mhi + pad],
                     row=3, col=1,

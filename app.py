@@ -432,7 +432,7 @@ def _inject_auto_rescale_y():
                             if (!vals.length) return;
                             const lo = Math.min.apply(null, vals);
                             const hi = Math.max.apply(null, vals);
-                            const pad = (hi - lo) * 0.10 || 0.5;
+                            const pad = (hi - lo) * 0.03 || 0.2;
                             const axName = yref === 'y'
                                 ? 'yaxis'
                                 : 'yaxis' + yref.slice(1);
