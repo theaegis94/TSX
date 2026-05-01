@@ -2330,18 +2330,18 @@ with tab_news:
         ))
 
         with main_l:
-            st.markdown("##### 🍁 TSX & Canada")
-            tsx_news = _aggregate_ticker_news(
-                ss.MAJOR_TSX_FOR_NEWS, days=3, per_ticker=2
+            st.markdown("##### 🛢️ Oil & Gas")
+            oil_main = _aggregate_ticker_news(
+                ss.OIL_GAS_FOR_NEWS, days=3, per_ticker=2
             )
-            if tsx_news:
-                for art in tsx_news[:12]:
+            if oil_main:
+                for art in oil_main[:12]:
                     _render_news_card(
                         art, show_ticker=True,
                         watchlist=_wl_normalized, curated=all_curated,
                     )
             else:
-                st.caption("_No TSX news in the last 3 days._")
+                st.caption("_No oil/gas news in the last 3 days._")
 
         with main_r:
             st.markdown("##### 🤖 AI / US Tech")
@@ -2361,8 +2361,8 @@ with tab_news:
 
         # --- Subtabs: All Canadian / All US market-affecting news ---
         st.markdown("##### All market-affecting news")
-        sub_ca, sub_us, sub_oil, sub_search = st.tabs(
-            ["🍁 Canadian", "🇺🇸 US", "🛢️ Oil & Gas",
+        sub_ca, sub_us, sub_tsx, sub_search = st.tabs(
+            ["🍁 Canadian", "🇺🇸 US", "🍁 TSX & Canada",
              "🔍 Search by ticker"]
         )
 
@@ -2413,24 +2413,23 @@ with tab_news:
             else:
                 st.info("No US market news available.")
 
-        with sub_oil:
-            oil_news = _aggregate_ticker_news(
-                ss.OIL_GAS_FOR_NEWS, days=7, per_ticker=4
+        with sub_tsx:
+            tsx_all = _aggregate_ticker_news(
+                ss.MAJOR_TSX_FOR_NEWS, days=7, per_ticker=4
             )
-            if oil_news:
+            if tsx_all:
                 st.caption(
-                    f"{len(oil_news)} headlines from "
-                    f"{len(ss.OIL_GAS_FOR_NEWS)} oil/gas/energy names "
-                    "(US E&P + CA oil/gas + ETFs) · last 7 days. "
-                    "Useful for HOD/HOU/HND/HNU.TO context."
+                    f"{len(tsx_all)} headlines from "
+                    f"{len(ss.MAJOR_TSX_FOR_NEWS)} major TSX names "
+                    "(banks, energy, telecom, rail) · last 7 days."
                 )
-                for art in oil_news[:80]:
+                for art in tsx_all[:80]:
                     _render_news_card(
                         art, show_ticker=True,
                         watchlist=_wl_normalized, curated=all_curated,
                     )
             else:
-                st.info("No oil/gas news in the last 7 days.")
+                st.info("No TSX news in the last 7 days.")
 
         with sub_search:
             col1, col2 = st.columns([3, 1])
