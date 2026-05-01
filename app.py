@@ -2066,7 +2066,42 @@ def _aggregate_ticker_news(tickers: list[str], days: int = 3,
     return out
 
 
-def _render_news_card(art: dict, show_ticker: bool = True) -> None:
+def _affected_tickers(art: dict, watchlist: list[str],
+                      curated: list[str]) -> tuple[list[str], list[str]]:
+    """Return (in_watchlist_hits, other_curated_hits) for an article.
+
+    Sources:
+      1. The "_ticker" we tagged when aggregating per-ticker news.
+      2. Finnhub's "related" field (comma-separated tickers).
+      3. Keyword scan of headline + summary for watchlist + curated tickers.
+    """
+    candidates = set()
+    src = art.get("_ticker")
+    if src:
+        candidates.add(src.upper())
+    rel = art.get("related") or ""
+    for t in rel.split(","):
+        t = t.strip().upper()
+        if t:
+            candidates.add(t)
+    text = (art.get("headline", "") + " " + art.get("summary", "")).upper()
+    # Cheap word-boundary scan: bare ticker (no .TO) appears as a token.
+    import re
+    for t in set(watchlist + curated):
+        bare = t.split(".")[0]
+        if len(bare) < 2:
+            continue
+        if re.search(rf"\b{re.escape(bare)}\b", text):
+            candidates.add(t.upper())
+    wl_set = {w.upper() for w in watchlist}
+    in_wl = sorted(c for c in candidates if c in wl_set)
+    other = sorted(c for c in candidates if c not in wl_set)
+    return in_wl, other
+
+
+def _render_news_card(art: dict, show_ticker: bool = True,
+                      watchlist: list[str] | None = None,
+                      curated: list[str] | None = None) -> None:
     try:
         ts = datetime.fromtimestamp(art.get("datetime", 0))
         date_str = ts.strftime("%b %d %H:%M")
@@ -2081,6 +2116,9 @@ def _render_news_card(art: dict, show_ticker: bool = True) -> None:
         f"<b style='color:#60a5fa;'>{tk}</b> &nbsp;·&nbsp; "
         if show_ticker and tk else ""
     )
+    in_wl, other = _affected_tickers(
+        art, watchlist or [], curated or []
+    )
     with st.container(border=True):
         st.markdown(
             f"<div style='font-size:0.78rem; color:#9ca3af;'>"
@@ -2091,6 +2129,30 @@ def _render_news_card(art: dict, show_ticker: bool = True) -> None:
         st.markdown(f"**{headline}**")
         if summary:
             st.caption(summary[:280] + ("…" if len(summary) > 280 else ""))
+        if in_wl or other:
+            chips = []
+            for t in in_wl[:8]:
+                # In your watchlist — green highlight
+                chips.append(
+                    f"<span style='background:#16a34a; color:#fff; "
+                    f"padding:2px 8px; border-radius:8px; "
+                    f"font-size:0.72rem; font-weight:700; "
+                    f"margin-right:4px;'>★ {t}</span>"
+                )
+            for t in other[:10]:
+                chips.append(
+                    f"<span style='background:#374151; color:#e5e7eb; "
+                    f"padding:2px 8px; border-radius:8px; "
+                    f"font-size:0.72rem; margin-right:4px;'>{t}</span>"
+                )
+            st.markdown(
+                f"<div style='margin-top:6px;'>"
+                f"<span style='font-size:0.72rem; color:#9ca3af; "
+                f"margin-right:6px;'>Affects:</span>"
+                + "".join(chips) +
+                "</div>",
+                unsafe_allow_html=True,
+            )
         if art.get("url"):
             st.markdown(f"[Read more →]({url})")
 
@@ -2262,6 +2324,10 @@ with tab_news:
         # --- Main: TSX (left) + AI/US (right) ---
         main_l, main_r = st.columns(2)
 
+        all_curated = list(set(
+            ss.MAJOR_TSX_FOR_NEWS + ss.MAJOR_AI_US_FOR_NEWS
+        ))
+
         with main_l:
             st.markdown("##### 🍁 TSX & Canada")
             tsx_news = _aggregate_ticker_news(
@@ -2269,7 +2335,10 @@ with tab_news:
             )
             if tsx_news:
                 for art in tsx_news[:12]:
-                    _render_news_card(art, show_ticker=True)
+                    _render_news_card(
+                        art, show_ticker=True,
+                        watchlist=_wl_normalized, curated=all_curated,
+                    )
             else:
                 st.caption("_No TSX news in the last 3 days._")
 
@@ -2280,7 +2349,10 @@ with tab_news:
             )
             if ai_news:
                 for art in ai_news[:12]:
-                    _render_news_card(art, show_ticker=True)
+                    _render_news_card(
+                        art, show_ticker=True,
+                        watchlist=_wl_normalized, curated=all_curated,
+                    )
             else:
                 st.caption("_No AI/US Tech news in the last 3 days._")
 
@@ -2302,7 +2374,10 @@ with tab_news:
                     "major TSX names · last 7 days"
                 )
                 for art in ca_all[:60]:
-                    _render_news_card(art, show_ticker=True)
+                    _render_news_card(
+                        art, show_ticker=True,
+                        watchlist=_wl_normalized, curated=all_curated,
+                    )
             else:
                 st.info("No Canadian market news in the last 7 days.")
 
@@ -2329,7 +2404,10 @@ with tab_news:
                     f"{len(ss.MAJOR_AI_US_FOR_NEWS)} major US tickers"
                 )
                 for art in combined[:80]:
-                    _render_news_card(art, show_ticker=bool(art.get("_ticker")))
+                    _render_news_card(
+                        art, show_ticker=bool(art.get("_ticker")),
+                        watchlist=_wl_normalized, curated=all_curated,
+                    )
             else:
                 st.info("No US market news available.")
 
@@ -2350,7 +2428,10 @@ with tab_news:
                     else:
                         st.success(f"Found {len(articles)} articles")
                         for art in articles[:30]:
-                            _render_news_card(art, show_ticker=False)
+                            _render_news_card(
+                                art, show_ticker=False,
+                                watchlist=_wl_normalized, curated=all_curated,
+                            )
                 except Exception as e:
                     st.error(f"Error: {e}")
 
