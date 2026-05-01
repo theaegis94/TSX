@@ -1230,45 +1230,49 @@ with tab_single:
                 else:
                     st.info(f"⚪ HOLD — score {int(last['SCORE']):+d}")
 
-                c1, c2, c3, c4, c5 = st.columns(5)
-                c1.metric("Trades", stats["trades"])
-                c2.metric("Win Rate", f"{stats['win_rate']:.0%}")
-                c3.metric("Strategy", f"{stats['total_return']:+.1%}")
-                c4.metric("Buy & Hold", f"{stats['buy_hold']:+.1%}",
-                          delta=f"{(stats['total_return']-stats['buy_hold'])*100:+.1f}%")
-                c5.metric("Max DD", f"{stats.get('max_drawdown', 0):.1%}",
-                          help="Worst peak-to-trough drawdown of the strategy")
+                # Compact one-line stats — replaces the bulky st.metric grids
+                stats_bits = [
+                    f'<b style="color:#e5e7eb;">{stats["trades"]}</b> trades',
+                    f'Win <b style="color:#e5e7eb;">{stats["win_rate"]:.0%}</b>',
+                    f'Strat <b style="color:#e5e7eb;">{stats["total_return"]:+.1%}</b>',
+                    f'B&H <b style="color:#e5e7eb;">{stats["buy_hold"]:+.1%}</b>',
+                    f'Max DD <b style="color:#e5e7eb;">{stats.get("max_drawdown", 0):.1%}</b>',
+                ]
                 if stats.get("stops_hit", 0) > 0:
-                    st.caption(f"⚠️ {stats['stops_hit']} of {stats['trades']} "
-                               f"trades exited via stop-loss")
+                    stats_bits.append(
+                        f'<b style="color:#f59e0b;">{stats["stops_hit"]} stops</b>'
+                    )
 
                 metrics = ss.yf_metrics(ticker)
                 if metrics:
-                    c1, c2, c3, c4, c5 = st.columns(5)
-                    c1.metric("P/E", f"{metrics.get('pe', 0):.1f}"
-                              if metrics.get("pe") else "—")
-                    c2.metric("Yield",
-                              f"{metrics.get('yield_pct', 0):.2f}%"
-                              if metrics.get("yield_pct") else "—")
-                    c3.metric("Beta", f"{metrics.get('beta', 0):.2f}"
-                              if metrics.get("beta") else "—")
-                    c4.metric("Analyst Upside",
-                              f"{metrics.get('upside_pct', 0):+.1f}%"
-                              if metrics.get("upside_pct") else "—")
-                    c5.metric("Earnings In",
-                              f"{metrics.get('earn_days')}d"
-                              if metrics.get("earn_days") is not None else "—")
+                    if metrics.get("pe") is not None:
+                        stats_bits.append(
+                            f'P/E <b style="color:#e5e7eb;">{metrics["pe"]:.1f}</b>')
+                    if metrics.get("yield_pct") is not None:
+                        stats_bits.append(
+                            f'Yield <b style="color:#e5e7eb;">{metrics["yield_pct"]:.2f}%</b>')
+                    if metrics.get("beta") is not None:
+                        stats_bits.append(
+                            f'Beta <b style="color:#e5e7eb;">{metrics["beta"]:.2f}</b>')
+                    if metrics.get("upside_pct") is not None:
+                        stats_bits.append(
+                            f'Upside <b style="color:#e5e7eb;">{metrics["upside_pct"]:+.1f}%</b>')
+                    if metrics.get("earn_days") is not None:
+                        stats_bits.append(
+                            f'Earn <b style="color:#e5e7eb;">{metrics["earn_days"]}d</b>')
+
+                st.markdown(
+                    '<div style="font-size:0.9rem; color:#9ca3af; '
+                    'padding:6px 0; line-height:1.7;">'
+                    + ' &nbsp;·&nbsp; '.join(stats_bits)
+                    + '</div>',
+                    unsafe_allow_html=True,
+                )
 
                 st.markdown(
                     f'<div style="margin-bottom:6px;">'
                     f'<span style="font-size:1.4rem; font-weight:700; '
-                    f'color:#f0f0f0;">{ticker}</span> '
-                    f'<span style="font-size:1rem; color:#9ca3af;">'
-                    f'&nbsp;·&nbsp; {stats["trades"]} trades '
-                    f'&nbsp;·&nbsp; {stats["win_rate"]:.0%} win '
-                    f'&nbsp;·&nbsp; strategy {stats["total_return"]:+.1%} vs '
-                    f'B&H {stats["buy_hold"]:+.1%}'
-                    f'</span>'
+                    f'color:#f0f0f0;">{ticker}</span>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
