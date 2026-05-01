@@ -1568,7 +1568,7 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
     # --- RSI panel ---
     fig.add_trace(go.Scatter(
         x=df.index, y=df["RSI"], mode="lines", name="RSI",
-        line=dict(color="#a855f7", width=0.6),
+        line=dict(color="#c084fc", width=1.5),
         showlegend=False,
         hovertemplate="RSI: %{y:.1f}<extra></extra>",
     ), row=2, col=1)
@@ -1580,13 +1580,13 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
     # --- MACD panel ---
     fig.add_trace(go.Scatter(
         x=df.index, y=df["MACD"], mode="lines", name="MACD",
-        line=dict(color="#3b82f6", width=0.5),
+        line=dict(color="#60a5fa", width=1.5),
         showlegend=False,
         hovertemplate="MACD: %{y:.3f}<extra></extra>",
     ), row=3, col=1)
     fig.add_trace(go.Scatter(
         x=df.index, y=df["MACD_SIGNAL"], mode="lines", name="Signal",
-        line=dict(color="#f59e0b", width=0.5),
+        line=dict(color="#fbbf24", width=1.5),
         showlegend=False,
         hovertemplate="Signal: %{y:.3f}<extra></extra>",
     ), row=3, col=1)
