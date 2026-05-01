@@ -1611,8 +1611,9 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
     # of inside the figure — avoids collisions with the range-selector buttons.
     fig.update_layout(
         height=height,
-        # Uniform 60px on all four sides for even breathing room.
-        margin=dict(l=60, r=60, t=50, b=60),
+        # Slightly wider left margin to accommodate the rotated panel labels
+        # at their slightly-offset position.
+        margin=dict(l=70, r=60, t=50, b=60),
         hovermode="x unified",
         # Legend INSIDE the chart at top-right with a translucent background.
         # This way it never collides with Plotly's modebar (top-right outside)
@@ -1656,7 +1657,7 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
                       family='"Comic Sans MS", "Comic Sans", cursive')
     for label, y_pos in [("Price", 0.74), ("RSI", 0.32), ("MACD", 0.10)]:
         fig.add_annotation(
-            x=-0.04, y=y_pos,
+            x=-0.055, y=y_pos,
             xref="paper", yref="paper",
             text=f"<b>{label}</b>",
             textangle=-90,
