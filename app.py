@@ -900,29 +900,7 @@ with st.sidebar:
     add_col2.button("➕ Add", on_click=_add_to_watchlist,
                     use_container_width=True)
 
-    # Search-as-you-type — Finnhub-powered ticker lookup
-    sb_query = st.text_input(
-        "🔍 Search ticker / company",
-        placeholder="apple, tesla, royal bank…",
-        key="sidebar_search_query",
-    )
-    if sb_query and len(sb_query) >= 2:
-        sb_results = cached_search(sb_query)
-        if sb_results:
-            for r in sb_results[:6]:
-                desc = r["description"][:30] + (
-                    "…" if len(r["description"]) > 30 else "")
-                st.button(
-                    f"➕ **{r['symbol']}** — {desc}",
-                    key=f"sb_add_{r['symbol']}",
-                    on_click=_add_search_result,
-                    args=(r["symbol"],),
-                    use_container_width=True,
-                )
-        else:
-            st.caption("No matches.")
-
-    # Dropdown picker — alternative for browsing the full list
+    # Dropdown picker — alternative to typing the ticker by hand
     st.selectbox(
         "Or pick from list (S&P 500 + TSX + ETFs)",
         options=[""] + _all_tickers_for_dropdown(),
