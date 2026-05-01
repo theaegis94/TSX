@@ -1452,7 +1452,7 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
 
     fig = make_subplots(
         rows=3, cols=1, shared_xaxes=True,
-        vertical_spacing=0.08,
+        vertical_spacing=0.10,
         row_heights=[0.60, 0.20, 0.20],
         subplot_titles=("<b>Price</b>", "<b>RSI</b>", "<b>MACD</b>"),
     )
@@ -1750,7 +1750,9 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
         fig.update_xaxes(
             showgrid=True, gridcolor="#6a6b6e", gridwidth=0.5,
             showline=True, linecolor=color, linewidth=1.2,
-            mirror=True, row=r, col=1,
+            mirror=True,
+            showticklabels=True,  # show month labels on every panel
+            row=r, col=1,
         )
         fig.update_yaxes(
             showgrid=True, gridcolor="#6a6b6e", gridwidth=0.5,
