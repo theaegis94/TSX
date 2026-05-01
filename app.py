@@ -1273,6 +1273,7 @@ with tab_screener:
         options=[
             "S&P 100 (~100)",
             "S&P 500 (~500)",
+            "Entire US (~7000, no OTC)",
             "TSX 60 (~60)",
             "TSX Composite (~250)",
             "Entire TSX (~1500)",
@@ -1335,10 +1336,16 @@ with tab_screener:
     def _cached_full_tsx(market: str) -> list:
         return ss.get_full_tsx_listing(market)
 
+    @st.cache_data(ttl=86400, show_spinner=False)
+    def _cached_full_us() -> list:
+        return ss.get_full_us_listing()
+
     if universe_choice.startswith("S&P 100"):
         universe = ss.UNIVERSE_SP100
     elif universe_choice.startswith("S&P 500"):
         universe = _cached_sp500()
+    elif universe_choice.startswith("Entire US"):
+        universe = _cached_full_us()
     elif universe_choice.startswith("TSX 60"):
         universe = ss.UNIVERSE_TSX60
     elif universe_choice.startswith("TSX Composite"):

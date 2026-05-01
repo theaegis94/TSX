@@ -406,6 +406,50 @@ def _finnhub_sym(ticker: str) -> str:
     return ticker.upper()
 
 
+def get_full_us_listing() -> list[str]:
+    """All US exchange-listed common stocks + ETFs via Finnhub. EXCLUDES OTC.
+    Returns Yahoo-format symbols (mostly bare tickers like 'AAPL', 'BRK-B').
+    """
+    if not FINNHUB_API_KEY:
+        return []
+    try:
+        r = requests.get(
+            "https://finnhub.io/api/v1/stock/symbol",
+            params={"exchange": "US", "token": FINNHUB_API_KEY},
+            timeout=30,
+        )
+        if r.status_code != 200:
+            return []
+        data = r.json() or []
+        # Real exchange MICs only — exclude OTC markets (OOTC, PINX, OTCM, etc.)
+        keep_mics = {
+            "XNAS", "XNGS", "XNCM", "XNMS",   # NASDAQ tiers
+            "XNYS", "XASE", "ARCX",            # NYSE / NYSE American / Arca
+            "BATS", "BATY", "EDGA", "EDGX",    # CBOE / BATS family
+            "IEXG",                            # IEX
+        }
+        keep_types = {"Common Stock", "ETP", "ADR", "REIT"}
+        out: list[str] = []
+        for s in data:
+            mic = s.get("mic") or ""
+            stype = s.get("type") or ""
+            if mic not in keep_mics:
+                continue
+            if stype not in keep_types:
+                continue
+            sym = (s.get("displaySymbol") or s.get("symbol") or "").upper().strip()
+            if not sym:
+                continue
+            # Drop warrants, rights, units, preferreds
+            if any(x in sym for x in ("-WT", "-W", "-RT", "-R", "WS", "+")):
+                continue
+            sym = sym.replace(".", "-")
+            out.append(sym)
+        return sorted(set(out))
+    except (requests.RequestException, ValueError):
+        return []
+
+
 def get_full_tsx_listing(market: str = "tsx") -> list[str]:
     """All listed companies on TSX (or TSXV) via TMX Group's directory.
     market='tsx' for the main board (~1000 names), 'tsxv' for Venture (~1700).
