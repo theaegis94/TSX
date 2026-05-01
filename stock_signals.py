@@ -1452,7 +1452,7 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
 
     fig = make_subplots(
         rows=3, cols=1, shared_xaxes=True,
-        vertical_spacing=0.10,
+        vertical_spacing=0.05,
         row_heights=[0.60, 0.20, 0.20],
     )
 
