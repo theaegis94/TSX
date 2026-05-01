@@ -1244,42 +1244,14 @@ with st.sidebar:
 
     st.divider()
 
-    st.header("Settings")
-    # Fetch a wide window once; chart range buttons + drag-zoom narrow it visually
+    # Sensible defaults — Settings UI removed. Tweak per-chart from the popup.
     period = "max"
-    interval = st.selectbox("Bar interval", ["1d", "1wk"], index=0)
-    st.radio(
-        "Macro view",
-        options=["🇨🇦 Canada", "🇺🇸 US", "Both"],
-        index=2,
-        key="macro_view",
-        horizontal=True,
-    )
+    interval = "1d"
+    st.session_state.setdefault("macro_view", "Both")
+    strategy = ss.DEFAULT_STRATEGY_KEY
+    adx_filter = False
+    stop_loss_pct = None
 
-    st.subheader("Strategy")
-    strategy = st.selectbox(
-        "Signal strategy",
-        options=list(ss.STRATEGY_LABELS.keys()),
-        format_func=lambda k: ss.STRATEGY_LABELS[k],
-        index=0,
-    )
-    adx_filter = st.checkbox(
-        "ADX trend filter (>25)",
-        value=False,
-        help="Suppresses signals in choppy/range-bound markets. "
-             "Improves quality, reduces frequency.",
-    )
-
-    st.subheader("Risk")
-    stop_choice = st.selectbox(
-        "Stop loss",
-        options=["None", "5%", "7%", "10%", "15%"],
-        index=0,
-        help="Exit if cumulative drawdown from entry hits this level.",
-    )
-    stop_loss_pct = None if stop_choice == "None" else int(stop_choice.rstrip("%")) / 100
-
-    st.divider()
     if st.button("🔄 Clear cache & refresh"):
         st.cache_data.clear()
         st.rerun()
