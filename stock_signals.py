@@ -1402,8 +1402,8 @@ def build_chart(df: pd.DataFrame, ticker: str, stats: dict, compact: bool = Fals
     ax_price.tick_params(axis="both", labelsize=tick_fs)
 
     ax_rsi.plot(df.index, df["RSI"], color="purple", linewidth=lw * 0.85)
-    ax_rsi.axhline(70, color="red", linestyle="--", alpha=0.5, linewidth=0.8)
-    ax_rsi.axhline(30, color="green", linestyle="--", alpha=0.5, linewidth=0.8)
+    ax_rsi.axhline(70, color="red", linestyle="--", alpha=0.5, linewidth=0.5)
+    ax_rsi.axhline(30, color="green", linestyle="--", alpha=0.5, linewidth=0.5)
     ax_rsi.set_ylim(0, 100)
     ax_rsi.set_ylabel("RSI(14)", fontsize=label_fs)
     ax_rsi.grid(alpha=0.3)
@@ -1458,7 +1458,7 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
     # --- Price panel — single Close line ---
     fig.add_trace(go.Scatter(
         x=df.index, y=df["Close"], mode="lines", name="Close",
-        line=dict(color="#e5e7eb", width=1.2),
+        line=dict(color="#e5e7eb", width=0.5),
         hovertemplate="<b>%{x|%Y-%m-%d}</b><br>Close: $%{y:.2f}<extra></extra>",
     ), row=1, col=1)
 
@@ -1470,38 +1470,38 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
     if "sma50" in indicators_set:
         fig.add_trace(go.Scatter(
             x=df.index, y=df["SMA50"], mode="lines", name="SMA50",
-            line=dict(color="#3b82f6", width=0.8),
+            line=dict(color="#3b82f6", width=0.5),
             hovertemplate="SMA50: $%{y:.2f}<extra></extra>",
         ), row=1, col=1)
     if "sma200" in indicators_set:
         fig.add_trace(go.Scatter(
             x=df.index, y=df["SMA200"], mode="lines", name="SMA200",
-            line=dict(color="#f59e0b", width=0.8),
+            line=dict(color="#f59e0b", width=0.5),
             hovertemplate="SMA200: $%{y:.2f}<extra></extra>",
         ), row=1, col=1)
     if "ema20" in indicators_set:
         fig.add_trace(go.Scatter(
             x=df.index, y=df["Close"].ewm(span=20, adjust=False).mean(),
             mode="lines", name="EMA20",
-            line=dict(color="#10b981", width=0.8),
+            line=dict(color="#10b981", width=0.5),
             hovertemplate="EMA20: $%{y:.2f}<extra></extra>",
         ), row=1, col=1)
     if "ema50" in indicators_set:
         fig.add_trace(go.Scatter(
             x=df.index, y=df["Close"].ewm(span=50, adjust=False).mean(),
             mode="lines", name="EMA50",
-            line=dict(color="#a855f7", width=0.8),
+            line=dict(color="#a855f7", width=0.5),
             hovertemplate="EMA50: $%{y:.2f}<extra></extra>",
         ), row=1, col=1)
     if "bollinger" in indicators_set and "BB_LOWER" in df.columns:
         fig.add_trace(go.Scatter(
             x=df.index, y=df["BB_UPPER"], mode="lines", name="BB Upper",
-            line=dict(color="#94a3b8", width=0.8, dash="dot"),
+            line=dict(color="#94a3b8", width=0.5, dash="dot"),
             hovertemplate="BB Upper: $%{y:.2f}<extra></extra>",
         ), row=1, col=1)
         fig.add_trace(go.Scatter(
             x=df.index, y=df["BB_LOWER"], mode="lines", name="BB Lower",
-            line=dict(color="#94a3b8", width=0.8, dash="dot"),
+            line=dict(color="#94a3b8", width=0.5, dash="dot"),
             fill="tonexty", fillcolor="rgba(148,163,184,0.08)",
             hovertemplate="BB Lower: $%{y:.2f}<extra></extra>",
         ), row=1, col=1)
@@ -1509,12 +1509,12 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
         tk, kj, sa, sb, _chikou = ichimoku(df)
         fig.add_trace(go.Scatter(
             x=df.index, y=tk, mode="lines", name="Tenkan",
-            line=dict(color="#3b82f6", width=0.8),
+            line=dict(color="#3b82f6", width=0.5),
             hovertemplate="Tenkan: $%{y:.2f}<extra></extra>",
         ), row=1, col=1)
         fig.add_trace(go.Scatter(
             x=df.index, y=kj, mode="lines", name="Kijun",
-            line=dict(color="#ef4444", width=0.8),
+            line=dict(color="#ef4444", width=0.5),
             hovertemplate="Kijun: $%{y:.2f}<extra></extra>",
         ), row=1, col=1)
         # Cloud: SA and SB as filled area
@@ -1566,25 +1566,25 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
     # --- RSI panel ---
     fig.add_trace(go.Scatter(
         x=df.index, y=df["RSI"], mode="lines", name="RSI",
-        line=dict(color="#a855f7", width=0.9),
+        line=dict(color="#a855f7", width=0.6),
         showlegend=False,
         hovertemplate="RSI: %{y:.1f}<extra></extra>",
     ), row=2, col=1)
     fig.add_hline(y=70, line_dash="dash", line_color="#ef4444",
-                  line_width=1, opacity=0.6, row=2, col=1)
+                  line_width=0.6, opacity=0.6, row=2, col=1)
     fig.add_hline(y=30, line_dash="dash", line_color="#22c55e",
-                  line_width=1, opacity=0.6, row=2, col=1)
+                  line_width=0.6, opacity=0.6, row=2, col=1)
 
     # --- MACD panel ---
     fig.add_trace(go.Scatter(
         x=df.index, y=df["MACD"], mode="lines", name="MACD",
-        line=dict(color="#3b82f6", width=0.8),
+        line=dict(color="#3b82f6", width=0.5),
         showlegend=False,
         hovertemplate="MACD: %{y:.3f}<extra></extra>",
     ), row=3, col=1)
     fig.add_trace(go.Scatter(
         x=df.index, y=df["MACD_SIGNAL"], mode="lines", name="Signal",
-        line=dict(color="#f59e0b", width=0.8),
+        line=dict(color="#f59e0b", width=0.5),
         showlegend=False,
         hovertemplate="Signal: %{y:.3f}<extra></extra>",
     ), row=3, col=1)
@@ -1596,7 +1596,7 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
         showlegend=False,
         hovertemplate="Hist: %{y:.3f}<extra></extra>",
     ), row=3, col=1)
-    fig.add_hline(y=0, line_color="#6b7280", line_width=0.5, row=3, col=1)
+    fig.add_hline(y=0, line_color="#6b7280", line_width=0.4, row=3, col=1)
 
     # --- Layout ---
     if compact:
@@ -1640,30 +1640,23 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
             size=13,
         ),
     )
-    # Remove inline y-axis titles — we'll use centered annotations below
-    fig.update_yaxes(title="", row=1, col=1,
-                     gridcolor="#5a5b5e", zerolinecolor="#1f2937",
-                     autorange=True)
-    fig.update_yaxes(title="", range=[0, 100],
-                     row=2, col=1, gridcolor="#5a5b5e")
-    fig.update_yaxes(title="", row=3, col=1,
-                     gridcolor="#5a5b5e", zerolinecolor="#1f2937",
-                     autorange=True)
-
-    # Vertical labels centered on each panel (paper-coordinate annotations).
-    # Y values match the geometric center of each subplot given:
-    #   row_heights=[0.60, 0.20, 0.20] and vertical_spacing=0.06
-    label_font = dict(size=14, color="#9ca3af",
+    # Y-axis titles — Plotly handles positioning automatically
+    title_font = dict(size=13, color="#9ca3af",
                       family='"Comic Sans MS", "Comic Sans", cursive')
-    for label, y_pos in [("Price", 0.74), ("RSI", 0.32), ("MACD", 0.10)]:
-        fig.add_annotation(
-            x=-0.09, y=y_pos,
-            xref="paper", yref="paper",
-            text=f"<b>{label}</b>",
-            textangle=-90,
-            showarrow=False,
-            font=label_font,
-        )
+    fig.update_yaxes(
+        title=dict(text="<b>Price</b>", standoff=10, font=title_font),
+        row=1, col=1, gridcolor="#5a5b5e", zerolinecolor="#5a5b5e",
+        autorange=True,
+    )
+    fig.update_yaxes(
+        title=dict(text="<b>RSI</b>", standoff=10, font=title_font),
+        range=[0, 100], row=2, col=1, gridcolor="#5a5b5e",
+    )
+    fig.update_yaxes(
+        title=dict(text="<b>MACD</b>", standoff=10, font=title_font),
+        row=3, col=1, gridcolor="#5a5b5e", zerolinecolor="#5a5b5e",
+        autorange=True,
+    )
 
     # Explicitly set the visible x-range AND lock pan/zoom bounds to the
     # data range so users can't drag off into empty space.
@@ -1745,13 +1738,13 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
     }
     for r, color in panel_borders.items():
         fig.update_xaxes(
-            showgrid=True, gridcolor="#6a6b6e", gridwidth=1,
-            showline=True, linecolor=color, linewidth=2.5,
+            showgrid=True, gridcolor="#6a6b6e", gridwidth=0.5,
+            showline=True, linecolor=color, linewidth=1.2,
             mirror=True, row=r, col=1,
         )
         fig.update_yaxes(
-            showgrid=True, gridcolor="#6a6b6e", gridwidth=1,
-            showline=True, linecolor=color, linewidth=2.5,
+            showgrid=True, gridcolor="#6a6b6e", gridwidth=0.5,
+            showline=True, linecolor=color, linewidth=1.2,
             mirror=True, row=r, col=1,
         )
 
