@@ -1615,18 +1615,17 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
         height=height,
         # Wider left margin to fit the rotated panel labels clear of the
         # widest y-axis numbers (e.g. "100" on the RSI panel).
-        margin=dict(l=90, r=60, t=50, b=60),
+        margin=dict(l=90, r=60, t=80, b=60),
         hovermode="x unified",
-        # Legend INSIDE the chart at top-right with a translucent background.
-        # This way it never collides with Plotly's modebar (top-right outside)
-        # or the range buttons (top-left outside).
+        # Legend OUTSIDE the chart, top-right (same row as range buttons but
+        # opposite end). Keeps the chart area clean.
         legend=dict(
             orientation="h",
-            yanchor="top", y=0.98,
-            xanchor="right", x=0.99,
-            bgcolor="rgba(15,23,42,0.85)",
-            bordercolor="#374151",
-            borderwidth=1,
+            yanchor="bottom", y=1.05,
+            xanchor="right", x=1,
+            bgcolor="rgba(0,0,0,0)",
+            bordercolor="#5a5b5e",
+            borderwidth=0,
             font=dict(size=12),
         ),
         template="plotly_dark",
