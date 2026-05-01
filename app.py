@@ -27,6 +27,14 @@ st.markdown(
     header[data-testid="stHeader"] { display: none !important; }
     [data-testid="stToolbar"] { display: none !important; }
     [data-testid="stDecoration"] { display: none !important; }
+    /* Reclaim the space the hidden header used to occupy */
+    .stApp .main .block-container,
+    .stApp [data-testid="stMainBlockContainer"] {
+        padding-top: 1rem !important;
+    }
+    .stApp [data-testid="stMain"] {
+        padding-top: 0 !important;
+    }
 
     /* Lighter Edge / Windows 11-style theme */
     .stApp { background: #3a3b3e !important; }
