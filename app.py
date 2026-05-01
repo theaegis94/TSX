@@ -632,13 +632,11 @@ def render_quick_analysis():
     adx_filter = st.session_state.get("_adx_filter", False)
     stop_loss_pct = st.session_state.get("_stop_loss_pct")
 
-    expanded = st.session_state.get(f"_qv_expanded_{selected}", False)
-
     # Inline popup uses near-full page width for maximum chart room
     _l, popup_col, _r = st.columns([0.05, 12, 0.05])
     with popup_col, st.container(border=True):
-        # Header row: title + strategy + lookback + expand + close
-        h1, h2, h3, h_ex, h4 = st.columns([2, 2, 1.3, 0.9, 1])
+        # Header row: title + strategy + lookback + close
+        h1, h2, h3, h4 = st.columns([2, 2, 1.5, 1])
         h1.markdown(f"#### 🎯 {selected}")
         _strategy_keys = list(ss.STRATEGY_LABELS.keys())
         strategy = h2.selectbox(
@@ -659,16 +657,9 @@ def render_quick_analysis():
             key=f"qv_period_{selected}",
             label_visibility="collapsed",
         )
-        expand_label = "↩ Collapse" if expanded else "🔍 Expand"
-        if h_ex.button(expand_label, key=f"qv_expand_{selected}",
-                       use_container_width=True,
-                       help="Toggle large chart view"):
-            st.session_state[f"_qv_expanded_{selected}"] = not expanded
-            st.rerun()
         if h4.button("✖ Close", key="close_quick_view",
                      use_container_width=True):
             st.session_state.pop("selected_tile", None)
-            st.session_state.pop(f"_qv_expanded_{selected}", None)
             st.rerun()
 
         # Indicator multiselect (full row below header)
@@ -696,47 +687,29 @@ def render_quick_analysis():
 
         last = df.iloc[-1]
 
-        # Single condensed stats line above the chart (skipped in expanded mode)
-        if not expanded:
-            if bool(last["BUY"]):
-                sig_html = '<span style="color:#16a34a; font-weight:700;">🟢 BUY</span>'
-            elif bool(last["SELL"]):
-                sig_html = '<span style="color:#dc2626; font-weight:700;">🔴 SELL</span>'
-            else:
-                sig_html = f'<span style="color:#9ca3af;">⚪ HOLD ({int(last["SCORE"]):+d})</span>'
+        # Single condensed stats line above the chart
+        if bool(last["BUY"]):
+            sig_html = '<span style="color:#16a34a; font-weight:700;">🟢 BUY</span>'
+        elif bool(last["SELL"]):
+            sig_html = '<span style="color:#dc2626; font-weight:700;">🔴 SELL</span>'
+        else:
+            sig_html = f'<span style="color:#9ca3af;">⚪ HOLD ({int(last["SCORE"]):+d})</span>'
 
-            st.markdown(
-                f'<div style="font-size:1rem; color:#9ca3af; padding:8px 0; line-height:1.7;">'
-                f'{sig_html} &nbsp;·&nbsp; '
-                f'Last <b style="color:#e5e7eb;">${float(last["Close"]):.2f}</b> &nbsp;·&nbsp; '
-                f'Strategy <b style="color:#e5e7eb;">{stats["total_return"]:+.1%}</b> &nbsp;·&nbsp; '
-                f'B&H <b style="color:#e5e7eb;">{stats["buy_hold"]:+.1%}</b> &nbsp;·&nbsp; '
-                f'Max DD <b style="color:#e5e7eb;">{stats.get("max_drawdown", 0):.1%}</b> &nbsp;·&nbsp; '
-                f'Win <b style="color:#e5e7eb;">{stats["win_rate"]:.0%}</b> &nbsp;·&nbsp; '
-                f'<b style="color:#e5e7eb;">{stats["trades"]}</b> trades'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
+        st.markdown(
+            f'<div style="font-size:1rem; color:#9ca3af; padding:8px 0; line-height:1.7;">'
+            f'{sig_html} &nbsp;·&nbsp; '
+            f'Last <b style="color:#e5e7eb;">${float(last["Close"]):.2f}</b> &nbsp;·&nbsp; '
+            f'Strategy <b style="color:#e5e7eb;">{stats["total_return"]:+.1%}</b> &nbsp;·&nbsp; '
+            f'B&H <b style="color:#e5e7eb;">{stats["buy_hold"]:+.1%}</b> &nbsp;·&nbsp; '
+            f'Max DD <b style="color:#e5e7eb;">{stats.get("max_drawdown", 0):.1%}</b> &nbsp;·&nbsp; '
+            f'Win <b style="color:#e5e7eb;">{stats["win_rate"]:.0%}</b> &nbsp;·&nbsp; '
+            f'<b style="color:#e5e7eb;">{stats["trades"]}</b> trades'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
-        # Title rendered above the chart so it doesn't collide with range buttons
-        if expanded:
-            st.markdown(
-                f'<div style="margin-bottom:6px;">'
-                f'<span style="font-size:1.4rem; font-weight:700; '
-                f'color:#f0f0f0;">{ticker}</span> '
-                f'<span style="font-size:1rem; color:#9ca3af;">'
-                f'&nbsp;·&nbsp; {stats["trades"]} trades '
-                f'&nbsp;·&nbsp; {stats["win_rate"]:.0%} win '
-                f'&nbsp;·&nbsp; strategy {stats["total_return"]:+.1%} vs '
-                f'B&H {stats["buy_hold"]:+.1%}'
-                f'</span>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-
-        # Build chart — non-compact (taller) version when expanded
-        fig = ss.build_chart_plotly(df, ticker, stats,
-                                    compact=not expanded,
+        # Build chart
+        fig = ss.build_chart_plotly(df, ticker, stats, compact=True,
                                     indicators=indicators,
                                     theme_dark=_is_dark_theme())
         st.plotly_chart(fig, use_container_width=True,
@@ -750,12 +723,11 @@ def render_quick_analysis():
                             ],
                         })
         _inject_double_click_fullscreen()
-        if not expanded:
-            st.caption(
-                "💡 **Drag** to pan · **scroll** to zoom · "
-                "**double-click chart for fullscreen** (Esc to exit) · "
-                "📰 news + fundamentals → **Single Ticker** tab"
-            )
+        st.caption(
+            "💡 **Drag** to pan · **scroll** to zoom · "
+            "**double-click chart for fullscreen** (Esc to exit) · "
+            "📰 news + fundamentals → **Single Ticker** tab"
+        )
 
 
 def plt_close_cleanup(fig):
