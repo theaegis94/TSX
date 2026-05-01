@@ -1736,18 +1736,24 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
         row=1, col=1,
     )
 
-    # Distinct colored border per panel so it's instantly clear which is which:
-    # blue = Price, purple = RSI, orange = MACD.
+    # Distinct, thicker colored border per panel + visible vertical & horizontal
+    # grid lines so each panel is clearly framed and time alignment is obvious.
     panel_borders = {
-        1: "#60a5fa",  # blue → price
-        2: "#a855f7",  # purple → RSI (matches RSI line color)
-        3: "#f59e0b",  # orange → MACD (matches signal-line color)
+        1: "#60a5fa",  # blue   → Price
+        2: "#a855f7",  # purple → RSI
+        3: "#f59e0b",  # orange → MACD
     }
     for r, color in panel_borders.items():
-        fig.update_xaxes(showline=True, linecolor=color, linewidth=1.5,
-                         mirror=True, row=r, col=1)
-        fig.update_yaxes(showline=True, linecolor=color, linewidth=1.5,
-                         mirror=True, row=r, col=1)
+        fig.update_xaxes(
+            showgrid=True, gridcolor="#6a6b6e", gridwidth=1,
+            showline=True, linecolor=color, linewidth=2.5,
+            mirror=True, row=r, col=1,
+        )
+        fig.update_yaxes(
+            showgrid=True, gridcolor="#6a6b6e", gridwidth=1,
+            showline=True, linecolor=color, linewidth=2.5,
+            mirror=True, row=r, col=1,
+        )
 
     # Subtle matching tint on each panel background (so the area inside is
     # slightly different too, not just the border).
