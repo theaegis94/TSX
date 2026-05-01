@@ -380,76 +380,91 @@ def render_macro_row(macro: dict, header: str | None = None) -> None:
 
 
 def _inject_auto_rescale_y():
-    """Auto-rescale Y axes to fit visible X window on every zoom/pan."""
+    """Auto-rescale Y axes to fit visible X window — on initial load AND on zoom/pan."""
     import streamlit.components.v1 as components
     components.html(
         """
         <script>
         (function() {
             const pdoc = window.parent.document;
+
+            function rescale(chart) {
+                const layout = chart.layout || {};
+                let xMin, xMax;
+                const ax = layout.xaxis || {};
+                if (ax.range) {
+                    xMin = new Date(ax.range[0]).getTime();
+                    xMax = new Date(ax.range[1]).getTime();
+                } else {
+                    // Fall back to data extent
+                    const allX = [];
+                    chart.data.forEach(tr => {
+                        if (tr.x) tr.x.forEach(v => {
+                            const t = new Date(v).getTime();
+                            if (!isNaN(t)) allX.push(t);
+                        });
+                    });
+                    if (!allX.length) return;
+                    xMin = Math.min.apply(null, allX);
+                    xMax = Math.max.apply(null, allX);
+                }
+
+                const yByAxis = {};
+                chart.data.forEach(trace => {
+                    if (!trace.x || !trace.y) return;
+                    const yref = trace.yaxis || 'y';
+                    if (!yByAxis[yref]) yByAxis[yref] = [];
+                    for (let i = 0; i < trace.x.length; i++) {
+                        const t = new Date(trace.x[i]).getTime();
+                        if (t < xMin || t > xMax) continue;
+                        const v = trace.y[i];
+                        if (v == null || !isFinite(v)) continue;
+                        yByAxis[yref].push(v);
+                    }
+                });
+
+                const updates = {};
+                Object.keys(yByAxis).forEach(yref => {
+                    const vals = yByAxis[yref];
+                    if (!vals.length) return;
+                    const lo = Math.min.apply(null, vals);
+                    const hi = Math.max.apply(null, vals);
+                    const pad = (hi - lo) * 0.03 || 0.2;
+                    const axName = yref === 'y'
+                        ? 'yaxis' : 'yaxis' + yref.slice(1);
+                    updates[axName + '.range'] = [lo - pad, hi + pad];
+                    updates[axName + '.autorange'] = false;
+                });
+                if (Object.keys(updates).length) {
+                    try {
+                        window.parent.Plotly.relayout(chart, updates);
+                    } catch (e) {}
+                }
+            }
+
             function attach() {
                 const charts = pdoc.querySelectorAll('.js-plotly-plot');
                 charts.forEach(chart => {
                     if (chart.dataset.autoYAttached === '1') return;
                     chart.dataset.autoYAttached = '1';
+
+                    // Initial rescale once chart has data
+                    if (chart.data && chart.data.length) {
+                        setTimeout(() => rescale(chart), 100);
+                    }
+
+                    // Re-rescale on every zoom/pan
                     chart.on('plotly_relayout', function(ev) {
-                        // Only react to x-range changes (zoom or pan)
-                        const hasXChange = ev['xaxis.range[0]'] !== undefined ||
-                                           ev['xaxis.autorange'] !== undefined ||
-                                           ev['xaxis.range'] !== undefined;
+                        const hasXChange =
+                            ev['xaxis.range[0]'] !== undefined ||
+                            ev['xaxis.autorange'] !== undefined ||
+                            ev['xaxis.range'] !== undefined;
                         if (!hasXChange) return;
-
-                        const layout = chart.layout;
-                        let xMin, xMax;
-                        if (ev['xaxis.range[0]'] !== undefined) {
-                            xMin = new Date(ev['xaxis.range[0]']).getTime();
-                            xMax = new Date(ev['xaxis.range[1]']).getTime();
-                        } else if (layout.xaxis && layout.xaxis.range) {
-                            xMin = new Date(layout.xaxis.range[0]).getTime();
-                            xMax = new Date(layout.xaxis.range[1]).getTime();
-                        } else {
-                            return;
-                        }
-
-                        // Group y values per yaxis (y, y2, y3 for our 3 panels)
-                        const yByAxis = {};
-                        chart.data.forEach(trace => {
-                            if (!trace.x || !trace.y) return;
-                            const yref = trace.yaxis || 'y';
-                            if (!yByAxis[yref]) yByAxis[yref] = [];
-                            for (let i = 0; i < trace.x.length; i++) {
-                                const t = new Date(trace.x[i]).getTime();
-                                if (t < xMin || t > xMax) continue;
-                                const v = trace.y[i];
-                                if (v == null || !isFinite(v)) continue;
-                                yByAxis[yref].push(v);
-                            }
-                        });
-
-                        const updates = {};
-                        Object.keys(yByAxis).forEach(yref => {
-                            const vals = yByAxis[yref];
-                            if (!vals.length) return;
-                            const lo = Math.min.apply(null, vals);
-                            const hi = Math.max.apply(null, vals);
-                            const pad = (hi - lo) * 0.03 || 0.2;
-                            const axName = yref === 'y'
-                                ? 'yaxis'
-                                : 'yaxis' + yref.slice(1);
-                            updates[axName + '.range'] = [lo - pad, hi + pad];
-                            updates[axName + '.autorange'] = false;
-                        });
-                        if (Object.keys(updates).length) {
-                            // Re-layout asynchronously to avoid recursive relayout events
-                            setTimeout(() => {
-                                window.parent.Plotly &&
-                                window.parent.Plotly.relayout(chart, updates);
-                            }, 0);
-                        }
+                        setTimeout(() => rescale(chart), 0);
                     });
                 });
             }
-            [100, 300, 600, 1200, 2500].forEach(d => setTimeout(attach, d));
+            [100, 300, 600, 1200, 2500, 4000].forEach(d => setTimeout(attach, d));
         })();
         </script>
         """,
