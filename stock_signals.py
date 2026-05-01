@@ -2030,6 +2030,11 @@ UNIVERSE_TSX60 = [
 
 
 DEFAULT_WATCHLIST = [
+    "TSLA", "HOD.TO", "HOU.TO", "HNU.TO", "HND.TO", "NOW",
+]
+
+# Original broad-CA/US default kept for reference/seed
+_LEGACY_BROAD_DEFAULT = [
     # Broad CA ETFs
     "XIC.TO", "XIU.TO", "XEQT.TO", "VFV.TO", "ZSP.TO", "HXT.TO",
     # CA banks
