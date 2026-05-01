@@ -1179,8 +1179,10 @@ st.session_state["_stop_loss_pct"] = stop_loss_pct
 
 # --------- tabs ---------
 
-tab_scan, tab_single, tab_screener, tab_news, tab_help = st.tabs(
-    ["📊 Scan", "🔍 Single Ticker", "🎯 Screener", "📰 News", "ℹ️ Help"]
+(tab_scan, tab_single, tab_screener, tab_patterns, tab_news,
+ tab_help) = st.tabs(
+    ["📊 Stocks/ETFs", "🔍 Single Ticker", "🎯 Screener",
+     "🧩 Custom Patterns", "📰 News", "ℹ️ Help"]
 )
 
 
@@ -1637,6 +1639,12 @@ with tab_screener:
                     unsafe_allow_html=True,
                 )
             cols[7].markdown("✓" if m["rsi_oversold"] else "·")
+
+
+# === Custom Patterns tab ===
+with tab_patterns:
+    st.subheader("Custom Patterns")
+    st.caption("Build your own watchlist signal — coming soon.")
 
 
 # === News tab ===
