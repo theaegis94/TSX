@@ -870,6 +870,7 @@ STRATEGY_LABELS = {
     "ma_cross": "MA Cross (20/50)",
     "inside_bar": "Inside Bar Breakout",
     "outside_bar": "Outside Bar Reversal",
+    "outside_bar_breakout": "Outside Bar Breakout",
     "candlestick": "Candlestick Patterns (Hammer/Engulfing/Star/...)",
     "double_topbot": "Double Top / Double Bottom",
 }
@@ -1281,6 +1282,36 @@ def _strategy_outside_bar(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _strategy_outside_bar_breakout(df: pd.DataFrame) -> pd.DataFrame:
+    """Outside-bar breakout: identify outside bars (today's range engulfs
+    yesterday's). After one forms, BUY when a later close breaks above the
+    outside bar's high, SELL when a close breaks below its low.
+    Different from `outside_bar` (the reversal version) — this version waits
+    for confirmation after the engulfing pattern."""
+    out = df.copy()
+    if not {"High", "Low", "Close"}.issubset(out.columns):
+        out["BUY"] = False
+        out["SELL"] = False
+        out["SCORE"] = 0
+        return out
+    outside = (
+        (out["High"] > out["High"].shift(1))
+        & (out["Low"] < out["Low"].shift(1))
+    )
+    # The most recent outside bar's high/low — held until the next outside bar
+    last_outside_high = out["High"].where(outside).ffill().shift(1)
+    last_outside_low = out["Low"].where(outside).ffill().shift(1)
+
+    breakout_up = out["Close"] > last_outside_high
+    breakout_dn = out["Close"] < last_outside_low
+
+    # Fire only on the first bar of each breakout (avoid repeats while held)
+    out["BUY"] = breakout_up & ~breakout_up.shift(1).fillna(False)
+    out["SELL"] = breakout_dn & ~breakout_dn.shift(1).fillna(False)
+    out["SCORE"] = out["BUY"].astype(int) * 2 - out["SELL"].astype(int) * 2
+    return out
+
+
 _STRATEGIES = {
     "trend": _strategy_trend,
     "bollinger": _strategy_bollinger,
@@ -1296,6 +1327,7 @@ _STRATEGIES = {
     "ma_cross": _strategy_ma_cross,
     "inside_bar": _strategy_inside_bar,
     "outside_bar": _strategy_outside_bar,
+    "outside_bar_breakout": _strategy_outside_bar_breakout,
     "candlestick": _strategy_candlestick,
     "double_topbot": _strategy_double_topbot,
 }
