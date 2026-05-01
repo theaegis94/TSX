@@ -1074,8 +1074,18 @@ def _build_ai_context() -> str:
     return "\n".join(parts) if parts else "(no extra context)"
 
 
+def _anthropic_key() -> str:
+    val = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if val:
+        return val
+    try:
+        return str(st.secrets.get("ANTHROPIC_API_KEY", "")).strip()
+    except Exception:
+        return ""
+
+
 def _call_claude(history: list[dict], user_msg: str) -> str:
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    api_key = _anthropic_key()
     if not api_key:
         return ("⚠️ Set `ANTHROPIC_API_KEY` in `.env` "
                 "(or Streamlit Cloud secrets) to enable the chat.")
