@@ -548,7 +548,7 @@ def show_quick_analysis_dialog(ticker: str):
         index=_strategy_keys.index(ss.DEFAULT_STRATEGY_KEY),
         key=f"dlg_strategy_{ticker}",
     )
-    _period_options = ["6mo", "1y", "2y", "5y"]
+    _period_options = ["6mo", "1y", "2y", "5y", "10y", "max"]
     _sidebar_period = st.session_state.get("_period", "2y")
     period = sel_r.selectbox(
         "Lookback",
@@ -669,7 +669,7 @@ def render_quick_analysis():
             key=f"qv_strategy_{selected}",
             label_visibility="collapsed",
         )
-        _period_options = ["6mo", "1y", "2y", "5y"]
+        _period_options = ["6mo", "1y", "2y", "5y", "10y", "max"]
         _sidebar_period = st.session_state.get("_period", "2y")
         period = h3.selectbox(
             "Lookback",
@@ -974,7 +974,8 @@ with st.sidebar:
     st.divider()
 
     st.header("Settings")
-    period = st.selectbox("Lookback period", ["6mo", "1y", "2y", "5y", "10y"],
+    period = st.selectbox("Lookback period",
+                          ["6mo", "1y", "2y", "5y", "10y", "max"],
                           index=2)
     interval = st.selectbox("Bar interval", ["1d", "1wk"], index=0)
     st.radio(
