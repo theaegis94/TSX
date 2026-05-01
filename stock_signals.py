@@ -686,6 +686,19 @@ MAJOR_AI_US_FOR_NEWS = [
     "NVDA", "MSFT", "GOOGL", "META", "AMZN", "AAPL", "TSLA",
     "AMD", "AVGO", "PLTR", "ORCL", "CRM", "SMCI", "MU",
 ]
+OIL_GAS_FOR_NEWS = [
+    # US oil majors / E&P
+    "XOM", "CVX", "COP", "OXY", "EOG", "PXD", "FANG", "DVN",
+    "HES", "MRO", "PSX", "MPC", "VLO", "SLB",
+    # US gas / midstream
+    "WMB", "KMI", "OKE", "LNG",
+    # Canadian oil / gas
+    "SU.TO", "CNQ.TO", "ENB.TO", "TRP.TO", "IMO.TO", "CVE.TO",
+    "ARX.TO", "TOU.TO", "MEG.TO", "PEY.TO",
+    # Energy / commodity ETFs
+    "XLE", "USO", "UNG", "BNO",
+    "HOD.TO", "HOU.TO", "HND.TO", "HNU.TO",
+]
 
 
 def finnhub_insider_transactions(ticker: str, days: int = 90) -> list[dict]:

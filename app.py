@@ -2326,6 +2326,7 @@ with tab_news:
 
         all_curated = list(set(
             ss.MAJOR_TSX_FOR_NEWS + ss.MAJOR_AI_US_FOR_NEWS
+            + ss.OIL_GAS_FOR_NEWS
         ))
 
         with main_l:
@@ -2360,8 +2361,9 @@ with tab_news:
 
         # --- Subtabs: All Canadian / All US market-affecting news ---
         st.markdown("##### All market-affecting news")
-        sub_ca, sub_us, sub_search = st.tabs(
-            ["🍁 Canadian", "🇺🇸 US", "🔍 Search by ticker"]
+        sub_ca, sub_us, sub_oil, sub_search = st.tabs(
+            ["🍁 Canadian", "🇺🇸 US", "🛢️ Oil & Gas",
+             "🔍 Search by ticker"]
         )
 
         with sub_ca:
@@ -2410,6 +2412,25 @@ with tab_news:
                     )
             else:
                 st.info("No US market news available.")
+
+        with sub_oil:
+            oil_news = _aggregate_ticker_news(
+                ss.OIL_GAS_FOR_NEWS, days=7, per_ticker=4
+            )
+            if oil_news:
+                st.caption(
+                    f"{len(oil_news)} headlines from "
+                    f"{len(ss.OIL_GAS_FOR_NEWS)} oil/gas/energy names "
+                    "(US E&P + CA oil/gas + ETFs) · last 7 days. "
+                    "Useful for HOD/HOU/HND/HNU.TO context."
+                )
+                for art in oil_news[:80]:
+                    _render_news_card(
+                        art, show_ticker=True,
+                        watchlist=_wl_normalized, curated=all_curated,
+                    )
+            else:
+                st.info("No oil/gas news in the last 7 days.")
 
         with sub_search:
             col1, col2 = st.columns([3, 1])
