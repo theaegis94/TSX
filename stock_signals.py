@@ -1751,12 +1751,14 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
                 row=r, col=1, gridcolor="#5a5b5e",
             )
 
-        # Price panel — linear scale, floor at $0, top auto-fits the data.
-        # The JS auto-rescaler keeps the floor at 0 and only adjusts the top.
+        # Price panel — linear scale, floor strictly at $0.
+        # rangemode="nonnegative" prevents Plotly's tick algorithm from
+        # extending below 0 for "nice" tick spacing.
         price_max = float(df["Close"].max())
         if price_max > 0:
             fig.update_yaxes(
                 autorange=False,
+                rangemode="nonnegative",
                 range=[0, price_max * 1.03],
                 row=1, col=1,
             )
