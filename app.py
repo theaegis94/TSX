@@ -514,10 +514,10 @@ def render_watchlist_bar(tickers: tuple) -> None:
                 arrow = "▲" if chg >= 0 else "▼"
                 sign = "+" if chg >= 0 else ""
                 st.markdown(
-                    f'<div style="text-align:center; line-height:1.15;">'
-                    f'<span style="font-size:0.85rem;">${q["price"]:.2f}</span>'
+                    f'<div style="text-align:center; line-height:1.25;">'
+                    f'<span style="font-size:1.05rem; font-weight:600;">${q["price"]:.2f}</span>'
                     f'<br>'
-                    f'<span style="font-size:0.7rem; color:{color}; font-weight:600;">'
+                    f'<span style="font-size:0.9rem; color:{color}; font-weight:600;">'
                     f'{arrow} {sign}{chg:.2f}%</span>'
                     f'</div>',
                     unsafe_allow_html=True,
