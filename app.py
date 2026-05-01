@@ -409,10 +409,13 @@ def _inject_auto_rescale_y():
                     xMax = Math.max.apply(null, allX);
                 }
 
+                // Only rescale the Price panel (yaxis); leave RSI (yaxis2)
+                // and MACD (yaxis3) at their fixed initial ranges.
                 const yByAxis = {};
                 chart.data.forEach(trace => {
                     if (!trace.x || !trace.y) return;
                     const yref = trace.yaxis || 'y';
+                    if (yref !== 'y') return;  // skip y2, y3
                     if (!yByAxis[yref]) yByAxis[yref] = [];
                     for (let i = 0; i < trace.x.length; i++) {
                         const t = new Date(trace.x[i]).getTime();
@@ -427,22 +430,11 @@ def _inject_auto_rescale_y():
                 Object.keys(yByAxis).forEach(yref => {
                     const vals = yByAxis[yref];
                     if (!vals.length) return;
-                    let lo = Math.min.apply(null, vals);
-                    let hi = Math.max.apply(null, vals);
+                    const hi = Math.max.apply(null, vals);
                     const axName = yref === 'y'
                         ? 'yaxis' : 'yaxis' + yref.slice(1);
-                    const axCfg = (chart.layout || {})[axName] || {};
-                    if (axCfg.type === 'log') {
-                        // Plotly log-axis ranges are in log10
-                        if (lo <= 0) lo = 0.01;
-                        const lglo = Math.log10(lo);
-                        const lghi = Math.log10(hi);
-                        const pad = (lghi - lglo) * 0.05 || 0.1;
-                        updates[axName + '.range'] = [lglo - pad, lghi + pad];
-                    } else {
-                        const pad = (hi - lo) * 0.03 || 0.2;
-                        updates[axName + '.range'] = [lo - pad, hi + pad];
-                    }
+                    // Price panel — floor at 0, top fits data + 3% padding
+                    updates[axName + '.range'] = [0, hi * 1.03];
                     updates[axName + '.autorange'] = false;
                 });
                 if (Object.keys(updates).length) {

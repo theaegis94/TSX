@@ -1751,15 +1751,13 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
                 row=r, col=1, gridcolor="#5a5b5e",
             )
 
-        # Price panel — linear scale, autorange. The JS auto-rescaler then
-        # tightens the y-axis to fit only the visible x-window's data.
-        price_min = float(df["Close"].min())
+        # Price panel — linear scale, floor at $0, top auto-fits the data.
+        # The JS auto-rescaler keeps the floor at 0 and only adjusts the top.
         price_max = float(df["Close"].max())
-        if price_max > price_min:
-            pad = (price_max - price_min) * 0.03
+        if price_max > 0:
             fig.update_yaxes(
-                autorange=True,
-                range=[price_min - pad, price_max + pad],
+                autorange=False,
+                range=[0, price_max * 1.03],
                 row=1, col=1,
             )
 
