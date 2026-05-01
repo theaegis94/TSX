@@ -427,12 +427,22 @@ def _inject_auto_rescale_y():
                 Object.keys(yByAxis).forEach(yref => {
                     const vals = yByAxis[yref];
                     if (!vals.length) return;
-                    const lo = Math.min.apply(null, vals);
-                    const hi = Math.max.apply(null, vals);
-                    const pad = (hi - lo) * 0.03 || 0.2;
+                    let lo = Math.min.apply(null, vals);
+                    let hi = Math.max.apply(null, vals);
                     const axName = yref === 'y'
                         ? 'yaxis' : 'yaxis' + yref.slice(1);
-                    updates[axName + '.range'] = [lo - pad, hi + pad];
+                    const axCfg = (chart.layout || {})[axName] || {};
+                    if (axCfg.type === 'log') {
+                        // Plotly log-axis ranges are in log10
+                        if (lo <= 0) lo = 0.01;
+                        const lglo = Math.log10(lo);
+                        const lghi = Math.log10(hi);
+                        const pad = (lghi - lglo) * 0.05 || 0.1;
+                        updates[axName + '.range'] = [lglo - pad, lghi + pad];
+                    } else {
+                        const pad = (hi - lo) * 0.03 || 0.2;
+                        updates[axName + '.range'] = [lo - pad, hi + pad];
+                    }
                     updates[axName + '.autorange'] = false;
                 });
                 if (Object.keys(updates).length) {

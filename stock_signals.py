@@ -1749,12 +1749,18 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
                 row=r, col=1, gridcolor="#5a5b5e",
             )
 
-        # Price panel — let Plotly autorange to data; tight 3% padding only
-        # when the user has not zoomed. The JS auto-rescaler then takes over
-        # on every X zoom/pan to compute Y from only visible data.
+        # Price panel — auto-pick log scale when the data spans orders of
+        # magnitude (typical for leveraged/inverse ETFs that decayed over years).
         price_min = float(df["Close"].min())
         price_max = float(df["Close"].max())
-        if price_max > price_min:
+        if price_min > 0 and price_max / price_min > 20:
+            # Log scale: range is in log10 — set autorange and let it pick
+            fig.update_yaxes(
+                type="log",
+                autorange=True,
+                row=1, col=1,
+            )
+        elif price_max > price_min:
             pad = (price_max - price_min) * 0.03
             fig.update_yaxes(
                 autorange=True,
