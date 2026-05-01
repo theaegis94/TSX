@@ -1657,6 +1657,8 @@ RULE_INDICATORS = {
     "MACD":            "MACD line",
     "MACD_SIGNAL":     "MACD signal",
     "MACD_HIST":       "MACD histogram",
+    "SMA5":            "SMA(5)",
+    "SMA20":           "SMA(20)",
     "SMA50":           "SMA(50)",
     "SMA200":          "SMA(200)",
     "BB_LOWER":        "Bollinger lower",
@@ -1664,6 +1666,8 @@ RULE_INDICATORS = {
     "BB_UPPER":        "Bollinger upper",
     "ADX":             "ADX(14)",
     "DAILY_CHG_PCT":   "Daily change %",
+    "DIST_SMA5_PCT":   "Distance from SMA5 (%)",
+    "DIST_SMA20_PCT":  "Distance from SMA20 (%)",
     "DIST_SMA50_PCT":  "Distance from SMA50 (%)",
     "DIST_SMA200_PCT": "Distance from SMA200 (%)",
     "BB_PCT_B":        "Bollinger %B (0–1)",
@@ -1681,6 +1685,12 @@ def _last_value(df, key: str):
     elif key == "DAILY_CHG_PCT" and len(df) >= 2:
         prev = df.iloc[-2]["Close"]
         v = (last["Close"] - prev) / prev * 100 if prev else None
+    elif key == "DIST_SMA5_PCT" and "SMA5" in df.columns:
+        v = (last["Close"] - last["SMA5"]) / last["SMA5"] * 100 \
+            if last["SMA5"] else None
+    elif key == "DIST_SMA20_PCT" and "SMA20" in df.columns:
+        v = (last["Close"] - last["SMA20"]) / last["SMA20"] * 100 \
+            if last["SMA20"] else None
     elif key == "DIST_SMA50_PCT" and "SMA50" in df.columns:
         v = (last["Close"] - last["SMA50"]) / last["SMA50"] * 100 \
             if last["SMA50"] else None

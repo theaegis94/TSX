@@ -841,6 +841,8 @@ def bollinger(series: pd.Series, period: int = 20, std: float = 2.0):
 
 def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
+    out["SMA5"] = out["Close"].rolling(5).mean()
+    out["SMA20"] = out["Close"].rolling(20).mean()
     out["SMA50"] = out["Close"].rolling(50).mean()
     out["SMA200"] = out["Close"].rolling(200).mean()
     out["RSI"] = rsi(out["Close"])
