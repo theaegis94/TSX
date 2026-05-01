@@ -927,6 +927,34 @@ with st.sidebar:
     if "_add_msg" in st.session_state:
         st.caption(st.session_state["_add_msg"])
 
+    # Quick snapshot — live price + day change for each watchlist ticker
+    st.subheader("Snapshot")
+    if _wl_normalized:
+        snapshot_quotes = cached_quotes(tuple(_wl_normalized[:20]))
+        if snapshot_quotes:
+            for t in _wl_normalized[:20]:
+                q = snapshot_quotes.get(t)
+                if not q:
+                    continue
+                chg = q["change_pct"]
+                color = "#16a34a" if chg >= 0 else "#dc2626"
+                arrow = "▲" if chg >= 0 else "▼"
+                sign = "+" if chg >= 0 else ""
+                st.markdown(
+                    f'<div style="display:flex; justify-content:space-between; '
+                    f'padding:4px 6px; margin:2px 0; border-radius:6px; '
+                    f'background:#3a3b3e; font-size:0.85rem;">'
+                    f'<span style="font-weight:600;">{t}</span>'
+                    f'<span>${q["price"]:.2f} '
+                    f'<span style="color:{color};">{arrow} {sign}{chg:.2f}%</span>'
+                    f'</span></div>',
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.caption("Loading prices…")
+    else:
+        st.caption("No tickers in watchlist.")
+
     st.divider()
 
     st.header("Settings")
