@@ -462,24 +462,6 @@ def _on_tile_click(ticker: str):
     st.session_state["selected_tile"] = ticker
 
 
-def _move_ticker(ticker: str, direction: int) -> None:
-    """Swap `ticker` with its neighbor in the watchlist. direction = -1 (left) or +1 (right)."""
-    current = st.session_state.get(
-        "watchlist_input", ", ".join(ss.DEFAULT_WATCHLIST)
-    )
-    parts = [p.strip() for p in current.split(",") if p.strip()]
-    upper_parts = [p.upper() for p in parts]
-    target = ticker.upper()
-    if target not in upper_parts:
-        return
-    idx = upper_parts.index(target)
-    new_idx = idx + direction
-    if new_idx < 0 or new_idx >= len(parts):
-        return
-    parts[idx], parts[new_idx] = parts[new_idx], parts[idx]
-    st.session_state.watchlist_input = ", ".join(parts)
-
-
 def render_watchlist_bar(tickers: tuple) -> None:
     if not tickers:
         return
@@ -514,13 +496,11 @@ def render_watchlist_bar(tickers: tuple) -> None:
         cols = st.columns(cols_per_row)
         for i, t in enumerate(row_tickers):
             with cols[i]:
-                # Main ticker button
                 cols[i].button(
                     t, key=f"tile_btn_{t}",
                     on_click=_on_tile_click, args=(t,),
                     use_container_width=True,
                 )
-                # Price + change row
                 q = quotes.get(t)
                 if not q:
                     st.markdown(
@@ -528,37 +508,19 @@ def render_watchlist_bar(tickers: tuple) -> None:
                         'font-size:0.75rem; line-height:1.1;">—<br>—</div>',
                         unsafe_allow_html=True,
                     )
-                else:
-                    chg = q["change_pct"]
-                    color = "#16a34a" if chg >= 0 else "#dc2626"
-                    arrow = "▲" if chg >= 0 else "▼"
-                    sign = "+" if chg >= 0 else ""
-                    st.markdown(
-                        f'<div style="text-align:center; line-height:1.15;">'
-                        f'<span style="font-size:0.85rem;">${q["price"]:.2f}</span>'
-                        f'<br>'
-                        f'<span style="font-size:0.7rem; color:{color}; font-weight:600;">'
-                        f'{arrow} {sign}{chg:.2f}%</span>'
-                        f'</div>',
-                        unsafe_allow_html=True,
-                    )
-
-                # Reorder buttons: ◀ left  ▶ right
-                global_idx = row_start + i
-                mv_l, mv_r = st.columns(2)
-                mv_l.button(
-                    "◀", key=f"tile_left_{t}",
-                    on_click=_move_ticker, args=(t, -1),
-                    use_container_width=True,
-                    disabled=(global_idx == 0),
-                    help="Move left",
-                )
-                mv_r.button(
-                    "▶", key=f"tile_right_{t}",
-                    on_click=_move_ticker, args=(t, +1),
-                    use_container_width=True,
-                    disabled=(global_idx == len(tickers) - 1),
-                    help="Move right",
+                    continue
+                chg = q["change_pct"]
+                color = "#16a34a" if chg >= 0 else "#dc2626"
+                arrow = "▲" if chg >= 0 else "▼"
+                sign = "+" if chg >= 0 else ""
+                st.markdown(
+                    f'<div style="text-align:center; line-height:1.15;">'
+                    f'<span style="font-size:0.85rem;">${q["price"]:.2f}</span>'
+                    f'<br>'
+                    f'<span style="font-size:0.7rem; color:{color}; font-weight:600;">'
+                    f'{arrow} {sign}{chg:.2f}%</span>'
+                    f'</div>',
+                    unsafe_allow_html=True,
                 )
 
 
