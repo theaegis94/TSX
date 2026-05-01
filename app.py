@@ -700,25 +700,16 @@ def show_quick_analysis_dialog(ticker: str):
     adx_filter = st.session_state.get("_adx_filter", False)
     stop_loss_pct = st.session_state.get("_stop_loss_pct")
 
-    # Strategy + lookback selectors
-    sel_l, sel_r = st.columns([3, 2])
+    # Strategy selector (lookback is fixed at 5y; chart zoom narrows visually)
     _strategy_keys = list(ss.STRATEGY_LABELS.keys())
-    strategy = sel_l.selectbox(
+    strategy = st.selectbox(
         "Strategy",
         options=_strategy_keys,
         format_func=lambda k: ss.STRATEGY_LABELS[k],
         index=_strategy_keys.index(ss.DEFAULT_STRATEGY_KEY),
         key=f"dlg_strategy_{ticker}",
     )
-    _period_options = ["6mo", "1y", "2y", "5y", "10y", "max"]
-    _sidebar_period = st.session_state.get("_period", "2y")
-    period = sel_r.selectbox(
-        "Lookback",
-        _period_options,
-        index=(_period_options.index(_sidebar_period)
-               if _sidebar_period in _period_options else 2),
-        key=f"dlg_period_{ticker}",
-    )
+    period = st.session_state.get("_period", "5y")
     dlg_indicators = st.multiselect(
         "Indicators",
         options=list(ss.INDICATOR_LABELS.keys()),
@@ -821,8 +812,8 @@ def render_quick_analysis():
     # Inline popup uses near-full page width for maximum chart room
     _l, popup_col, _r = st.columns([0.05, 12, 0.05])
     with popup_col, st.container(border=True):
-        # Header row: title + strategy + lookback + close
-        h1, h2, h3, h4 = st.columns([2, 2, 1.5, 1])
+        # Header row: title + strategy + close (lookback removed; chart zoom narrows visually)
+        h1, h2, h3 = st.columns([3, 2, 1])
         h1.markdown(f"#### 🎯 {selected}")
         _strategy_keys = list(ss.STRATEGY_LABELS.keys())
         strategy = h2.selectbox(
@@ -833,17 +824,8 @@ def render_quick_analysis():
             key=f"qv_strategy_{selected}",
             label_visibility="collapsed",
         )
-        _period_options = ["6mo", "1y", "2y", "5y", "10y", "max"]
-        _sidebar_period = st.session_state.get("_period", "2y")
-        period = h3.selectbox(
-            "Lookback",
-            _period_options,
-            index=(_period_options.index(_sidebar_period)
-                   if _sidebar_period in _period_options else 2),
-            key=f"qv_period_{selected}",
-            label_visibility="collapsed",
-        )
-        if h4.button("✖ Close", key="close_quick_view",
+        period = st.session_state.get("_period", "5y")
+        if h3.button("✖ Close", key="close_quick_view",
                      use_container_width=True):
             st.session_state.pop("selected_tile", None)
             st.rerun()
@@ -1139,9 +1121,8 @@ with st.sidebar:
     st.divider()
 
     st.header("Settings")
-    period = st.selectbox("Lookback period",
-                          ["6mo", "1y", "2y", "5y", "10y", "max"],
-                          index=2)
+    # Fetch a wide window once; chart range buttons + drag-zoom narrow it visually
+    period = "5y"
     interval = st.selectbox("Bar interval", ["1d", "1wk"], index=0)
     st.radio(
         "Macro view",
