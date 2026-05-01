@@ -1693,9 +1693,6 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
         # widest y-axis numbers (e.g. "100" on the RSI panel).
         margin=dict(l=90, r=60, t=60, b=100),
         hovermode="x unified",
-        # TradingView-style: spike lines (crosshair) follow cursor exactly
-        spikedistance=-1,
-        hoverdistance=100,
         # Legend BELOW the chart (under the bottom MACD panel) — never
         # competes with the modebar (top-right) or range buttons (top-left).
         legend=dict(
@@ -1728,31 +1725,15 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
         autorange=True,
         tickprefix="$",
         tickformat=".2f",
-        showspikes=True,
-        spikemode="across",
-        spikesnap="cursor",
-        spikethickness=1,
-        spikedash="dot",
-        spikecolor="#9ca3af",
-    )
-    spike_cfg = dict(
-        showspikes=True,
-        spikemode="across",
-        spikesnap="cursor",
-        spikethickness=1,
-        spikedash="dot",
-        spikecolor="#9ca3af",
     )
     fig.update_yaxes(
         title=dict(text="<b>RSI</b>", standoff=10, font=title_font),
         range=[0, 100], row=2, col=1, gridcolor="#5a5b5e",
-        **spike_cfg,
     )
     fig.update_yaxes(
         title=dict(text="<b>MACD</b>", standoff=10, font=title_font),
         row=3, col=1, gridcolor="#5a5b5e", zerolinecolor="#5a5b5e",
         autorange=True,
-        **spike_cfg,
     )
 
     # Explicitly set the visible x-range AND lock pan/zoom bounds to the
@@ -1836,14 +1817,6 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
             showline=True, linecolor=color, linewidth=1.2,
             mirror=True,
             showticklabels=True,  # show month labels on every panel
-            # TradingView-style crosshair: vertical spike line follows cursor
-            # across all panels.
-            showspikes=True,
-            spikemode="across",
-            spikesnap="cursor",
-            spikethickness=1,
-            spikedash="dot",
-            spikecolor="#9ca3af",
             row=r, col=1,
         )
         fig.update_yaxes(
