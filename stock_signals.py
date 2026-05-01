@@ -1611,7 +1611,8 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
     # of inside the figure — avoids collisions with the range-selector buttons.
     fig.update_layout(
         height=height,
-        margin=dict(l=80, r=50, t=50, b=40),
+        # Uniform 60px on left/right/bottom for even breathing room.
+        margin=dict(l=80, r=60, t=50, b=60),
         hovermode="x unified",
         # Legend INSIDE the chart at top-right with a translucent background.
         # This way it never collides with Plotly's modebar (top-right outside)
@@ -1623,7 +1624,7 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
             bgcolor="rgba(15,23,42,0.85)",
             bordercolor="#374151",
             borderwidth=1,
-            font=dict(size=11),
+            font=dict(size=12),
         ),
         template="plotly_dark",
         plot_bgcolor="#4a4b4e",
@@ -1635,6 +1636,7 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
         font=dict(
             family='"Comic Sans MS", "Comic Sans", cursive',
             color="#e5e7eb",
+            size=13,
         ),
     )
     # Remove inline y-axis titles — we'll use centered annotations below
@@ -1650,7 +1652,7 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
     # Vertical labels centered on each panel (paper-coordinate annotations).
     # Y values match the geometric center of each subplot given:
     #   row_heights=[0.60, 0.20, 0.20] and vertical_spacing=0.06
-    label_font = dict(size=13, color="#9ca3af",
+    label_font = dict(size=14, color="#9ca3af",
                       family='"Comic Sans MS", "Comic Sans", cursive')
     for label, y_pos in [("Price", 0.74), ("RSI", 0.32), ("MACD", 0.10)]:
         fig.add_annotation(
@@ -1724,7 +1726,7 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
             activecolor="#3b82f6",
             bordercolor="#374151",
             borderwidth=1,
-            font=dict(color="#e5e7eb", size=11),
+            font=dict(color="#e5e7eb", size=12),
             x=0,
             xanchor="left",
             y=1.05,
