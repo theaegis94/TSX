@@ -282,6 +282,14 @@ def _sync_watchlist_to_url():
 _init_watchlist_from_url()
 
 
+def _is_dark_theme() -> bool:
+    """Detect Streamlit's current theme so chart line colors can adapt."""
+    try:
+        return (st.get_option("theme.base") or "dark") != "light"
+    except Exception:
+        return True
+
+
 # --------- caching wrappers ---------
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -565,7 +573,8 @@ def show_quick_analysis_dialog(ticker: str):
         unsafe_allow_html=True,
     )
     fig = ss.build_chart_plotly(df, norm_ticker, stats, compact=True,
-                                indicators=dlg_indicators)
+                                indicators=dlg_indicators,
+                                theme_dark=_is_dark_theme())
     st.plotly_chart(fig, use_container_width=True,
                     config={
                         "displayModeBar": True,
@@ -715,7 +724,8 @@ def render_quick_analysis():
         # Build chart — non-compact (taller) version when expanded
         fig = ss.build_chart_plotly(df, ticker, stats,
                                     compact=not expanded,
-                                    indicators=indicators)
+                                    indicators=indicators,
+                                    theme_dark=_is_dark_theme())
         st.plotly_chart(fig, use_container_width=True,
                         config={
                             "displayModeBar": True,
@@ -1173,7 +1183,8 @@ with tab_single:
                     f'</div>',
                     unsafe_allow_html=True,
                 )
-                fig = ss.build_chart_plotly(df, ticker, stats)
+                fig = ss.build_chart_plotly(df, ticker, stats,
+                                            theme_dark=_is_dark_theme())
                 st.plotly_chart(fig, use_container_width=True,
                                 config={"displayModeBar": True,
                                         "scrollZoom": True,

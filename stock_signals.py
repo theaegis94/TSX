@@ -1442,7 +1442,8 @@ DEFAULT_INDICATORS = ["sma50", "sma200"]
 
 def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
                        compact: bool = False,
-                       indicators: list[str] | None = None):
+                       indicators: list[str] | None = None,
+                       theme_dark: bool = True):
     """Interactive Plotly version of the price/RSI/MACD chart.
     Supports mousewheel zoom, click+drag pan, hover tooltips, and range buttons.
     """
@@ -1455,10 +1456,11 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
         row_heights=[0.60, 0.20, 0.20],
     )
 
-    # --- Price panel — single Close line ---
+    # --- Price panel — single Close line, color follows the theme ---
+    close_color = "#ffffff" if theme_dark else "#000000"
     fig.add_trace(go.Scatter(
         x=df.index, y=df["Close"], mode="lines", name="Close",
-        line=dict(color="#e5e7eb", width=0.5),
+        line=dict(color=close_color, width=0.8),
         hovertemplate="<b>%{x|%Y-%m-%d}</b><br>Close: $%{y:.2f}<extra></extra>",
     ), row=1, col=1)
 
@@ -1637,11 +1639,11 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
         font=dict(
             family='"Comic Sans MS", "Comic Sans", cursive',
             color="#e5e7eb",
-            size=13,
+            size=14,
         ),
     )
     # Y-axis titles — Plotly handles positioning automatically
-    title_font = dict(size=13, color="#9ca3af",
+    title_font = dict(size=15, color="#9ca3af",
                       family='"Comic Sans MS", "Comic Sans", cursive')
     fig.update_yaxes(
         title=dict(text="<b>Price</b>", standoff=10, font=title_font),
