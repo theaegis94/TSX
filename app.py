@@ -192,6 +192,17 @@ st.markdown(
                     transform 0.15s ease;
     }
 
+    /* Thicker horizontal dividers (st.divider) */
+    .stApp hr,
+    .stApp [data-testid="stHorizontalRule"],
+    .stApp [data-testid="stHeading"] + hr {
+        border: none !important;
+        height: 2px !important;
+        background: #6a6b6e !important;
+        margin: 12px 0 !important;
+        opacity: 1 !important;
+    }
+
     /* High-contrast text selection — bright yellow on black */
     ::selection {
         background: #fbbf24 !important;
