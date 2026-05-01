@@ -1053,7 +1053,8 @@ with tab_scan:
             st.caption("No matches. Tip: Finnhub free-tier coverage is best for US + cross-listed names.")
 
     # --- Bulk edit (hidden by default) ---
-    with st.expander("Bulk edit watchlist (paste/clear all)", expanded=False):
+    with st.expander("📝 Edit / reorder watchlist (paste, clear, rearrange)",
+                     expanded=False):
         st.text_area(
             "Comma-separated tickers — bare = US, .TO = TSX, .V = TSXV",
             default_str, height=68, key="watchlist_input",
