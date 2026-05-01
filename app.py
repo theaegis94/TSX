@@ -709,7 +709,7 @@ def show_quick_analysis_dialog(ticker: str):
         index=_strategy_keys.index(ss.DEFAULT_STRATEGY_KEY),
         key=f"dlg_strategy_{ticker}",
     )
-    period = st.session_state.get("_period", "5y")
+    period = st.session_state.get("_period", "max")
     dlg_indicators = st.multiselect(
         "Indicators",
         options=list(ss.INDICATOR_LABELS.keys()),
@@ -824,7 +824,7 @@ def render_quick_analysis():
             key=f"qv_strategy_{selected}",
             label_visibility="collapsed",
         )
-        period = st.session_state.get("_period", "5y")
+        period = st.session_state.get("_period", "max")
         if h3.button("✖ Close", key="close_quick_view",
                      use_container_width=True):
             st.session_state.pop("selected_tile", None)
@@ -1123,7 +1123,7 @@ with st.sidebar:
 
     st.header("Settings")
     # Fetch a wide window once; chart range buttons + drag-zoom narrow it visually
-    period = "5y"
+    period = "max"
     interval = st.selectbox("Bar interval", ["1d", "1wk"], index=0)
     st.radio(
         "Macro view",
