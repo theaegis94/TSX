@@ -825,7 +825,7 @@ def render_quick_analysis():
             label_visibility="collapsed",
         )
         period = st.session_state.get("_period", "max")
-        if h3.button("✖ Close", key="close_quick_view",
+        if h3.button(":red[**✖**] Close", key="close_quick_view",
                      use_container_width=True):
             st.session_state.pop("selected_tile", None)
             st.rerun()
