@@ -1736,15 +1736,34 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
         row=1, col=1,
     )
 
-    # Box border around each subplot panel. With `mirror=True` Plotly draws
-    # a line on every side of the plot area, sitting right at the plot edge.
-    # The spacing between panels is split evenly: half above the lower
-    # panel's top border, half below the upper panel's bottom border.
-    border_color = "#4b5563"
-    fig.update_xaxes(showline=True, linecolor=border_color,
-                     linewidth=1, mirror=True)
-    fig.update_yaxes(showline=True, linecolor=border_color,
-                     linewidth=1, mirror=True)
+    # Distinct colored border per panel so it's instantly clear which is which:
+    # blue = Price, purple = RSI, orange = MACD.
+    panel_borders = {
+        1: "#60a5fa",  # blue → price
+        2: "#a855f7",  # purple → RSI (matches RSI line color)
+        3: "#f59e0b",  # orange → MACD (matches signal-line color)
+    }
+    for r, color in panel_borders.items():
+        fig.update_xaxes(showline=True, linecolor=color, linewidth=1.5,
+                         mirror=True, row=r, col=1)
+        fig.update_yaxes(showline=True, linecolor=color, linewidth=1.5,
+                         mirror=True, row=r, col=1)
+
+    # Subtle matching tint on each panel background (so the area inside is
+    # slightly different too, not just the border).
+    panel_tints = {
+        1: "rgba(96,165,250,0.04)",
+        2: "rgba(168,85,247,0.06)",
+        3: "rgba(245,158,11,0.05)",
+    }
+    for r, tint in panel_tints.items():
+        fig.add_shape(
+            type="rect",
+            xref="x domain", yref="y domain",
+            x0=0, x1=1, y0=0, y1=1,
+            fillcolor=tint, line_width=0, layer="below",
+            row=r, col=1,
+        )
 
     return fig
 
