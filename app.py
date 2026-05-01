@@ -1650,9 +1650,190 @@ with tab_screener:
 
 
 # === Custom Patterns tab ===
+RULE_INDICATORS = {
+    "Close":           "Close price ($)",
+    "Volume":          "Volume",
+    "RSI":             "RSI(14)",
+    "MACD":            "MACD line",
+    "MACD_SIGNAL":     "MACD signal",
+    "MACD_HIST":       "MACD histogram",
+    "SMA50":           "SMA(50)",
+    "SMA200":          "SMA(200)",
+    "BB_LOWER":        "Bollinger lower",
+    "BB_MID":          "Bollinger middle",
+    "BB_UPPER":        "Bollinger upper",
+    "ADX":             "ADX(14)",
+    "DAILY_CHG_PCT":   "Daily change %",
+    "DIST_SMA50_PCT":  "Distance from SMA50 (%)",
+    "DIST_SMA200_PCT": "Distance from SMA200 (%)",
+    "BB_PCT_B":        "Bollinger %B (0–1)",
+}
+RULE_OPS = ["<", "<=", ">", ">=", "between"]
+
+
+def _last_value(df, key: str):
+    """Get the most recent value of a named indicator for a ticker df."""
+    if df is None or df.empty:
+        return None
+    last = df.iloc[-1]
+    if key in df.columns:
+        v = last[key]
+    elif key == "DAILY_CHG_PCT" and len(df) >= 2:
+        prev = df.iloc[-2]["Close"]
+        v = (last["Close"] - prev) / prev * 100 if prev else None
+    elif key == "DIST_SMA50_PCT" and "SMA50" in df.columns:
+        v = (last["Close"] - last["SMA50"]) / last["SMA50"] * 100 \
+            if last["SMA50"] else None
+    elif key == "DIST_SMA200_PCT" and "SMA200" in df.columns:
+        v = (last["Close"] - last["SMA200"]) / last["SMA200"] * 100 \
+            if last["SMA200"] else None
+    elif key == "BB_PCT_B" and {"BB_LOWER", "BB_UPPER"}.issubset(df.columns):
+        rng = last["BB_UPPER"] - last["BB_LOWER"]
+        v = (last["Close"] - last["BB_LOWER"]) / rng if rng else None
+    else:
+        return None
+    try:
+        f = float(v)
+        return f if f == f else None  # NaN guard
+    except (TypeError, ValueError):
+        return None
+
+
+def _eval_rule(df, rule: dict) -> bool | None:
+    """Evaluate one rule against the latest bar. Returns None if data missing."""
+    left = _last_value(df, rule["left"])
+    if left is None:
+        return None
+    op = rule["op"]
+    a = rule.get("a")
+    b = rule.get("b")
+    if a is None:
+        return None
+    if op == "<":      return left < a
+    if op == "<=":     return left <= a
+    if op == ">":      return left > a
+    if op == ">=":     return left >= a
+    if op == "between" and b is not None:
+        lo, hi = (a, b) if a <= b else (b, a)
+        return lo <= left <= hi
+    return None
+
+
 with tab_patterns:
-    st.subheader("Custom Patterns")
-    st.caption("Build your own watchlist signal — coming soon.")
+    st.subheader("Custom Watchlist Screener")
+    st.caption(
+        "Build a set of indicator rules. Tickers in your watchlist matching "
+        "**all** rules (AND) on the latest bar are listed below. "
+        "Rules persist for this session — saving + email coming next."
+    )
+
+    if "custom_rules" not in st.session_state:
+        st.session_state.custom_rules = [
+            {"left": "RSI", "op": "<", "a": 30.0, "b": None},
+        ]
+
+    rules = st.session_state.custom_rules
+
+    # --- Rule editor ---
+    st.markdown("##### Rules")
+    for i, rule in enumerate(rules):
+        c_left, c_op, c_a, c_b, c_del = st.columns([3, 2, 2, 2, 0.7])
+        rule["left"] = c_left.selectbox(
+            "Indicator",
+            options=list(RULE_INDICATORS.keys()),
+            format_func=lambda k: RULE_INDICATORS[k],
+            index=list(RULE_INDICATORS.keys()).index(rule["left"]),
+            key=f"rule_left_{i}",
+            label_visibility="collapsed",
+        )
+        rule["op"] = c_op.selectbox(
+            "Op", options=RULE_OPS,
+            index=RULE_OPS.index(rule["op"]),
+            key=f"rule_op_{i}",
+            label_visibility="collapsed",
+        )
+        rule["a"] = c_a.number_input(
+            "Value",
+            value=float(rule.get("a") or 0.0),
+            key=f"rule_a_{i}",
+            label_visibility="collapsed",
+            format="%.4f",
+        )
+        if rule["op"] == "between":
+            rule["b"] = c_b.number_input(
+                "Upper",
+                value=float(rule.get("b") or 0.0),
+                key=f"rule_b_{i}",
+                label_visibility="collapsed",
+                format="%.4f",
+            )
+        else:
+            c_b.markdown("&nbsp;", unsafe_allow_html=True)
+            rule["b"] = None
+        if c_del.button("🗑️", key=f"rule_del_{i}",
+                        help="Remove this rule"):
+            rules.pop(i)
+            st.rerun()
+
+    add_c, _ = st.columns([2, 8])
+    if add_c.button("➕ Add rule", key="rule_add"):
+        rules.append({"left": "Close", "op": ">", "a": 0.0, "b": None})
+        st.rerun()
+
+    st.divider()
+
+    # --- Run section ---
+    wl_tickers = [t.strip().upper() for t in
+                  st.session_state.get("watchlist_input", "").split(",")
+                  if t.strip()]
+    st.markdown(f"##### Run against watchlist · {len(wl_tickers)} tickers")
+
+    run_btn = st.button("🔍 Evaluate", key="rules_run", type="primary")
+    if run_btn:
+        if not rules:
+            st.warning("Add at least one rule.")
+        elif not wl_tickers:
+            st.warning("Watchlist is empty.")
+        else:
+            matches = []
+            details = []  # everything (matched and not), for transparency
+            progress = st.progress(0.0)
+            for idx, t in enumerate(wl_tickers):
+                try:
+                    norm = ss.normalize_ticker(t)
+                except SystemExit:
+                    continue
+                df, _ = cached_single(norm, period, interval, strategy,
+                                      adx_filter, stop_loss_pct)
+                row = {"Ticker": t}
+                rule_results = [_eval_rule(df, r) for r in rules]
+                row["Matches"] = (
+                    all(r is True for r in rule_results)
+                    if rule_results else False
+                )
+                # Snapshot key values
+                for k in ["Close", "RSI", "MACD_HIST", "DAILY_CHG_PCT"]:
+                    v = _last_value(df, k)
+                    row[k] = round(v, 4) if v is not None else None
+                details.append(row)
+                if row["Matches"]:
+                    matches.append(t)
+                progress.progress((idx + 1) / len(wl_tickers))
+            progress.empty()
+
+            if matches:
+                st.success(
+                    f"✅ {len(matches)} match — {', '.join(matches)}"
+                )
+            else:
+                st.info("No tickers in your watchlist match all rules.")
+
+            st.markdown("##### Details")
+            st.dataframe(
+                pd.DataFrame(details),
+                use_container_width=True,
+                hide_index=True,
+            )
 
 
 # === News tab ===
