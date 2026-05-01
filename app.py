@@ -2129,27 +2129,36 @@ def _render_news_card(art: dict, show_ticker: bool = True,
         if summary:
             st.caption(summary[:280] + ("…" if len(summary) > 280 else ""))
         # Clickable affected-ticker chips → open chart popup
-        all_tk = (in_wl + other)[:8]
+        all_affected = in_wl + other
+        max_chips = 5  # cards can be narrow; 5 fits cleanly in one row
+        all_tk = all_affected[:max_chips]
         if all_tk:
-            label_col = 1.4
-            chip_w = 1.1
-            cols = st.columns(
-                [label_col] + [chip_w] * len(all_tk)
-                + [max(0.5, 12 - label_col - chip_w * len(all_tk))]
-            )
-            cols[0].markdown(
+            n = len(all_tk)
+            label_w = 1.6
+            chip_w = 2.0
+            cols = st.columns([label_w] + [chip_w] * n)
+            extra = len(all_affected) - n
+            label_html = (
                 "<div style='font-size:0.78rem; color:#9ca3af; "
-                "padding-top:8px;'>Affects:</div>",
-                unsafe_allow_html=True,
+                "padding-top:6px; line-height:1.4;'>"
+                "📊 <b>Affects:</b>"
             )
+            if extra > 0:
+                label_html += (
+                    f"<br><span style='font-size:0.7rem; color:#6b7280;'>"
+                    f"+{extra} more</span>"
+                )
+            label_html += "</div>"
+            cols[0].markdown(label_html, unsafe_allow_html=True)
             for i, t in enumerate(all_tk):
                 is_wl = t in wl_set
                 label = f"★ {t}" if is_wl else t
                 btn_key = f"newschip_{key_prefix}_{art_id}_{t}_{i}"
                 if cols[i + 1].button(
                     label, key=btn_key, use_container_width=True,
-                    help=f"Open {t} chart"
-                            + (" (★ in your watchlist)" if is_wl else ""),
+                    help=(f"Open {t} chart"
+                          + (" (★ in your watchlist)" if is_wl else "")),
+                    type="primary" if is_wl else "secondary",
                 ):
                     st.session_state["selected_tile"] = t
                     st.rerun()
