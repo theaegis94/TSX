@@ -251,7 +251,7 @@ st.markdown(
     button[data-baseweb="tab"] {
         height: auto !important;
         padding: 12px 24px !important;
-        font-size: 1.05rem !important;
+        font-size: 1.3125rem !important;
         font-weight: 500 !important;
         background: transparent !important;
         border-radius: 8px 8px 0 0 !important;
@@ -269,7 +269,7 @@ st.markdown(
         background: rgba(239, 68, 68, 0.10) !important;
         color: #fca5a5 !important;
         font-weight: 700 !important;
-        font-size: 1.1rem !important;
+        font-size: 1.375rem !important;
     }
 
     /* The red underline on the active tab (Streamlit's default) */
