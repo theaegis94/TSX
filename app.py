@@ -482,6 +482,45 @@ def _inject_auto_rescale_y():
     )
 
 
+def _inject_price_tick_format():
+    """Rewrite price y-axis tick labels:
+       single-digit values keep $x.xx, $10+ drops decimals → $42, $123."""
+    import streamlit.components.v1 as components
+    components.html(
+        """
+        <script>
+        (function() {
+            const pdoc = window.parent.document;
+            function format(text) {
+                // Match $4.50, $42.00, $123.45, etc.
+                const m = text.match(/^\\$(-?\\d+(?:\\.\\d+)?)$/);
+                if (!m) return text;
+                const v = parseFloat(m[1]);
+                if (Math.abs(v) >= 10) {
+                    return '$' + Math.round(v).toLocaleString();
+                }
+                return '$' + v.toFixed(2);
+            }
+            function rewrite() {
+                pdoc.querySelectorAll('.js-plotly-plot').forEach(chart => {
+                    // The first y-axis tick layer is the Price panel
+                    const yaxes = chart.querySelectorAll('g.yaxislayer-above .ytick text');
+                    yaxes.forEach(t => {
+                        const orig = t.textContent;
+                        const fmt = format(orig);
+                        if (fmt !== orig) t.textContent = fmt;
+                    });
+                });
+            }
+            // Run repeatedly so re-renders (zoom, pan) get reformatted
+            setInterval(rewrite, 200);
+        })();
+        </script>
+        """,
+        height=0,
+    )
+
+
 def _inject_double_click_fullscreen():
     """JS shim: double-click any Plotly chart -> browser fullscreen.
     Press Esc to exit (browser default behavior)."""
@@ -725,6 +764,7 @@ def show_quick_analysis_dialog(ticker: str):
                     })
     _inject_double_click_fullscreen()
     _inject_auto_rescale_y()
+    _inject_price_tick_format()
     st.caption("💡 **Double-click chart for fullscreen** · Esc to exit")
 
     metrics = cached_metrics(norm_ticker)

@@ -1723,6 +1723,8 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
         title=dict(text="<b>Price</b>", standoff=10, font=title_font),
         row=1, col=1, gridcolor="#5a5b5e", zerolinecolor="#5a5b5e",
         autorange=True,
+        tickprefix="$",
+        tickformat=".2f",
     )
     fig.update_yaxes(
         title=dict(text="<b>RSI</b>", standoff=10, font=title_font),
