@@ -2049,6 +2049,53 @@ with tab_patterns:
 
 # === News tab ===
 @st.cache_data(ttl=900, show_spinner=False)
+def cached_general_news(category: str = "general") -> list:
+    return ss.finnhub_general_news(category=category)
+
+
+def _aggregate_ticker_news(tickers: list[str], days: int = 3,
+                           per_ticker: int = 4) -> list[dict]:
+    """Pull news for each ticker, tag with ticker, sort newest first."""
+    out = []
+    for t in tickers:
+        for art in cached_news(t, days=days)[:per_ticker]:
+            a = dict(art)
+            a["_ticker"] = t
+            out.append(a)
+    out.sort(key=lambda x: x.get("datetime", 0) or 0, reverse=True)
+    return out
+
+
+def _render_news_card(art: dict, show_ticker: bool = True) -> None:
+    try:
+        ts = datetime.fromtimestamp(art.get("datetime", 0))
+        date_str = ts.strftime("%b %d %H:%M")
+    except (ValueError, TypeError, OSError):
+        date_str = "?"
+    headline = (art.get("headline") or "").strip()
+    summary = (art.get("summary") or "").strip()
+    src = art.get("source", "")
+    url = art.get("url") or "#"
+    tk = art.get("_ticker", "")
+    badge = (
+        f"<b style='color:#60a5fa;'>{tk}</b> &nbsp;·&nbsp; "
+        if show_ticker and tk else ""
+    )
+    with st.container(border=True):
+        st.markdown(
+            f"<div style='font-size:0.78rem; color:#9ca3af;'>"
+            f"{badge}📅 {date_str} &nbsp;·&nbsp; 📰 {src}"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(f"**{headline}**")
+        if summary:
+            st.caption(summary[:280] + ("…" if len(summary) > 280 else ""))
+        if art.get("url"):
+            st.markdown(f"[Read more →]({url})")
+
+
+@st.cache_data(ttl=900, show_spinner=False)
 def cached_insider(ticker: str, days: int = 90) -> list:
     return ss.finnhub_insider_transactions(ticker, days=days)
 
@@ -2210,41 +2257,102 @@ with tab_news:
                 st.caption("_No upcoming IPOs in next 90 days._")
 
         st.divider()
-        st.subheader("Recent News")
-        col1, col2 = st.columns([3, 1])
-        news_raw = col1.text_input("Ticker for news", "AAPL",
-                                   key="news_ticker",
-                                   help="Try US tickers — Finnhub TSX news coverage is sparse")
-        days = col2.number_input("Days back", 1, 30, 7)
+        st.subheader("📰 Market News")
 
-        if news_raw:
-            try:
-                # Allow US tickers in news view (no TSX validation)
-                t = news_raw.strip().upper()
-                with st.spinner(f"Loading news for {t}…"):
-                    articles = cached_news(t, days=days)
+        # --- Main: TSX (left) + AI/US (right) ---
+        main_l, main_r = st.columns(2)
 
-                if not articles:
-                    st.info(f"No news returned for {t} in the last {days} days.")
-                else:
-                    st.success(f"Found {len(articles)} articles")
-                    for art in articles[:30]:
-                        try:
-                            ts = datetime.fromtimestamp(art.get("datetime", 0))
-                            date_str = ts.strftime("%Y-%m-%d %H:%M")
-                        except (ValueError, TypeError, OSError):
-                            date_str = "?"
-                        with st.container(border=True):
-                            st.caption(
-                                f"📅 {date_str}  |  📰 {art.get('source', '')}"
-                            )
-                            st.markdown(f"**{art.get('headline', '')}**")
-                            if art.get("summary"):
-                                st.write(art["summary"])
-                            if art.get("url"):
-                                st.markdown(f"[Read more →]({art['url']})")
-            except Exception as e:
-                st.error(f"Error: {e}")
+        with main_l:
+            st.markdown("##### 🍁 TSX & Canada")
+            tsx_news = _aggregate_ticker_news(
+                ss.MAJOR_TSX_FOR_NEWS, days=3, per_ticker=2
+            )
+            if tsx_news:
+                for art in tsx_news[:12]:
+                    _render_news_card(art, show_ticker=True)
+            else:
+                st.caption("_No TSX news in the last 3 days._")
+
+        with main_r:
+            st.markdown("##### 🤖 AI / US Tech")
+            ai_news = _aggregate_ticker_news(
+                ss.MAJOR_AI_US_FOR_NEWS, days=3, per_ticker=2
+            )
+            if ai_news:
+                for art in ai_news[:12]:
+                    _render_news_card(art, show_ticker=True)
+            else:
+                st.caption("_No AI/US Tech news in the last 3 days._")
+
+        st.divider()
+
+        # --- Subtabs: All Canadian / All US market-affecting news ---
+        st.markdown("##### All market-affecting news")
+        sub_ca, sub_us, sub_search = st.tabs(
+            ["🍁 Canadian", "🇺🇸 US", "🔍 Search by ticker"]
+        )
+
+        with sub_ca:
+            ca_all = _aggregate_ticker_news(
+                ss.MAJOR_TSX_FOR_NEWS, days=7, per_ticker=8
+            )
+            if ca_all:
+                st.caption(
+                    f"{len(ca_all)} headlines from {len(ss.MAJOR_TSX_FOR_NEWS)} "
+                    "major TSX names · last 7 days"
+                )
+                for art in ca_all[:60]:
+                    _render_news_card(art, show_ticker=True)
+            else:
+                st.info("No Canadian market news in the last 7 days.")
+
+        with sub_us:
+            general = cached_general_news(category="general")
+            us_curated = _aggregate_ticker_news(
+                ss.MAJOR_AI_US_FOR_NEWS, days=7, per_ticker=4
+            )
+            # Merge general + curated, dedupe by url, sort newest first
+            seen = set()
+            combined = []
+            for art in (general or [])[:60] + us_curated:
+                u = art.get("url")
+                if not u or u in seen:
+                    continue
+                seen.add(u)
+                combined.append(art)
+            combined.sort(
+                key=lambda x: x.get("datetime", 0) or 0, reverse=True
+            )
+            if combined:
+                st.caption(
+                    f"{len(combined)} headlines · Finnhub general feed + "
+                    f"{len(ss.MAJOR_AI_US_FOR_NEWS)} major US tickers"
+                )
+                for art in combined[:80]:
+                    _render_news_card(art, show_ticker=bool(art.get("_ticker")))
+            else:
+                st.info("No US market news available.")
+
+        with sub_search:
+            col1, col2 = st.columns([3, 1])
+            news_raw = col1.text_input("Ticker for news", "AAPL",
+                                       key="news_ticker",
+                                       help="Try US tickers — Finnhub TSX news coverage is sparse")
+            days = col2.number_input("Days back", 1, 30, 7)
+
+            if news_raw:
+                try:
+                    t = news_raw.strip().upper()
+                    with st.spinner(f"Loading news for {t}…"):
+                        articles = cached_news(t, days=days)
+                    if not articles:
+                        st.info(f"No news returned for {t} in the last {days} days.")
+                    else:
+                        st.success(f"Found {len(articles)} articles")
+                        for art in articles[:30]:
+                            _render_news_card(art, show_ticker=False)
+                except Exception as e:
+                    st.error(f"Error: {e}")
 
 
 # === Help tab ===

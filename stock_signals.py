@@ -659,6 +659,35 @@ def finnhub_recommendation(ticker: str) -> tuple[int, int, int] | None:
         return None
 
 
+def finnhub_general_news(category: str = "general") -> list[dict]:
+    """Broad market news (Finnhub categories: general, forex, crypto, merger)."""
+    if not FINNHUB_API_KEY:
+        return []
+    try:
+        r = requests.get(
+            "https://finnhub.io/api/v1/news",
+            params={"category": category, "token": FINNHUB_API_KEY},
+            timeout=15,
+        )
+        if r.status_code != 200:
+            return []
+        return r.json() or []
+    except (requests.RequestException, ValueError):
+        return []
+
+
+# Curated lists for the "main news" section
+MAJOR_TSX_FOR_NEWS = [
+    "RY.TO", "TD.TO", "BNS.TO", "BMO.TO", "CM.TO", "NA.TO",
+    "ENB.TO", "TRP.TO", "SHOP.TO", "CSU.TO", "BCE.TO", "T.TO",
+    "CNR.TO", "CP.TO", "SU.TO", "CNQ.TO",
+]
+MAJOR_AI_US_FOR_NEWS = [
+    "NVDA", "MSFT", "GOOGL", "META", "AMZN", "AAPL", "TSLA",
+    "AMD", "AVGO", "PLTR", "ORCL", "CRM", "SMCI", "MU",
+]
+
+
 def finnhub_insider_transactions(ticker: str, days: int = 90) -> list[dict]:
     """Recent insider buys/sells (Form 4 via Finnhub). Newest first."""
     if not FINNHUB_API_KEY:
