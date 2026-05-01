@@ -554,10 +554,13 @@ def show_quick_analysis_dialog(ticker: str):
     )
 
     st.markdown(
-        f'<div style="font-size:0.9rem; color:#9ca3af; margin-bottom:6px;">'
-        f'<b style="color:#f0f0f0;">{norm_ticker}</b> &nbsp;·&nbsp; '
-        f'{stats["trades"]} trades &nbsp;·&nbsp; '
-        f'{stats["win_rate"]:.0%} win'
+        f'<div style="margin-bottom:6px;">'
+        f'<span style="font-size:1.4rem; font-weight:700; color:#f0f0f0;">'
+        f'{norm_ticker}</span> '
+        f'<span style="font-size:0.9rem; color:#9ca3af;">'
+        f'&nbsp;·&nbsp; {stats["trades"]} trades '
+        f'&nbsp;·&nbsp; {stats["win_rate"]:.0%} win'
+        f'</span>'
         f'</div>',
         unsafe_allow_html=True,
     )
@@ -696,12 +699,15 @@ def render_quick_analysis():
         # Title rendered above the chart so it doesn't collide with range buttons
         if expanded:
             st.markdown(
-                f'<div style="font-size:1rem; color:#9ca3af; margin-bottom:6px;">'
-                f'<b style="color:#f0f0f0;">{ticker}</b> &nbsp;·&nbsp; '
-                f'{stats["trades"]} trades &nbsp;·&nbsp; '
-                f'{stats["win_rate"]:.0%} win &nbsp;·&nbsp; '
-                f'strategy {stats["total_return"]:+.1%} vs '
+                f'<div style="margin-bottom:6px;">'
+                f'<span style="font-size:1.4rem; font-weight:700; '
+                f'color:#f0f0f0;">{ticker}</span> '
+                f'<span style="font-size:1rem; color:#9ca3af;">'
+                f'&nbsp;·&nbsp; {stats["trades"]} trades '
+                f'&nbsp;·&nbsp; {stats["win_rate"]:.0%} win '
+                f'&nbsp;·&nbsp; strategy {stats["total_return"]:+.1%} vs '
                 f'B&H {stats["buy_hold"]:+.1%}'
+                f'</span>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
@@ -1155,13 +1161,15 @@ with tab_single:
                               if metrics.get("earn_days") is not None else "—")
 
                 st.markdown(
-                    f'<div style="font-size:1rem; color:#9ca3af; '
-                    f'margin-bottom:6px;">'
-                    f'<b style="color:#f0f0f0;">{ticker}</b> &nbsp;·&nbsp; '
-                    f'{stats["trades"]} trades &nbsp;·&nbsp; '
-                    f'{stats["win_rate"]:.0%} win &nbsp;·&nbsp; '
-                    f'strategy {stats["total_return"]:+.1%} vs '
+                    f'<div style="margin-bottom:6px;">'
+                    f'<span style="font-size:1.4rem; font-weight:700; '
+                    f'color:#f0f0f0;">{ticker}</span> '
+                    f'<span style="font-size:1rem; color:#9ca3af;">'
+                    f'&nbsp;·&nbsp; {stats["trades"]} trades '
+                    f'&nbsp;·&nbsp; {stats["win_rate"]:.0%} win '
+                    f'&nbsp;·&nbsp; strategy {stats["total_return"]:+.1%} vs '
                     f'B&H {stats["buy_hold"]:+.1%}'
+                    f'</span>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
