@@ -1429,13 +1429,13 @@ def build_chart(df: pd.DataFrame, ticker: str, stats: dict, compact: bool = Fals
 
 
 INDICATOR_LABELS = {
-    "sma50": "SMA 50",
-    "sma200": "SMA 200",
-    "ema20": "EMA 20",
-    "ema50": "EMA 50",
-    "bollinger": "Bollinger Bands",
-    "ichimoku": "Ichimoku Cloud",
-    "fibonacci": "Fibonacci levels",
+    "sma50": "SMA 50 (Simple Moving Average, 50 bars)",
+    "sma200": "SMA 200 (Simple Moving Average, 200 bars)",
+    "ema20": "EMA 20 (Exponential Moving Average, 20 bars)",
+    "ema50": "EMA 50 (Exponential Moving Average, 50 bars)",
+    "bollinger": "Bollinger Bands (mean ± 2σ volatility envelope)",
+    "ichimoku": "Ichimoku Cloud (Tenkan / Kijun / Senkou A & B)",
+    "fibonacci": "Fibonacci levels (key retracement ratios)",
 }
 DEFAULT_INDICATORS = ["sma50", "sma200"]
 
@@ -1611,8 +1611,8 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
     # of inside the figure — avoids collisions with the range-selector buttons.
     fig.update_layout(
         height=height,
-        # Uniform 60px on left/right/bottom for even breathing room.
-        margin=dict(l=80, r=60, t=50, b=60),
+        # Uniform 60px on all four sides for even breathing room.
+        margin=dict(l=60, r=60, t=50, b=60),
         hovermode="x unified",
         # Legend INSIDE the chart at top-right with a translucent background.
         # This way it never collides with Plotly's modebar (top-right outside)
@@ -1656,7 +1656,7 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
                       family='"Comic Sans MS", "Comic Sans", cursive')
     for label, y_pos in [("Price", 0.74), ("RSI", 0.32), ("MACD", 0.10)]:
         fig.add_annotation(
-            x=-0.075, y=y_pos,
+            x=-0.04, y=y_pos,
             xref="paper", yref="paper",
             text=f"<b>{label}</b>",
             textangle=-90,
