@@ -272,6 +272,20 @@ st.markdown(
         font-size: 1.71875rem !important;
     }
 
+    /* Active tab arrow indicator: ▶ before, ▼ after */
+    button[data-baseweb="tab"][aria-selected="true"]::before {
+        content: "▶ ";
+        color: #ef4444;
+        margin-right: 4px;
+        font-size: 0.85em;
+    }
+    button[data-baseweb="tab"][aria-selected="true"]::after {
+        content: " ▼";
+        color: #ef4444;
+        margin-left: 6px;
+        font-size: 0.85em;
+    }
+
     /* The red underline on the active tab (Streamlit's default) */
     div[data-baseweb="tab-highlight"] {
         height: 3px !important;
