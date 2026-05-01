@@ -2102,7 +2102,8 @@ def _affected_tickers(art: dict, watchlist: list[str],
 
 def _render_news_card(art: dict, show_ticker: bool = True,
                       watchlist: list[str] | None = None,
-                      curated: list[str] | None = None) -> None:
+                      curated: list[str] | None = None,
+                      key_prefix: str = "") -> None:
     try:
         ts = datetime.fromtimestamp(art.get("datetime", 0))
         date_str = ts.strftime("%b %d %H:%M")
@@ -2112,48 +2113,46 @@ def _render_news_card(art: dict, show_ticker: bool = True,
     summary = (art.get("summary") or "").strip()
     src = art.get("source", "")
     url = art.get("url") or "#"
-    tk = art.get("_ticker", "")
-    badge = (
-        f"<b style='color:#60a5fa;'>{tk}</b> &nbsp;·&nbsp; "
-        if show_ticker and tk else ""
-    )
     in_wl, other = _affected_tickers(
         art, watchlist or [], curated or []
     )
+    art_id = str(art.get("id") or art.get("url", ""))[-40:]
+    wl_set = {w.upper() for w in (watchlist or [])}
     with st.container(border=True):
         st.markdown(
             f"<div style='font-size:0.78rem; color:#9ca3af;'>"
-            f"{badge}📅 {date_str} &nbsp;·&nbsp; 📰 {src}"
+            f"📅 {date_str} &nbsp;·&nbsp; 📰 {src}"
             f"</div>",
             unsafe_allow_html=True,
         )
         st.markdown(f"**{headline}**")
         if summary:
             st.caption(summary[:280] + ("…" if len(summary) > 280 else ""))
-        if in_wl or other:
-            chips = []
-            for t in in_wl[:8]:
-                # In your watchlist — green highlight
-                chips.append(
-                    f"<span style='background:#16a34a; color:#fff; "
-                    f"padding:2px 8px; border-radius:8px; "
-                    f"font-size:0.72rem; font-weight:700; "
-                    f"margin-right:4px;'>★ {t}</span>"
-                )
-            for t in other[:10]:
-                chips.append(
-                    f"<span style='background:#374151; color:#e5e7eb; "
-                    f"padding:2px 8px; border-radius:8px; "
-                    f"font-size:0.72rem; margin-right:4px;'>{t}</span>"
-                )
-            st.markdown(
-                f"<div style='margin-top:6px;'>"
-                f"<span style='font-size:0.72rem; color:#9ca3af; "
-                f"margin-right:6px;'>Affects:</span>"
-                + "".join(chips) +
-                "</div>",
+        # Clickable affected-ticker chips → open chart popup
+        all_tk = (in_wl + other)[:8]
+        if all_tk:
+            label_col = 1.4
+            chip_w = 1.1
+            cols = st.columns(
+                [label_col] + [chip_w] * len(all_tk)
+                + [max(0.5, 12 - label_col - chip_w * len(all_tk))]
+            )
+            cols[0].markdown(
+                "<div style='font-size:0.78rem; color:#9ca3af; "
+                "padding-top:8px;'>Affects:</div>",
                 unsafe_allow_html=True,
             )
+            for i, t in enumerate(all_tk):
+                is_wl = t in wl_set
+                label = f"★ {t}" if is_wl else t
+                btn_key = f"newschip_{key_prefix}_{art_id}_{t}_{i}"
+                if cols[i + 1].button(
+                    label, key=btn_key, use_container_width=True,
+                    help=f"Open {t} chart"
+                            + (" (★ in your watchlist)" if is_wl else ""),
+                ):
+                    st.session_state["selected_tile"] = t
+                    st.rerun()
         if art.get("url"):
             st.markdown(f"[Read more →]({url})")
 
@@ -2340,6 +2339,7 @@ with tab_news:
                     _render_news_card(
                         art, show_ticker=True,
                         watchlist=_wl_normalized, curated=all_curated,
+                        key_prefix="main_oil",
                     )
             else:
                 st.caption("_No oil/gas news in the last 3 days._")
@@ -2354,6 +2354,7 @@ with tab_news:
                     _render_news_card(
                         art, show_ticker=True,
                         watchlist=_wl_normalized, curated=all_curated,
+                        key_prefix="main_ai",
                     )
             else:
                 st.caption("_No AI/US Tech news in the last 3 days._")
@@ -2380,6 +2381,7 @@ with tab_news:
                     _render_news_card(
                         art, show_ticker=True,
                         watchlist=_wl_normalized, curated=all_curated,
+                        key_prefix="sub_ca",
                     )
             else:
                 st.info("No Canadian market news in the last 7 days.")
@@ -2410,6 +2412,7 @@ with tab_news:
                     _render_news_card(
                         art, show_ticker=bool(art.get("_ticker")),
                         watchlist=_wl_normalized, curated=all_curated,
+                        key_prefix="sub_us",
                     )
             else:
                 st.info("No US market news available.")
@@ -2428,6 +2431,7 @@ with tab_news:
                     _render_news_card(
                         art, show_ticker=True,
                         watchlist=_wl_normalized, curated=all_curated,
+                        key_prefix="sub_tsx",
                     )
             else:
                 st.info("No TSX news in the last 7 days.")
@@ -2452,6 +2456,7 @@ with tab_news:
                             _render_news_card(
                                 art, show_ticker=False,
                                 watchlist=_wl_normalized, curated=all_curated,
+                                key_prefix="sub_search",
                             )
                 except Exception as e:
                     st.error(f"Error: {e}")
