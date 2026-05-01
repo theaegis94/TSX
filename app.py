@@ -4,6 +4,7 @@ Run with:    streamlit run app.py
 """
 
 import json
+import os
 import pathlib
 from datetime import datetime
 
@@ -1050,6 +1051,114 @@ def _all_tickers_for_dropdown() -> list:
     return sorted(set(parts))
 
 
+def _build_ai_context() -> str:
+    """Compact context the AI can ground on: watchlist, last prices, strategy."""
+    parts = []
+    wl = st.session_state.get("watchlist_input", "")
+    if wl:
+        parts.append(f"Watchlist tickers: {wl}")
+    quotes = st.session_state.get("_wl_quotes_for_ai")
+    if quotes:
+        snap = ", ".join(
+            f"{t} ${q['price']:.2f} ({q['change_pct']:+.2f}%)"
+            for t, q in quotes.items() if q.get("price") is not None
+        )
+        if snap:
+            parts.append(f"Latest quotes: {snap}")
+    strat = st.session_state.get("_strategy")
+    if strat:
+        parts.append(f"Active strategy: {strat}")
+    saved = st.session_state.get("saved_rules") or {}
+    if saved:
+        parts.append(f"Saved rule sets: {', '.join(saved.keys())}")
+    return "\n".join(parts) if parts else "(no extra context)"
+
+
+def _call_claude(history: list[dict], user_msg: str) -> str:
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not api_key:
+        return ("⚠️ Set `ANTHROPIC_API_KEY` in `.env` "
+                "(or Streamlit Cloud secrets) to enable the chat.")
+    try:
+        import anthropic  # lazy import so missing pkg doesn't break the app
+    except ImportError:
+        return ("⚠️ `anthropic` package not installed. "
+                "Run `pip install anthropic` (it's in requirements.txt).")
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        ctx = _build_ai_context()
+        system_prompt = (
+            "You are a stock-analysis assistant inside a Streamlit dashboard. "
+            "Be factual, concise, and refuse to give investment advice or "
+            "specific buy/sell recommendations. When uncertain, say so. "
+            "Use the user's watchlist and current quotes when relevant.\n\n"
+            f"User context:\n{ctx}"
+        )
+        msg = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=1024,
+            system=system_prompt,
+            messages=history + [{"role": "user", "content": user_msg}],
+        )
+        return msg.content[0].text
+    except Exception as e:
+        return f"⚠️ AI request failed: {e}"
+
+
+# Pre-fetch quotes once (cached) so the AI context has live data on first ask
+if _wl_normalized:
+    st.session_state["_wl_quotes_for_ai"] = cached_quotes(
+        tuple(_wl_normalized[:20])
+    ) or {}
+
+
+with st.sidebar:
+    with st.expander("💬 Talk to me", expanded=False):
+        if "ai_chat_history" not in st.session_state:
+            st.session_state.ai_chat_history = []
+
+        # Show last few turns (compact)
+        for msg in st.session_state.ai_chat_history[-8:]:
+            who = "🧑" if msg["role"] == "user" else "🤖"
+            st.markdown(
+                f"<div style='font-size:0.85rem; padding:4px 0;'>"
+                f"<b>{who}</b> {msg['content']}</div>",
+                unsafe_allow_html=True,
+            )
+
+        with st.form(key="ai_chat_form", clear_on_submit=True):
+            user_q = st.text_area(
+                "Ask anything",
+                key="ai_chat_input",
+                height=70,
+                placeholder="e.g. Which of my watchlist tickers look oversold?",
+                label_visibility="collapsed",
+            )
+            ask_c, clear_c = st.columns([3, 1])
+            asked = ask_c.form_submit_button(
+                "Send", use_container_width=True, type="primary"
+            )
+            cleared = clear_c.form_submit_button(
+                "Clear", use_container_width=True
+            )
+
+        if asked and user_q.strip():
+            with st.spinner("Thinking…"):
+                reply = _call_claude(
+                    st.session_state.ai_chat_history, user_q.strip()
+                )
+            st.session_state.ai_chat_history.append(
+                {"role": "user", "content": user_q.strip()}
+            )
+            st.session_state.ai_chat_history.append(
+                {"role": "assistant", "content": reply}
+            )
+            st.rerun()
+        if cleared:
+            st.session_state.ai_chat_history = []
+            st.rerun()
+
+
 with st.sidebar:
     st.header("Watchlist")
 
@@ -1097,6 +1206,8 @@ with st.sidebar:
     st.subheader("Snapshot")
     if _wl_normalized:
         snapshot_quotes = cached_quotes(tuple(_wl_normalized[:20]))
+        # Stash quotes for the AI sidebar chat so it can ground answers
+        st.session_state["_wl_quotes_for_ai"] = snapshot_quotes or {}
         if snapshot_quotes:
             for t in _wl_normalized[:20]:
                 q = snapshot_quotes.get(t)
