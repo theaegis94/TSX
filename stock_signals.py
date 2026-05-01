@@ -1454,7 +1454,6 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
         rows=3, cols=1, shared_xaxes=True,
         vertical_spacing=0.10,
         row_heights=[0.60, 0.20, 0.20],
-        subplot_titles=("<b>Price</b>", "<b>RSI</b>", "<b>MACD</b>"),
     )
 
     # --- Price panel — single Close line, color follows the theme ---
@@ -1609,13 +1608,6 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
 
     # Hide Candlestick's default rangeslider (we have rangeselector buttons instead)
     fig.update_xaxes(rangeslider_visible=False, row=1, col=1)
-
-    # Style the auto-generated subplot titles (horizontal headers above panels)
-    for ann in fig.layout.annotations:
-        ann.font = dict(
-            size=14, color="#d4d4d8",
-            family='"Comic Sans MS", "Comic Sans", cursive',
-        )
 
     # Chart title is rendered as Streamlit markdown above the chart instead
     # of inside the figure — avoids collisions with the range-selector buttons.
