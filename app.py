@@ -1242,6 +1242,42 @@ with st.sidebar:
     else:
         st.caption("No tickers in watchlist.")
 
+    # --- Recent news from watchlist ---
+    if ss.FINNHUB_API_KEY and _wl_normalized:
+        st.divider()
+        with st.expander("📰 Recent news", expanded=False):
+            news_items = []
+            for t in _wl_normalized[:20]:
+                arts = cached_news(t, days=3)
+                for a in arts[:3]:
+                    a = dict(a)
+                    a["_ticker"] = t
+                    news_items.append(a)
+            news_items.sort(
+                key=lambda x: x.get("datetime", 0) or 0, reverse=True
+            )
+            if news_items:
+                for art in news_items[:15]:
+                    try:
+                        ts = datetime.fromtimestamp(art.get("datetime", 0))
+                        when = ts.strftime("%b %d %H:%M")
+                    except (ValueError, TypeError, OSError):
+                        when = "?"
+                    headline = (art.get("headline") or "")[:120]
+                    url = art.get("url") or "#"
+                    st.markdown(
+                        f"<div style='font-size:0.8rem; padding:4px 0; "
+                        f"border-bottom:1px solid #4a4b4e;'>"
+                        f"<b style='color:#60a5fa;'>{art['_ticker']}</b> "
+                        f"<span style='color:#9ca3af;'>· {when}</span><br>"
+                        f"<a href='{url}' target='_blank' "
+                        f"style='color:#e5e7eb; text-decoration:none;'>"
+                        f"{headline}</a></div>",
+                        unsafe_allow_html=True,
+                    )
+            else:
+                st.caption("_No recent news for watchlist tickers._")
+
     st.divider()
 
     # Sensible defaults — Settings UI removed. Tweak per-chart from the popup.
