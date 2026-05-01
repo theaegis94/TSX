@@ -524,6 +524,12 @@ def render_watchlist_bar(tickers: tuple) -> None:
                 )
 
 
+def _open_dialog_for(ticker: str):
+    """Set the sticky dialog flag for a ticker and rerun."""
+    st.session_state["_open_dialog_ticker"] = ticker
+    st.rerun()
+
+
 @st.dialog("📊 Quick Analysis", width="large")
 def show_quick_analysis_dialog(ticker: str):
     """Modal popup with chart, signal, and key metrics for a ticker.
@@ -900,13 +906,29 @@ with st.sidebar:
     add_col2.button("➕ Add", on_click=_add_to_watchlist,
                     use_container_width=True)
 
-    # Dropdown picker — alternative to typing the ticker by hand
-    st.selectbox(
-        "Or pick from list (S&P 500 + TSX + ETFs)",
-        options=[""] + _all_tickers_for_dropdown(),
-        key="add_dropdown_select",
-        on_change=_add_from_dropdown,
+    # Search-as-you-type — selecting a result opens the chart popup
+    sb_query = st.text_input(
+        "🔍 Search & view ticker",
+        placeholder="apple, tesla, royal bank…",
+        key="sidebar_search_query",
     )
+    if sb_query and len(sb_query) >= 2:
+        sb_results = cached_search(sb_query)
+        if sb_results:
+            for r in sb_results[:6]:
+                desc = r["description"][:28] + (
+                    "…" if len(r["description"]) > 28 else "")
+                if st.button(
+                    f"📊 **{r['symbol']}** — {desc}",
+                    key=f"sb_view_{r['symbol']}",
+                    use_container_width=True,
+                ):
+                    # Trigger the chart popup for this ticker on next render
+                    st.session_state["selected_tile"] = r["symbol"]
+                    st.session_state["sidebar_search_query"] = ""
+                    st.rerun()
+        else:
+            st.caption("No matches.")
 
     # Remove dropdown — populated from current watchlist
     _current_wl = st.session_state.get(
