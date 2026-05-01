@@ -1752,13 +1752,13 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
             )
 
         # Price panel — linear scale, floor strictly at $0.
-        # rangemode="nonnegative" prevents Plotly's tick algorithm from
-        # extending below 0 for "nice" tick spacing.
+        # minallowed=0 is a hard pan/zoom floor — user can't scroll below.
         price_max = float(df["Close"].max())
         if price_max > 0:
             fig.update_yaxes(
                 autorange=False,
                 rangemode="nonnegative",
+                minallowed=0,
                 range=[0, price_max * 1.03],
                 row=1, col=1,
             )

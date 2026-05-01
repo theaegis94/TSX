@@ -436,6 +436,8 @@ def _inject_auto_rescale_y():
                     // Price panel — floor at 0, top fits data + 3% padding
                     updates[axName + '.range'] = [0, hi * 1.03];
                     updates[axName + '.autorange'] = false;
+                    updates[axName + '.minallowed'] = 0;
+                    updates[axName + '.rangemode'] = 'nonnegative';
                 });
                 if (Object.keys(updates).length) {
                     try {
@@ -457,6 +459,32 @@ def _inject_auto_rescale_y():
 
                     // Re-rescale on every zoom/pan
                     chart.on('plotly_relayout', function(ev) {
+                        // Clamp Price y-axis (yaxis) bottom to 0 — block any
+                        // user pan/zoom attempt that drops below $0.
+                        const yLo = ev['yaxis.range[0]'];
+                        const yHi = ev['yaxis.range[1]'];
+                        const yRng = ev['yaxis.range'];
+                        let needClamp = false;
+                        let newRange = null;
+                        if (yLo !== undefined && yLo < 0) {
+                            needClamp = true;
+                            newRange = [0, yHi !== undefined ? yHi
+                                : (chart.layout.yaxis.range
+                                   ? chart.layout.yaxis.range[1] : 1)];
+                        } else if (yRng && yRng[0] < 0) {
+                            needClamp = true;
+                            newRange = [0, yRng[1]];
+                        }
+                        if (needClamp) {
+                            try {
+                                window.parent.Plotly.relayout(chart, {
+                                    'yaxis.range': newRange,
+                                    'yaxis.autorange': false,
+                                });
+                            } catch (e) {}
+                            return;
+                        }
+
                         const hasXChange =
                             ev['xaxis.range[0]'] !== undefined ||
                             ev['xaxis.autorange'] !== undefined ||
