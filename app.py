@@ -23,6 +23,11 @@ st.markdown(
         margin-bottom: 14px;
     }
 
+    /* Hide Streamlit Cloud's top header bar (Share, star, edit, GitHub icons) */
+    header[data-testid="stHeader"] { display: none !important; }
+    [data-testid="stToolbar"] { display: none !important; }
+    [data-testid="stDecoration"] { display: none !important; }
+
     /* Lighter Edge / Windows 11-style theme */
     .stApp { background: #3a3b3e !important; }
 
