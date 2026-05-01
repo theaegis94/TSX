@@ -315,6 +315,26 @@ def _sync_watchlist_to_url():
 _init_watchlist_from_url()
 
 
+def _consume_open_param():
+    """If ?open=TICKER is in the URL, set selected_tile and strip the param."""
+    if "open" in st.query_params:
+        t = st.query_params["open"]
+        if t:
+            st.session_state["selected_tile"] = t.upper()
+        del st.query_params["open"]
+
+
+_consume_open_param()
+
+
+def _chip_href(ticker: str) -> str:
+    """URL preserving current query params + open=ticker so chip links open chart."""
+    qp = dict(st.query_params)
+    qp["open"] = ticker
+    parts = [f"{k}={v}" for k, v in qp.items()]
+    return "?" + "&".join(parts) if parts else f"?open={ticker}"
+
+
 def _is_dark_theme() -> bool:
     """Detect Streamlit's current theme so chart line colors can adapt."""
     try:
@@ -2126,25 +2146,31 @@ def _render_news_card(art: dict, show_ticker: bool = True,
         st.markdown(f"**{headline}**")
         if summary:
             st.caption(summary[:280] + ("…" if len(summary) > 280 else ""))
-        # Affected-ticker chips — bolded + highlighted (not interactive)
+        # Affected-ticker chips — clickable links styled as pills
         all_affected = in_wl + other
         if all_affected:
             chips = []
             for t in in_wl[:8]:
-                # Watchlist match — green tint, bold, star prefix
+                href = _chip_href(t)
                 chips.append(
-                    "<span style='background:#16a34a; color:#fff; "
+                    f"<a href='{href}' target='_self' "
+                    "style='background:#16a34a; color:#fff; "
                     "padding:2px 9px; border-radius:8px; "
                     "font-size:0.78rem; font-weight:700; "
-                    f"margin-right:5px;'>★ {t}</span>"
+                    "margin-right:5px; text-decoration:none; "
+                    "display:inline-block;'"
+                    f">★ {t}</a>"
                 )
             for t in other[:10]:
-                # Other — gray tint, bold
+                href = _chip_href(t)
                 chips.append(
-                    "<span style='background:#374151; color:#f0f0f0; "
+                    f"<a href='{href}' target='_self' "
+                    "style='background:#374151; color:#f0f0f0; "
                     "padding:2px 9px; border-radius:8px; "
                     "font-size:0.78rem; font-weight:700; "
-                    f"margin-right:5px;'>{t}</span>"
+                    "margin-right:5px; text-decoration:none; "
+                    "display:inline-block;'"
+                    f">{t}</a>"
                 )
             st.markdown(
                 "<div style='margin-top:6px; line-height:1.9;'>"
