@@ -11,7 +11,12 @@ import yfinance as yf
 
 import stock_signals as ss
 
-st.set_page_config(page_title="Stock Signals", layout="wide", page_icon="📈")
+st.set_page_config(
+    page_title="Stock Signals",
+    layout="wide",
+    page_icon="📈",
+    initial_sidebar_state="expanded",
+)
 
 
 # Global CSS — make tabs larger, bolder, with clearer active state
@@ -27,6 +32,17 @@ st.markdown(
     header[data-testid="stHeader"] { display: none !important; }
     [data-testid="stToolbar"] { display: none !important; }
     [data-testid="stDecoration"] { display: none !important; }
+
+    /* But keep the sidebar collapse/expand button accessible */
+    [data-testid="stSidebarCollapsedControl"],
+    [data-testid="collapsedControl"],
+    [data-testid="stSidebarCollapseButton"] {
+        display: block !important;
+        position: fixed !important;
+        top: 8px !important;
+        left: 8px !important;
+        z-index: 9999 !important;
+    }
     /* Reclaim the space the hidden header used to occupy */
     .stApp .main .block-container,
     .stApp [data-testid="stMainBlockContainer"] {
