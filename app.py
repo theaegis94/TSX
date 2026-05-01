@@ -864,6 +864,14 @@ def _add_from_dropdown():
     st.session_state.add_dropdown_select = ""
 
 
+def _view_from_search_dropdown():
+    """on_change handler — open chart popup for selected ticker."""
+    selected = st.session_state.get("sidebar_view_select", "")
+    if selected:
+        st.session_state["selected_tile"] = selected
+    st.session_state.sidebar_view_select = ""
+
+
 def _remove_from_watchlist():
     """Remove the selected ticker from the watchlist."""
     target = st.session_state.get("remove_ticker_select", "")
@@ -906,29 +914,15 @@ with st.sidebar:
     add_col2.button("➕ Add", on_click=_add_to_watchlist,
                     use_container_width=True)
 
-    # Search-as-you-type — selecting a result opens the chart popup
-    sb_query = st.text_input(
+    # Searchable dropdown — type to filter ~800 tickers from S&P 500 + TSX + ETFs.
+    # Selecting one opens the chart popup (does NOT add to watchlist).
+    st.selectbox(
         "🔍 Search & view ticker",
-        placeholder="apple, tesla, royal bank…",
-        key="sidebar_search_query",
+        options=[""] + _all_tickers_for_dropdown(),
+        key="sidebar_view_select",
+        on_change=_view_from_search_dropdown,
+        help="Type any letters to filter; click a ticker to open its chart popup",
     )
-    if sb_query and len(sb_query) >= 2:
-        sb_results = cached_search(sb_query)
-        if sb_results:
-            for r in sb_results[:6]:
-                desc = r["description"][:28] + (
-                    "…" if len(r["description"]) > 28 else "")
-                if st.button(
-                    f"📊 **{r['symbol']}** — {desc}",
-                    key=f"sb_view_{r['symbol']}",
-                    use_container_width=True,
-                ):
-                    # Trigger the chart popup for this ticker on next render
-                    st.session_state["selected_tile"] = r["symbol"]
-                    st.session_state["sidebar_search_query"] = ""
-                    st.rerun()
-        else:
-            st.caption("No matches.")
 
     # Remove dropdown — populated from current watchlist
     _current_wl = st.session_state.get(
