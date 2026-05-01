@@ -244,13 +244,13 @@ st.markdown(
         gap: 8px;
         border-bottom: 1px solid #374151 !important;
         padding-bottom: 0;
-        margin-bottom: 16px;
+        margin-bottom: 6px;
     }
 
     /* Individual tab buttons */
     button[data-baseweb="tab"] {
         height: auto !important;
-        padding: 12px 24px !important;
+        padding: 4px 24px !important;
         font-size: 1.640625rem !important;
         font-weight: 500 !important;
         background: transparent !important;
