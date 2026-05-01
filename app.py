@@ -2012,12 +2012,169 @@ with tab_patterns:
 
 
 # === News tab ===
-with tab_news:
-    st.subheader("Recent News")
+@st.cache_data(ttl=900, show_spinner=False)
+def cached_insider(ticker: str, days: int = 90) -> list:
+    return ss.finnhub_insider_transactions(ticker, days=days)
 
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_earnings(days_ahead: int = 30, symbol: str | None = None) -> list:
+    return ss.finnhub_earnings_calendar(days_ahead=days_ahead, symbol=symbol)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_ipo(days_ahead: int = 30) -> list:
+    return ss.finnhub_ipo_calendar(days_ahead=days_ahead)
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def cached_etf_holdings(ticker: str) -> list:
+    return ss.finnhub_etf_holdings(ticker)
+
+
+with tab_news:
     if not ss.FINNHUB_API_KEY:
         st.warning("Set FINNHUB_API_KEY in .env to enable news.")
     else:
+        # --- MAIN SECTION: Insider Transactions + IPO Calendar ---
+        main_l, main_r = st.columns(2)
+
+        with main_l:
+            st.subheader("👤 Insider Transactions")
+            st.caption("Form 4 filings (last 90 days) for watchlist tickers.")
+            insider_rows = []
+            for t in _wl_normalized[:20]:
+                txns = cached_insider(t, days=90)
+                buys = sum(1 for x in txns if (x.get("change") or 0) > 0)
+                sells = sum(1 for x in txns if (x.get("change") or 0) < 0)
+                if buys or sells:
+                    insider_rows.append({
+                        "Ticker": t, "Buys": buys, "Sells": sells,
+                        "Net": buys - sells, "Total": buys + sells,
+                    })
+            if insider_rows:
+                insider_df = pd.DataFrame(insider_rows).sort_values(
+                    "Net", ascending=False
+                )
+                st.dataframe(insider_df, use_container_width=True,
+                             hide_index=True)
+            else:
+                st.info("No recent insider activity for watchlist tickers.")
+
+        with main_r:
+            st.subheader("🚀 Upcoming IPOs")
+            st.caption("Next 30 days.")
+            ipos = cached_ipo(days_ahead=30)
+            if ipos:
+                ipo_df = pd.DataFrame([{
+                    "Date": x.get("date"),
+                    "Symbol": x.get("symbol"),
+                    "Name": x.get("name"),
+                    "Exchange": x.get("exchange"),
+                    "Price range": x.get("priceRange"),
+                } for x in ipos[:50]])
+                st.dataframe(ipo_df, use_container_width=True,
+                             hide_index=True)
+            else:
+                st.info("No upcoming IPOs.")
+
+        st.divider()
+
+        # --- SUBSECTION: All market data (collapsed by default) ---
+        with st.expander("📊 All market data (earnings · insider · ETF holdings · IPOs)",
+                         expanded=False):
+
+            # Earnings calendar (next 30 days for watchlist)
+            st.markdown("##### 📅 Earnings calendar — watchlist (30 days)")
+            wl_earn_rows = []
+            for t in _wl_normalized[:20]:
+                er = cached_earnings(days_ahead=30, symbol=t)
+                for e in er:
+                    wl_earn_rows.append({
+                        "Date": e.get("date"),
+                        "Ticker": t,
+                        "EPS est.": e.get("epsEstimate"),
+                        "Rev est.": e.get("revenueEstimate"),
+                        "Hour": e.get("hour"),
+                    })
+            if wl_earn_rows:
+                st.dataframe(
+                    pd.DataFrame(wl_earn_rows).sort_values("Date"),
+                    use_container_width=True, hide_index=True,
+                )
+            else:
+                st.caption("_No upcoming earnings for watchlist tickers._")
+
+            st.divider()
+
+            # Detailed insider per-ticker
+            st.markdown("##### 👤 Insider transactions — detailed")
+            ins_pick = st.selectbox(
+                "Ticker", options=_wl_normalized,
+                key="insider_detail_ticker",
+            )
+            if ins_pick:
+                txns = cached_insider(ins_pick, days=90)
+                if txns:
+                    df_ins = pd.DataFrame([{
+                        "Date": x.get("transactionDate"),
+                        "Name": x.get("name"),
+                        "Δ Shares": x.get("change"),
+                        "Price": x.get("transactionPrice"),
+                        "Code": x.get("transactionCode"),
+                    } for x in txns[:50]])
+                    st.dataframe(df_ins, use_container_width=True,
+                                 hide_index=True)
+                else:
+                    st.caption("_No transactions in last 90 days._")
+
+            st.divider()
+
+            # ETF holdings lookup
+            st.markdown("##### 🧺 ETF holdings lookup")
+            etf_pick = st.text_input(
+                "ETF ticker", placeholder="e.g. SPY, HOD.TO, XEQT.TO",
+                key="etf_holdings_ticker",
+            )
+            if etf_pick:
+                holdings = cached_etf_holdings(etf_pick.strip().upper())
+                if holdings:
+                    df_h = pd.DataFrame([{
+                        "Symbol": h.get("symbol"),
+                        "Name": h.get("name"),
+                        "% of fund": h.get("percent"),
+                        "Shares": h.get("share"),
+                    } for h in holdings[:50]])
+                    st.dataframe(df_h, use_container_width=True,
+                                 hide_index=True)
+                else:
+                    st.caption(
+                        "_No holdings data — Finnhub free tier covers "
+                        "a limited set of US ETFs._"
+                    )
+
+            st.divider()
+
+            # Full IPO calendar (longer horizon)
+            st.markdown("##### 🚀 IPO calendar — 90 days")
+            ipos_long = cached_ipo(days_ahead=90)
+            if ipos_long:
+                st.dataframe(
+                    pd.DataFrame([{
+                        "Date": x.get("date"),
+                        "Symbol": x.get("symbol"),
+                        "Name": x.get("name"),
+                        "Exchange": x.get("exchange"),
+                        "Price range": x.get("priceRange"),
+                        "Shares (M)": x.get("numberOfShares"),
+                    } for x in ipos_long]).sort_values("Date"),
+                    use_container_width=True, hide_index=True,
+                )
+            else:
+                st.caption("_No upcoming IPOs in next 90 days._")
+
+        st.divider()
+        st.subheader("Recent News")
         col1, col2 = st.columns([3, 1])
         news_raw = col1.text_input("Ticker for news", "AAPL",
                                    key="news_ticker",

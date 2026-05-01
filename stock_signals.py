@@ -659,6 +659,93 @@ def finnhub_recommendation(ticker: str) -> tuple[int, int, int] | None:
         return None
 
 
+def finnhub_insider_transactions(ticker: str, days: int = 90) -> list[dict]:
+    """Recent insider buys/sells (Form 4 via Finnhub). Newest first."""
+    if not FINNHUB_API_KEY:
+        return []
+    try:
+        today = datetime.now().date()
+        frm = (today - timedelta(days=days)).isoformat()
+        r = requests.get(
+            "https://finnhub.io/api/v1/stock/insider-transactions",
+            params={"symbol": _finnhub_sym(ticker), "from": frm,
+                    "to": today.isoformat(), "token": FINNHUB_API_KEY},
+            timeout=15,
+        )
+        if r.status_code != 200:
+            return []
+        data = (r.json() or {}).get("data", []) or []
+        # Sort newest first
+        data.sort(key=lambda x: x.get("transactionDate", ""), reverse=True)
+        return data
+    except (requests.RequestException, ValueError):
+        return []
+
+
+def finnhub_earnings_calendar(days_ahead: int = 30,
+                              symbol: str | None = None) -> list[dict]:
+    """Upcoming earnings reports in the next N days."""
+    if not FINNHUB_API_KEY:
+        return []
+    try:
+        today = datetime.now().date()
+        to = (today + timedelta(days=days_ahead)).isoformat()
+        params = {"from": today.isoformat(), "to": to,
+                  "token": FINNHUB_API_KEY}
+        if symbol:
+            params["symbol"] = _finnhub_sym(symbol)
+        r = requests.get(
+            "https://finnhub.io/api/v1/calendar/earnings",
+            params=params, timeout=15,
+        )
+        if r.status_code != 200:
+            return []
+        return (r.json() or {}).get("earningsCalendar", []) or []
+    except (requests.RequestException, ValueError):
+        return []
+
+
+def finnhub_ipo_calendar(days_ahead: int = 30) -> list[dict]:
+    """Upcoming IPOs in the next N days."""
+    if not FINNHUB_API_KEY:
+        return []
+    try:
+        today = datetime.now().date()
+        to = (today + timedelta(days=days_ahead)).isoformat()
+        r = requests.get(
+            "https://finnhub.io/api/v1/calendar/ipo",
+            params={"from": today.isoformat(), "to": to,
+                    "token": FINNHUB_API_KEY},
+            timeout=15,
+        )
+        if r.status_code != 200:
+            return []
+        return (r.json() or {}).get("ipoCalendar", []) or []
+    except (requests.RequestException, ValueError):
+        return []
+
+
+def finnhub_etf_holdings(ticker: str) -> list[dict]:
+    """Holdings inside an ETF (top constituents)."""
+    if not FINNHUB_API_KEY:
+        return []
+    try:
+        r = requests.get(
+            "https://finnhub.io/api/v1/etf/holdings",
+            params={"symbol": _finnhub_sym(ticker),
+                    "token": FINNHUB_API_KEY},
+            timeout=15,
+        )
+        if r.status_code != 200:
+            return []
+        data = (r.json() or {}).get("holdings", []) or []
+        # Sort by percent descending
+        data.sort(key=lambda x: x.get("percent", 0) or 0, reverse=True)
+        return data
+    except (requests.RequestException, ValueError):
+        return []
+
+
 def rsi(series: pd.Series, period: int = 14) -> pd.Series:
     delta = series.diff()
     gain = delta.clip(lower=0)
