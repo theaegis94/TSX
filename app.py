@@ -433,8 +433,8 @@ def _inject_auto_rescale_y():
                     const hi = Math.max.apply(null, vals);
                     const axName = yref === 'y'
                         ? 'yaxis' : 'yaxis' + yref.slice(1);
-                    // Price panel — floor at 0, top fits data + 3% padding
-                    updates[axName + '.range'] = [0, hi * 1.03];
+                    // Price panel — floor at 0, top is 10% above visible max
+                    updates[axName + '.range'] = [0, hi * 1.10];
                     updates[axName + '.autorange'] = false;
                     updates[axName + '.minallowed'] = 0;
                     updates[axName + '.rangemode'] = 'nonnegative';
@@ -892,6 +892,7 @@ def render_quick_analysis():
                         })
         _inject_double_click_fullscreen()
         _inject_auto_rescale_y()
+        _inject_price_tick_format()
         st.caption(
             "💡 **Drag** to pan · **scroll** to zoom · "
             "**double-click chart for fullscreen** (Esc to exit) · "
@@ -1422,11 +1423,18 @@ with tab_single:
                 fig = ss.build_chart_plotly(df, ticker, stats,
                                             theme_dark=_is_dark_theme())
                 st.plotly_chart(fig, use_container_width=True,
-                                config={"displayModeBar": True,
-                                        "scrollZoom": True,
-                                        "doubleClick": False})
+                                config={
+                                    "displayModeBar": True,
+                                    "displaylogo": False,
+                                    "scrollZoom": True,
+                                    "doubleClick": False,
+                                    "modeBarButtonsToRemove": [
+                                        "select2d", "lasso2d",
+                                    ],
+                                })
                 _inject_double_click_fullscreen()
                 _inject_auto_rescale_y()
+                _inject_price_tick_format()
                 st.caption("💡 **Double-click chart for fullscreen** · Esc to exit")
 
 
