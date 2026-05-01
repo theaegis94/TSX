@@ -822,9 +822,9 @@ st.divider()
 
 # --------- sidebar ---------
 
-def _add_to_watchlist():
-    """on_click handler — add the typed ticker to the watchlist text area."""
-    new_t = st.session_state.get("add_ticker_input", "").strip().upper()
+def _add_ticker_to_watchlist(new_t: str) -> None:
+    """Shared logic — add a normalized ticker to the watchlist."""
+    new_t = (new_t or "").strip().upper()
     if not new_t:
         return
     try:
@@ -842,7 +842,20 @@ def _add_to_watchlist():
         parts.append(new_t)
         st.session_state.watchlist_input = ", ".join(parts)
         st.session_state["_add_msg"] = f"✅ Added {new_t}"
+
+
+def _add_to_watchlist():
+    """on_click handler — add the typed ticker to the watchlist text area."""
+    _add_ticker_to_watchlist(st.session_state.get("add_ticker_input", ""))
     st.session_state.add_ticker_input = ""
+
+
+def _add_from_dropdown():
+    """on_change handler — add the dropdown selection."""
+    selected = st.session_state.get("add_dropdown_select", "")
+    if selected:
+        _add_ticker_to_watchlist(selected)
+    st.session_state.add_dropdown_select = ""
 
 
 def _remove_from_watchlist():
@@ -855,6 +868,22 @@ def _remove_from_watchlist():
     parts = [p for p in parts if p.upper() != target.upper()]
     st.session_state.watchlist_input = ", ".join(parts)
     st.session_state["_add_msg"] = f"🗑️ Removed {target}"
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def _all_tickers_for_dropdown() -> list:
+    """Combined sorted list of S&P 500 + TSX Composite + popular ETFs."""
+    parts = []
+    try:
+        parts.extend(ss.get_sp500())
+    except Exception:
+        pass
+    try:
+        parts.extend(ss.get_tsx_composite())
+    except Exception:
+        pass
+    parts.extend(ss.UNIVERSE_POPULAR_ETFS)
+    return sorted(set(parts))
 
 
 with st.sidebar:
@@ -870,6 +899,14 @@ with st.sidebar:
     )
     add_col2.button("➕ Add", on_click=_add_to_watchlist,
                     use_container_width=True)
+
+    # Dropdown picker — alternative to typing
+    st.selectbox(
+        "Or pick from list (S&P 500 + TSX + ETFs)",
+        options=[""] + _all_tickers_for_dropdown(),
+        key="add_dropdown_select",
+        on_change=_add_from_dropdown,
+    )
 
     # Remove dropdown — populated from current watchlist
     _current_wl = st.session_state.get(
