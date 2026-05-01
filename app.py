@@ -3,6 +3,8 @@
 Run with:    streamlit run app.py
 """
 
+import json
+import pathlib
 from datetime import datetime
 
 import pandas as pd
@@ -1729,18 +1731,88 @@ def _eval_rule(df, rule: dict) -> bool | None:
     return None
 
 
+SAVED_RULES_PATH = pathlib.Path("saved_rules.json")
+
+
+def _load_saved_rules() -> dict:
+    if not SAVED_RULES_PATH.exists():
+        return {}
+    try:
+        return json.loads(SAVED_RULES_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _persist_saved_rules(d: dict) -> None:
+    SAVED_RULES_PATH.write_text(
+        json.dumps(d, indent=2), encoding="utf-8"
+    )
+
+
 with tab_patterns:
     st.subheader("Custom Watchlist Screener")
     st.caption(
         "Build a set of indicator rules. Tickers in your watchlist matching "
         "**all** rules (AND) on the latest bar are listed below. "
-        "Rules persist for this session — saving + email coming next."
+        "Save named rule sets to reload later or share via the JSON file."
     )
 
     if "custom_rules" not in st.session_state:
         st.session_state.custom_rules = [
             {"left": "RSI", "op": "<", "a": 30.0, "b": None},
         ]
+    if "saved_rules" not in st.session_state:
+        st.session_state.saved_rules = _load_saved_rules()
+
+    saved = st.session_state.saved_rules
+
+    # --- Saved rules ---
+    st.markdown("##### Saved rule sets")
+    if saved:
+        for name in list(saved.keys()):
+            sc1, sc2, sc3, sc4 = st.columns([4, 2, 1, 1])
+            sc1.markdown(
+                f"**{name}** &nbsp;·&nbsp; "
+                f"<span style='color:#9ca3af'>"
+                f"{len(saved[name])} rule(s)</span>",
+                unsafe_allow_html=True,
+            )
+            if sc2.button("📂 Load", key=f"saved_load_{name}",
+                          use_container_width=True):
+                st.session_state.custom_rules = [
+                    dict(r) for r in saved[name]
+                ]
+                st.rerun()
+            if sc3.button("🗑️", key=f"saved_del_{name}",
+                          help=f"Delete '{name}'"):
+                del saved[name]
+                _persist_saved_rules(saved)
+                st.rerun()
+            sc4.markdown("")
+    else:
+        st.caption("_No saved rule sets yet._")
+
+    save_c1, save_c2 = st.columns([4, 1.5])
+    new_name = save_c1.text_input(
+        "Save current rules as…",
+        key="saved_new_name",
+        placeholder="e.g. Oversold mean reversion",
+        label_visibility="collapsed",
+    )
+    if save_c2.button("💾 Save", key="saved_save_btn",
+                      use_container_width=True):
+        nm = (new_name or "").strip()
+        if not nm:
+            st.warning("Give the rule set a name first.")
+        elif not st.session_state.custom_rules:
+            st.warning("No rules to save.")
+        else:
+            saved[nm] = [dict(r) for r in st.session_state.custom_rules]
+            _persist_saved_rules(saved)
+            st.success(f"Saved “{nm}”.")
+            st.rerun()
+
+    st.divider()
 
     rules = st.session_state.custom_rules
 
