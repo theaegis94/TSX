@@ -28,28 +28,17 @@ st.markdown(
         margin-bottom: 14px;
     }
 
-    /* Hide Streamlit Cloud's top header bar (Share, star, edit, GitHub icons) */
-    header[data-testid="stHeader"] { display: none !important; }
-    [data-testid="stToolbar"] { display: none !important; }
-    [data-testid="stDecoration"] { display: none !important; }
-
-    /* But keep the sidebar collapse/expand button accessible */
-    [data-testid="stSidebarCollapsedControl"],
-    [data-testid="collapsedControl"],
-    [data-testid="stSidebarCollapseButton"] {
-        display: block !important;
-        position: fixed !important;
-        top: 8px !important;
-        left: 8px !important;
-        z-index: 9999 !important;
+    /* Make the Streamlit header's background match the page so the
+       Share/star/edit/GitHub Cloud icons blend in but the sidebar
+       toggle remains accessible. */
+    header[data-testid="stHeader"] {
+        background: transparent !important;
     }
-    /* Reclaim the space the hidden header used to occupy */
+
+    /* Trim the empty padding above the title now that the header is short */
     .stApp .main .block-container,
     .stApp [data-testid="stMainBlockContainer"] {
         padding-top: 1rem !important;
-    }
-    .stApp [data-testid="stMain"] {
-        padding-top: 0 !important;
     }
 
     /* Lighter Edge / Windows 11-style theme */
