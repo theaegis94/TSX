@@ -2549,7 +2549,24 @@ with tab_patterns:
                         f"out of {len(target_tickers)} scanned"
                     )
                     if len(matches) <= 50:
-                        st.markdown("**Tickers:** " + ", ".join(matches))
+                        chips = []
+                        for t in matches:
+                            href = _chip_href(t, from_tab="Custom Patterns")
+                            chips.append(
+                                f"<a href='{href}' target='_self' "
+                                "style='background:#16a34a; color:#fff; "
+                                "padding:3px 10px; border-radius:8px; "
+                                "font-size:0.85rem; font-weight:700; "
+                                "margin-right:6px; text-decoration:none; "
+                                "display:inline-block; margin-top:4px;' "
+                                f"title='Open {t} chart'>📊 {t}</a>"
+                            )
+                        st.markdown(
+                            "<div style='line-height:2.2;'>"
+                            "<b style='color:#9ca3af; margin-right:6px;'>Tickers:</b> "
+                            + "".join(chips) + "</div>",
+                            unsafe_allow_html=True,
+                        )
                 else:
                     st.info(
                         f"No matches in {len(target_tickers)} tickers scanned."
