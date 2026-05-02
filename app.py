@@ -2475,7 +2475,19 @@ with tab_patterns:
         label_visibility="collapsed",
     )
 
-    run_btn = st.button("🔍 Evaluate", key="rules_run", type="primary")
+    run_c, clear_c = st.columns([3, 1])
+    run_btn = run_c.button(
+        "🔍 Evaluate", key="rules_run", type="primary",
+        use_container_width=True,
+    )
+    if clear_c.button(
+        "🧹 Clear results", key="rules_clear",
+        use_container_width=True,
+        disabled=not st.session_state.get("patterns_last_results"),
+    ):
+        st.session_state.pop("patterns_last_results", None)
+        st.rerun()
+
     if run_btn:
         if not rules:
             st.warning("Add at least one rule.")
@@ -2543,41 +2555,58 @@ with tab_patterns:
                 progress.empty()
                 status.empty()
 
-                if matches:
-                    st.success(
-                        f"✅ {len(matches)} match{'es' if len(matches) > 1 else ''} "
-                        f"out of {len(target_tickers)} scanned"
-                    )
-                    if len(matches) <= 50:
-                        chips = []
-                        for t in matches:
-                            href = _chip_href(t, from_tab="Custom Patterns")
-                            chips.append(
-                                f"<a href='{href}' target='_self' "
-                                "style='background:#16a34a; color:#fff; "
-                                "padding:3px 10px; border-radius:8px; "
-                                "font-size:0.85rem; font-weight:700; "
-                                "margin-right:6px; text-decoration:none; "
-                                "display:inline-block; margin-top:4px;' "
-                                f"title='Open {t} chart'>📊 {t}</a>"
-                            )
-                        st.markdown(
-                            "<div style='line-height:2.2;'>"
-                            "<b style='color:#9ca3af; margin-right:6px;'>Tickers:</b> "
-                            + "".join(chips) + "</div>",
-                            unsafe_allow_html=True,
-                        )
-                else:
-                    st.info(
-                        f"No matches in {len(target_tickers)} tickers scanned."
-                    )
+                # Cache results so they survive popup-related reruns
+                st.session_state["patterns_last_results"] = {
+                    "matches": matches,
+                    "details": details,
+                    "scanned": len(target_tickers),
+                    "universe": universe_options.get(universe_key, ""),
+                }
 
-                st.markdown("##### Details")
-                st.dataframe(
-                    pd.DataFrame(details),
-                    use_container_width=True,
-                    hide_index=True,
+    # Render last results (if any) — survives popup open/close reruns
+    last = st.session_state.get("patterns_last_results")
+    if last:
+        matches = last["matches"]
+        details = last["details"]
+        scanned = last["scanned"]
+        st.caption(
+            f"Last evaluation · scanned **{scanned}** tickers in "
+            f"**{last.get('universe', '')}**"
+        )
+        if matches:
+            st.success(
+                f"✅ {len(matches)} match{'es' if len(matches) > 1 else ''} "
+                f"out of {scanned} scanned"
+            )
+            if len(matches) <= 50:
+                chips = []
+                for t in matches:
+                    href = _chip_href(t, from_tab="Custom Patterns")
+                    chips.append(
+                        f"<a href='{href}' target='_self' "
+                        "style='background:#16a34a; color:#fff; "
+                        "padding:3px 10px; border-radius:8px; "
+                        "font-size:0.85rem; font-weight:700; "
+                        "margin-right:6px; text-decoration:none; "
+                        "display:inline-block; margin-top:4px;' "
+                        f"title='Open {t} chart'>📊 {t}</a>"
+                    )
+                st.markdown(
+                    "<div style='line-height:2.2;'>"
+                    "<b style='color:#9ca3af; margin-right:6px;'>Tickers:</b> "
+                    + "".join(chips) + "</div>",
+                    unsafe_allow_html=True,
                 )
+        else:
+            st.info(f"No matches in {scanned} tickers scanned.")
+
+        if details:
+            st.markdown("##### Details")
+            st.dataframe(
+                pd.DataFrame(details),
+                use_container_width=True,
+                hide_index=True,
+            )
 
 
 # === News tab ===
