@@ -523,12 +523,15 @@ def _inject_auto_rescale_y():
                 const charts = pdoc.querySelectorAll('.js-plotly-plot');
                 charts.forEach(chart => {
                     if (chart.dataset.autoYAttached === '1') return;
+                    // Plotly attaches `.on` to the chart div once initialized.
+                    // If it's not there yet, skip this round; the next
+                    // setTimeout retry will attempt again.
+                    if (typeof chart.on !== 'function') return;
+                    if (!chart.data || !chart.data.length) return;
                     chart.dataset.autoYAttached = '1';
 
                     // Initial rescale once chart has data
-                    if (chart.data && chart.data.length) {
-                        setTimeout(() => rescale(chart), 100);
-                    }
+                    setTimeout(() => rescale(chart), 50);
 
                     // Re-rescale on every zoom/pan (final state)
                     chart.on('plotly_relayout', function(ev) {
@@ -1058,7 +1061,7 @@ def render_quick_analysis():
         _inject_scroll_to_pan()
         _inject_price_tick_format()
         st.caption(
-            "💡 **Drag** to pan · **scroll** to zoom · "
+            "💡 **Drag** to zoom into a region · **scroll** to zoom · "
             "**double-click chart for fullscreen** (Esc to exit) · "
             "📰 news + fundamentals → **Single Ticker** tab"
         )
