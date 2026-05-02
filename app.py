@@ -377,6 +377,72 @@ def _restore_active_tab():
     st.session_state["__redirect_pending"] = pending - 1
 
 
+def _inject_tab_persistence():
+    """Persist the active tab in localStorage so it survives reruns.
+
+    Streamlit's st.tabs() resets to the first tab on every rerun. This JS:
+      1. Reads localStorage on every render → clicks that tab if set
+      2. Attaches click listeners to all tabs → saves the clicked tab name
+
+    The chip-click flow (`__active_tab` + `__redirect_pending`) takes
+    precedence over localStorage so popups still return the user to the
+    originating tab.
+    """
+    import streamlit.components.v1 as components
+    components.html(
+        """<script>
+        (function() {
+            const ttd = window.parent.document;
+            const KEY = 'streamlit_active_tab';
+
+            function findTab(name) {
+                const tabs = ttd.querySelectorAll(
+                    'button[data-baseweb="tab"]'
+                );
+                let found = null;
+                tabs.forEach(t => {
+                    if (t.innerText.indexOf(name) !== -1) found = t;
+                });
+                return found;
+            }
+
+            function restore() {
+                const saved = window.parent.localStorage.getItem(KEY);
+                if (!saved) return;
+                const tab = findTab(saved);
+                if (tab && tab.getAttribute('aria-selected') !== 'true') {
+                    tab.click();
+                }
+            }
+
+            function attachClickSavers() {
+                const tabs = ttd.querySelectorAll(
+                    'button[data-baseweb="tab"]'
+                );
+                tabs.forEach(t => {
+                    if (t.dataset.tabPersistAttached === '1') return;
+                    t.dataset.tabPersistAttached = '1';
+                    t.addEventListener('click', function() {
+                        try {
+                            window.parent.localStorage.setItem(
+                                KEY, t.innerText
+                            );
+                        } catch (e) {}
+                    });
+                });
+            }
+
+            // Restore + attach listeners on every component injection
+            [60, 200, 500, 1000].forEach(d => setTimeout(() => {
+                attachClickSavers();
+                restore();
+            }, d));
+        })();
+        </script>""",
+        height=0,
+    )
+
+
 def _is_dark_theme() -> bool:
     """Detect Streamlit's current theme so chart line colors can adapt."""
     try:
@@ -1602,6 +1668,9 @@ st.session_state["_stop_loss_pct"] = stop_loss_pct
 )
 # After the popup closes, restore the tab the user was on (if any)
 _restore_active_tab()
+# Persist tab clicks across reruns via localStorage so any rerun
+# (widget interaction, range button click, etc.) doesn't reset to first tab.
+_inject_tab_persistence()
 
 
 # === Scan tab ===
