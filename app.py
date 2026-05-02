@@ -977,6 +977,21 @@ def show_quick_analysis_dialog(ticker: str):
         key=f"dlg_indicators_{ticker}",
     )
 
+    # --- Add to watchlist (uses same handler as the sidebar add) ---
+    _wl_now = st.session_state.get(
+        "watchlist_input", ", ".join(ss.DEFAULT_WATCHLIST)
+    )
+    _wl_set = {p.strip().upper() for p in _wl_now.split(",") if p.strip()}
+    _t_upper = ticker.strip().upper()
+    if _t_upper in _wl_set:
+        st.success(f"✅ {_t_upper} is in your watchlist")
+    else:
+        if st.button(f"➕ Add {_t_upper} to watchlist",
+                     key=f"dlg_add_wl_{ticker}",
+                     use_container_width=True):
+            _add_ticker_to_watchlist(ticker)
+            st.rerun()
+
     try:
         norm_ticker = ss.normalize_ticker(ticker)
     except SystemExit as e:
@@ -2078,31 +2093,49 @@ RULE_INDICATORS = {
 RULE_OPS = ["<", "<=", ">", ">=", "between"]
 
 
-def _last_value(df, key: str):
-    """Get the most recent value of a named indicator for a ticker df."""
+def _bar_at(df, date_str: str | None):
+    """Return the dataframe row at-or-before date_str, or the last row."""
     if df is None or df.empty:
+        return None, None
+    if not date_str:
+        return df.iloc[-1], df  # latest bar; df for prev-bar lookup
+    try:
+        target = pd.Timestamp(date_str)
+        if target.tzinfo is None and df.index.tz is not None:
+            target = target.tz_localize(df.index.tz)
+        sub = df[df.index <= target]
+        if sub.empty:
+            return None, None
+        return sub.iloc[-1], sub
+    except Exception:
+        return None, None
+
+
+def _last_value(df, key: str, date_str: str | None = None):
+    """Get the value of a named indicator at a specific date (or latest bar)."""
+    bar, sub = _bar_at(df, date_str)
+    if bar is None:
         return None
-    last = df.iloc[-1]
     if key in df.columns:
-        v = last[key]
-    elif key == "DAILY_CHG_PCT" and len(df) >= 2:
-        prev = df.iloc[-2]["Close"]
-        v = (last["Close"] - prev) / prev * 100 if prev else None
+        v = bar[key]
+    elif key == "DAILY_CHG_PCT" and sub is not None and len(sub) >= 2:
+        prev = sub.iloc[-2]["Close"]
+        v = (bar["Close"] - prev) / prev * 100 if prev else None
     elif key == "DIST_SMA5_PCT" and "SMA5" in df.columns:
-        v = (last["Close"] - last["SMA5"]) / last["SMA5"] * 100 \
-            if last["SMA5"] else None
+        v = (bar["Close"] - bar["SMA5"]) / bar["SMA5"] * 100 \
+            if bar["SMA5"] else None
     elif key == "DIST_SMA20_PCT" and "SMA20" in df.columns:
-        v = (last["Close"] - last["SMA20"]) / last["SMA20"] * 100 \
-            if last["SMA20"] else None
+        v = (bar["Close"] - bar["SMA20"]) / bar["SMA20"] * 100 \
+            if bar["SMA20"] else None
     elif key == "DIST_SMA50_PCT" and "SMA50" in df.columns:
-        v = (last["Close"] - last["SMA50"]) / last["SMA50"] * 100 \
-            if last["SMA50"] else None
+        v = (bar["Close"] - bar["SMA50"]) / bar["SMA50"] * 100 \
+            if bar["SMA50"] else None
     elif key == "DIST_SMA200_PCT" and "SMA200" in df.columns:
-        v = (last["Close"] - last["SMA200"]) / last["SMA200"] * 100 \
-            if last["SMA200"] else None
+        v = (bar["Close"] - bar["SMA200"]) / bar["SMA200"] * 100 \
+            if bar["SMA200"] else None
     elif key == "BB_PCT_B" and {"BB_LOWER", "BB_UPPER"}.issubset(df.columns):
-        rng = last["BB_UPPER"] - last["BB_LOWER"]
-        v = (last["Close"] - last["BB_LOWER"]) / rng if rng else None
+        rng = bar["BB_UPPER"] - bar["BB_LOWER"]
+        v = (bar["Close"] - bar["BB_LOWER"]) / rng if rng else None
     else:
         return None
     try:
@@ -2113,8 +2146,9 @@ def _last_value(df, key: str):
 
 
 def _eval_rule(df, rule: dict) -> bool | None:
-    """Evaluate one rule against the latest bar. Returns None if data missing."""
-    left = _last_value(df, rule["left"])
+    """Evaluate one rule. If rule has a 'date', evaluate against that bar;
+    otherwise against the latest bar. Returns None if data missing."""
+    left = _last_value(df, rule["left"], rule.get("date"))
     if left is None:
         return None
     op = rule["op"]
@@ -2219,8 +2253,15 @@ with tab_patterns:
 
     # --- Rule editor ---
     st.markdown("##### Rules")
+    st.caption(
+        "Each rule can target the **latest bar** (default) or a **specific date** "
+        "in history. Multiple rules with different dates let you screen for "
+        "patterns like *RSI < 30 on Mar 26* AND *RSI > 70 on Apr 10*."
+    )
+    today = datetime.now().date()
     for i, rule in enumerate(rules):
-        c_left, c_op, c_a, c_b, c_del = st.columns([3, 2, 2, 2, 0.7])
+        cols = st.columns([2.5, 1.5, 1.8, 1.8, 1.4, 2.2, 0.6])
+        c_left, c_op, c_a, c_b, c_use_date, c_date, c_del = cols
         rule["left"] = c_left.selectbox(
             "Indicator",
             options=list(RULE_INDICATORS.keys()),
@@ -2253,6 +2294,32 @@ with tab_patterns:
         else:
             c_b.markdown("&nbsp;", unsafe_allow_html=True)
             rule["b"] = None
+
+        use_date = c_use_date.checkbox(
+            "On date",
+            value=bool(rule.get("date")),
+            key=f"rule_usedate_{i}",
+            help="Evaluate against a specific historical date instead of the latest bar",
+        )
+        if use_date:
+            existing_date = rule.get("date")
+            try:
+                init_date = (datetime.strptime(existing_date, "%Y-%m-%d").date()
+                             if existing_date else today)
+            except ValueError:
+                init_date = today
+            picked = c_date.date_input(
+                "Date",
+                value=init_date,
+                max_value=today,
+                key=f"rule_date_{i}",
+                label_visibility="collapsed",
+            )
+            rule["date"] = picked.strftime("%Y-%m-%d")
+        else:
+            c_date.markdown("&nbsp;", unsafe_allow_html=True)
+            rule["date"] = None
+
         if c_del.button("🗑️", key=f"rule_del_{i}",
                         help="Remove this rule"):
             rules.pop(i)
@@ -2260,7 +2327,8 @@ with tab_patterns:
 
     add_c, _ = st.columns([2, 8])
     if add_c.button("➕ Add rule", key="rule_add"):
-        rules.append({"left": "Close", "op": ">", "a": 0.0, "b": None})
+        rules.append({"left": "Close", "op": ">", "a": 0.0,
+                      "b": None, "date": None})
         st.rerun()
 
     st.divider()
