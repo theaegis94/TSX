@@ -590,10 +590,12 @@ def _inject_auto_rescale_y():
 
 
 def _inject_scroll_to_pan():
-    """Mouse wheel pans the X axis instead of zooming.
+    """Mouse wheel zooms the X axis (centered on cursor).
 
-    Disables Plotly's default scroll zoom (set in chart config) and replaces
-    it with a wheel handler that shifts the visible time window left/right.
+    Scroll up → zoom in (narrows visible time window).
+    Scroll down → zoom out (widens visible time window).
+    Zoom is centered on cursor X position so the point under the
+    mouse stays roughly put.
     """
     import streamlit.components.v1 as components
     components.html(
@@ -602,9 +604,9 @@ def _inject_scroll_to_pan():
         (function() {
             const pdoc = window.parent.document;
 
-            function attachPan(chart) {
-                if (chart.dataset.scrollPanAttached === '1') return;
-                chart.dataset.scrollPanAttached = '1';
+            function attachZoom(chart) {
+                if (chart.dataset.scrollZoomAttached === '1') return;
+                chart.dataset.scrollZoomAttached = '1';
 
                 chart.addEventListener('wheel', function(e) {
                     e.preventDefault();
@@ -616,30 +618,30 @@ def _inject_scroll_to_pan():
                     const span = xMax - xMin;
                     if (!isFinite(span) || span <= 0) return;
 
-                    // 5% of visible window per wheel tick.
-                    // deltaY > 0 (scroll down) → move forward in time.
-                    // Use deltaX too for trackpad horizontal swipes.
-                    const dy = e.deltaY || 0;
-                    const dx = e.deltaX || 0;
-                    const dominant = Math.abs(dx) > Math.abs(dy) ? dx : dy;
-                    const delta = (dominant / 100) * span * 0.05;
+                    // Scroll up (deltaY < 0) → zoom in; scroll down → zoom out.
+                    // 10% per tick.
+                    const zoomFactor = e.deltaY > 0 ? 1.10 : 0.90;
+                    const newSpan = span * zoomFactor;
 
-                    let newMin = xMin + delta;
-                    let newMax = xMax + delta;
+                    // Anchor zoom to cursor X so point under mouse stays put.
+                    const rect = chart.getBoundingClientRect();
+                    let frac = (e.clientX - rect.left) / rect.width;
+                    if (!isFinite(frac)) frac = 0.5;
+                    frac = Math.max(0, Math.min(1, frac));
+                    const cursorTime = xMin + span * frac;
+
+                    let newMin = cursorTime - newSpan * frac;
+                    let newMax = cursorTime + newSpan * (1 - frac);
 
                     // Respect minallowed/maxallowed if set on xaxis
                     const minA = ax.minallowed
                         ? new Date(ax.minallowed).getTime() : null;
                     const maxA = ax.maxallowed
                         ? new Date(ax.maxallowed).getTime() : null;
-                    if (minA !== null && newMin < minA) {
-                        newMax += (minA - newMin);
-                        newMin = minA;
-                    }
-                    if (maxA !== null && newMax > maxA) {
-                        newMin -= (newMax - maxA);
-                        newMax = maxA;
-                    }
+                    if (minA !== null && newMin < minA) newMin = minA;
+                    if (maxA !== null && newMax > maxA) newMax = maxA;
+                    // Don't allow inverted/zero range
+                    if (newMax - newMin < 1000) return;
 
                     try {
                         window.parent.Plotly.relayout(chart, {
@@ -652,7 +654,7 @@ def _inject_scroll_to_pan():
             }
 
             function attach() {
-                pdoc.querySelectorAll('.js-plotly-plot').forEach(attachPan);
+                pdoc.querySelectorAll('.js-plotly-plot').forEach(attachZoom);
             }
             [100, 300, 600, 1200, 2500, 4000].forEach(d => setTimeout(attach, d));
         })();
@@ -1056,7 +1058,7 @@ def render_quick_analysis():
         _inject_scroll_to_pan()
         _inject_price_tick_format()
         st.caption(
-            "💡 **Drag** to pan · **scroll** to pan time · "
+            "💡 **Drag** to pan · **scroll** to zoom · "
             "**double-click chart for fullscreen** (Esc to exit) · "
             "📰 news + fundamentals → **Single Ticker** tab"
         )
