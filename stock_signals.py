@@ -1838,9 +1838,9 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
         plot_bgcolor="#4a4b4e",
         paper_bgcolor="#4a4b4e",
         bargap=0,
-        # "pan" lets users drag to scroll horizontally without drawing a
-        # 2D zoom box. Scroll wheel still zooms in/out.
-        dragmode="pan",
+        # "zoom" lets users drag-select a region to zoom into.
+        # Scroll wheel also zooms (centered on cursor) via custom JS.
+        dragmode="zoom",
         font=dict(
             family='"Comic Sans MS", "Comic Sans", cursive',
             color="#e5e7eb",
