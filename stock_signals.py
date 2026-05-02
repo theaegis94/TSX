@@ -1867,26 +1867,35 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
         autorange=True,
     )
 
-    # Explicitly set the visible x-range AND lock pan/zoom bounds to the
-    # data range so users can't drag off into empty space.
-    # x_end anchored exactly to the last data point so the rangeselector
-    # buttons (1m, 3m, …) always land on real data.
+    # Initial visible window = last 2 years so charts open with sensible
+    # detail (avoids pre-split adjusted highs from polluting Y range for
+    # leveraged ETFs and similar tickers). Full history still pannable
+    # via minallowed/maxallowed and the "All" range button.
     if len(df) >= 2:
-        x_start = df.index[0]
-        x_end = df.index[-1]
+        full_start = df.index[0]
+        full_end = df.index[-1]
+        two_years_ago = full_end - pd.Timedelta(days=730)
+        x_start = max(full_start, two_years_ago)
+        x_end = full_end
         for r in (1, 2, 3):
             fig.update_xaxes(
                 range=[x_start, x_end],
-                minallowed=x_start,
-                maxallowed=x_end,
+                # Allow panning back to the full data range
+                minallowed=full_start,
+                maxallowed=full_end,
                 row=r, col=1, gridcolor="#5a5b5e",
             )
 
-        # Price panel — tight fit to data with 5% padding both sides.
-        # Floor never below 0 (prices can't go negative). minallowed=0 is a
-        # hard pan/zoom floor.
-        price_min = float(df["Close"].min())
-        price_max = float(df["Close"].max())
+        # Price panel — fit Y to the VISIBLE window (last 2y) so initial
+        # render shows detail. Excludes pre-split adjusted highs from
+        # polluting the Y range. Rescaler keeps it tight on zoom/pan.
+        visible = df.loc[x_start:x_end]
+        if not visible.empty:
+            price_min = float(visible["Close"].min())
+            price_max = float(visible["Close"].max())
+        else:
+            price_min = float(df["Close"].min())
+            price_max = float(df["Close"].max())
         if price_max > 0:
             rng = price_max - price_min
             pad = rng * 0.05 if rng > 0 else abs(price_max) * 0.02
