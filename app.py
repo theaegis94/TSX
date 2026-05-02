@@ -1165,8 +1165,8 @@ def render_quick_analysis():
         _inject_scroll_to_pan()
         _inject_price_tick_format()
         st.caption(
-            "💡 **Left-drag** zooms region · **scroll** zooms · "
-            "**middle-click drag** pans · "
+            "💡 **Left-drag** pans · **scroll** zooms · "
+            "switch to box-zoom via the modebar · "
             "**double-click chart for fullscreen** (Esc to exit) · "
             "📰 news + fundamentals → **Single Ticker** tab"
         )

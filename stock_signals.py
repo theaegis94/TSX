@@ -1838,9 +1838,10 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
         plot_bgcolor="#4a4b4e",
         paper_bgcolor="#4a4b4e",
         bargap=0,
-        # "zoom" lets users drag-select a region to zoom into.
-        # Scroll wheel also zooms (centered on cursor) via custom JS.
-        dragmode="zoom",
+        # "pan" makes left-click drag move the chart along time.
+        # Scroll wheel zooms (cursor-anchored) via custom JS.
+        # Switch to box-zoom via the modebar (top-right of chart) when needed.
+        dragmode="pan",
         font=dict(
             family='"Comic Sans MS", "Comic Sans", cursive',
             color="#e5e7eb",
@@ -1889,6 +1890,9 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
         # Price panel — fit Y to the VISIBLE window (last 2y) so initial
         # render shows detail. Excludes pre-split adjusted highs from
         # polluting the Y range. Rescaler keeps it tight on zoom/pan.
+        # Lower bound goes to -1 (instead of 0) so the price line has a
+        # tiny visual buffer at the bottom. The negative band is invisible
+        # because tick0=0 makes ticks start at 0.
         visible = df.loc[x_start:x_end]
         if not visible.empty:
             price_min = float(visible["Close"].min())
@@ -1899,13 +1903,13 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
         if price_max > 0:
             rng = price_max - price_min
             pad = rng * 0.05 if rng > 0 else abs(price_max) * 0.02
-            y_lo = max(0.0, price_min - pad)
+            y_lo = max(-1.0, price_min - pad)
             y_hi = price_max + pad
             fig.update_yaxes(
                 autorange=False,
-                rangemode="nonnegative",
-                minallowed=0,
+                minallowed=-1,
                 range=[y_lo, y_hi],
+                tick0=0,  # ticks start at 0 → negative band shows no labels
                 row=1, col=1,
             )
 
