@@ -2184,6 +2184,47 @@ def _persist_saved_rules(d: dict) -> None:
     )
 
 
+# Active-rules persistence: encode rules into URL `?rules=` so reopening the
+# browser tab restores exactly what the user was editing.
+def _rules_to_url(rules: list[dict]) -> str:
+    import base64
+    raw = json.dumps(rules, separators=(",", ":")).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _rules_from_url(s: str) -> list[dict] | None:
+    import base64
+    try:
+        pad = "=" * (-len(s) % 4)
+        raw = base64.urlsafe_b64decode((s + pad).encode("ascii"))
+        out = json.loads(raw.decode("utf-8"))
+        return out if isinstance(out, list) else None
+    except Exception:
+        return None
+
+
+def _init_active_rules_from_url():
+    if "custom_rules" in st.session_state:
+        return
+    encoded = st.query_params.get("rules")
+    if encoded:
+        loaded = _rules_from_url(encoded)
+        if loaded:
+            st.session_state.custom_rules = loaded
+            return
+    st.session_state.custom_rules = [
+        {"left": "RSI", "op": "<", "a": 30.0, "b": None, "date": None},
+    ]
+
+
+def _sync_active_rules_to_url():
+    rules = st.session_state.get("custom_rules") or []
+    if rules:
+        st.query_params["rules"] = _rules_to_url(rules)
+    elif "rules" in st.query_params:
+        del st.query_params["rules"]
+
+
 with tab_patterns:
     st.subheader("Custom Watchlist Screener")
     st.caption(
@@ -2192,10 +2233,7 @@ with tab_patterns:
         "Save named rule sets to reload later or share via the JSON file."
     )
 
-    if "custom_rules" not in st.session_state:
-        st.session_state.custom_rules = [
-            {"left": "RSI", "op": "<", "a": 30.0, "b": None},
-        ]
+    _init_active_rules_from_url()
     if "saved_rules" not in st.session_state:
         st.session_state.saved_rules = _load_saved_rules()
 
@@ -2330,6 +2368,9 @@ with tab_patterns:
         rules.append({"left": "Close", "op": ">", "a": 0.0,
                       "b": None, "date": None})
         st.rerun()
+
+    # Persist active rules to URL so the next browser visit restores them
+    _sync_active_rules_to_url()
 
     st.divider()
 
