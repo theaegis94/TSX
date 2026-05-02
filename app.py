@@ -593,12 +593,9 @@ def _inject_auto_rescale_y():
 
 
 def _inject_scroll_to_pan():
-    """Mouse wheel zooms the X axis (centered on cursor).
-
-    Scroll up → zoom in (narrows visible time window).
-    Scroll down → zoom out (widens visible time window).
-    Zoom is centered on cursor X position so the point under the
-    mouse stays roughly put.
+    """Mouse interactions:
+       - Wheel: zoom X axis (cursor-anchored). Up=in, down=out.
+       - Middle-mouse-button drag: pan X axis.
     """
     import streamlit.components.v1 as components
     components.html(
@@ -611,6 +608,7 @@ def _inject_scroll_to_pan():
                 if (chart.dataset.scrollZoomAttached === '1') return;
                 chart.dataset.scrollZoomAttached = '1';
 
+                // ============ Wheel = zoom on X (cursor-anchored) ============
                 chart.addEventListener('wheel', function(e) {
                     e.preventDefault();
                     const layout = chart.layout || {};
@@ -621,12 +619,9 @@ def _inject_scroll_to_pan():
                     const span = xMax - xMin;
                     if (!isFinite(span) || span <= 0) return;
 
-                    // Scroll up (deltaY < 0) → zoom in; scroll down → zoom out.
-                    // 10% per tick.
                     const zoomFactor = e.deltaY > 0 ? 1.10 : 0.90;
                     const newSpan = span * zoomFactor;
 
-                    // Anchor zoom to cursor X so point under mouse stays put.
                     const rect = chart.getBoundingClientRect();
                     let frac = (e.clientX - rect.left) / rect.width;
                     if (!isFinite(frac)) frac = 0.5;
@@ -636,14 +631,12 @@ def _inject_scroll_to_pan():
                     let newMin = cursorTime - newSpan * frac;
                     let newMax = cursorTime + newSpan * (1 - frac);
 
-                    // Respect minallowed/maxallowed if set on xaxis
                     const minA = ax.minallowed
                         ? new Date(ax.minallowed).getTime() : null;
                     const maxA = ax.maxallowed
                         ? new Date(ax.maxallowed).getTime() : null;
                     if (minA !== null && newMin < minA) newMin = minA;
                     if (maxA !== null && newMax > maxA) newMax = maxA;
-                    // Don't allow inverted/zero range
                     if (newMax - newMin < 1000) return;
 
                     try {
@@ -654,6 +647,73 @@ def _inject_scroll_to_pan():
                         });
                     } catch (err) {}
                 }, { passive: false });
+
+                // ============ Middle-click drag = pan on X axis ============
+                let panState = null;
+                let panTicking = false;
+
+                chart.addEventListener('mousedown', function(e) {
+                    if (e.button !== 1) return;  // middle button only
+                    e.preventDefault();
+                    const layout = chart.layout || {};
+                    const ax = layout.xaxis || {};
+                    if (!ax.range) return;
+                    panState = {
+                        startX: e.clientX,
+                        xMinStart: new Date(ax.range[0]).getTime(),
+                        xMaxStart: new Date(ax.range[1]).getTime(),
+                        rect: chart.getBoundingClientRect(),
+                    };
+                    chart.style.cursor = 'grabbing';
+                });
+
+                pdoc.addEventListener('mousemove', function(e) {
+                    if (!panState || panTicking) return;
+                    panTicking = true;
+                    window.requestAnimationFrame(() => {
+                        if (!panState) { panTicking = false; return; }
+                        const ps = panState;
+                        const dx = e.clientX - ps.startX;
+                        const span = ps.xMaxStart - ps.xMinStart;
+                        const delta = -(dx / ps.rect.width) * span;
+                        let newMin = ps.xMinStart + delta;
+                        let newMax = ps.xMaxStart + delta;
+
+                        const ax = (chart.layout || {}).xaxis || {};
+                        const minA = ax.minallowed
+                            ? new Date(ax.minallowed).getTime() : null;
+                        const maxA = ax.maxallowed
+                            ? new Date(ax.maxallowed).getTime() : null;
+                        if (minA !== null && newMin < minA) {
+                            newMax += (minA - newMin);
+                            newMin = minA;
+                        }
+                        if (maxA !== null && newMax > maxA) {
+                            newMin -= (newMax - maxA);
+                            newMax = maxA;
+                        }
+                        try {
+                            window.parent.Plotly.relayout(chart, {
+                                'xaxis.range': [
+                                    new Date(newMin), new Date(newMax)
+                                ],
+                            });
+                        } catch (err) {}
+                        panTicking = false;
+                    });
+                });
+
+                pdoc.addEventListener('mouseup', function(e) {
+                    if (e.button === 1 && panState) {
+                        panState = null;
+                        chart.style.cursor = '';
+                    }
+                });
+
+                // Suppress browser autoscroll on middle click over the chart
+                chart.addEventListener('auxclick', function(e) {
+                    if (e.button === 1) e.preventDefault();
+                });
             }
 
             function attach() {
@@ -1061,7 +1121,8 @@ def render_quick_analysis():
         _inject_scroll_to_pan()
         _inject_price_tick_format()
         st.caption(
-            "💡 **Drag** to zoom into a region · **scroll** to zoom · "
+            "💡 **Left-drag** zooms region · **scroll** zooms · "
+            "**middle-click drag** pans · "
             "**double-click chart for fullscreen** (Esc to exit) · "
             "📰 news + fundamentals → **Single Ticker** tab"
         )
