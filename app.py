@@ -523,7 +523,7 @@ def _inject_auto_rescale_y():
                         setTimeout(() => rescale(chart), 100);
                     }
 
-                    // Re-rescale on every zoom/pan
+                    // Re-rescale on every zoom/pan (final state)
                     chart.on('plotly_relayout', function(ev) {
                         // Clamp Price y-axis (yaxis) bottom to 0 — block any
                         // user pan/zoom attempt that drops below $0.
@@ -557,6 +557,20 @@ def _inject_auto_rescale_y():
                             ev['xaxis.range'] !== undefined;
                         if (!hasXChange) return;
                         setTimeout(() => rescale(chart), 0);
+                    });
+
+                    // Live rescale DURING drag (rAF-throttled for performance)
+                    let liveTicking = false;
+                    chart.on('plotly_relayouting', function(ev) {
+                        const hasXChange =
+                            ev['xaxis.range[0]'] !== undefined ||
+                            ev['xaxis.range'] !== undefined;
+                        if (!hasXChange || liveTicking) return;
+                        liveTicking = true;
+                        window.requestAnimationFrame(() => {
+                            rescale(chart);
+                            liveTicking = false;
+                        });
                     });
                 });
             }
