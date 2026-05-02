@@ -2337,54 +2337,119 @@ with tab_patterns:
     wl_tickers = [t.strip().upper() for t in
                   st.session_state.get("watchlist_input", "").split(",")
                   if t.strip()]
-    st.markdown(f"##### Run against watchlist · {len(wl_tickers)} tickers")
+    st.markdown("##### Run against")
+
+    universe_options = {
+        "watchlist": f"📋 Watchlist ({len(wl_tickers)} tickers)",
+        "popular_etfs": f"🧺 Popular ETFs ({len(ss.UNIVERSE_POPULAR_ETFS)})",
+        "sp100": f"🇺🇸 S&P 100 ({len(ss.UNIVERSE_SP100)})",
+        "sp500": "🇺🇸 S&P 500 (~500 — slower)",
+        "tsx60": f"🍁 TSX 60 ({len(ss.UNIVERSE_TSX60)})",
+        "tsx_full": "🍁 Full TSX (~1500 — much slower)",
+        "us_full": "🇺🇸 Full US (~10000 — very slow, no OTC)",
+    }
+    uni_col, lim_col = st.columns([3, 1])
+    universe_key = uni_col.selectbox(
+        "Universe",
+        options=list(universe_options.keys()),
+        format_func=lambda k: universe_options[k],
+        index=0,
+        key="patterns_universe",
+        label_visibility="collapsed",
+    )
+    max_tickers = lim_col.number_input(
+        "Max tickers",
+        min_value=10, max_value=10000, value=200, step=50,
+        key="patterns_max_tickers",
+        help="Cap how many tickers are scanned (helps speed up bigger universes)",
+    )
 
     run_btn = st.button("🔍 Evaluate", key="rules_run", type="primary")
     if run_btn:
         if not rules:
             st.warning("Add at least one rule.")
-        elif not wl_tickers:
-            st.warning("Watchlist is empty.")
         else:
-            matches = []
-            details = []  # everything (matched and not), for transparency
-            progress = st.progress(0.0)
-            for idx, t in enumerate(wl_tickers):
-                try:
-                    norm = ss.normalize_ticker(t)
-                except SystemExit:
-                    continue
-                df, _ = cached_single(norm, period, interval, strategy,
-                                      adx_filter, stop_loss_pct)
-                row = {"Ticker": t}
-                rule_results = [_eval_rule(df, r) for r in rules]
-                row["Matches"] = (
-                    all(r is True for r in rule_results)
-                    if rule_results else False
-                )
-                # Snapshot key values
-                for k in ["Close", "RSI", "MACD_HIST", "DAILY_CHG_PCT"]:
-                    v = _last_value(df, k)
-                    row[k] = round(v, 4) if v is not None else None
-                details.append(row)
-                if row["Matches"]:
-                    matches.append(t)
-                progress.progress((idx + 1) / len(wl_tickers))
-            progress.empty()
+            # Resolve the universe to a ticker list
+            with st.spinner("Loading universe…"):
+                if universe_key == "watchlist":
+                    target_tickers = wl_tickers
+                elif universe_key == "popular_etfs":
+                    target_tickers = ss.UNIVERSE_POPULAR_ETFS
+                elif universe_key == "sp100":
+                    target_tickers = ss.UNIVERSE_SP100
+                elif universe_key == "sp500":
+                    target_tickers = ss.get_sp500()
+                elif universe_key == "tsx60":
+                    target_tickers = ss.UNIVERSE_TSX60
+                elif universe_key == "tsx_full":
+                    target_tickers = ss.get_full_tsx_listing()
+                elif universe_key == "us_full":
+                    target_tickers = ss.get_full_us_listing()
+                else:
+                    target_tickers = wl_tickers
 
-            if matches:
-                st.success(
-                    f"✅ {len(matches)} match — {', '.join(matches)}"
-                )
+            target_tickers = (target_tickers or [])[:int(max_tickers)]
+            if not target_tickers:
+                st.warning("Universe is empty.")
             else:
-                st.info("No tickers in your watchlist match all rules.")
+                matches = []
+                details = []
+                progress = st.progress(0.0)
+                status = st.empty()
+                for idx, t in enumerate(target_tickers):
+                    try:
+                        norm = ss.normalize_ticker(t)
+                    except SystemExit:
+                        continue
+                    try:
+                        df, _ = cached_single(
+                            norm, period, interval, strategy,
+                            adx_filter, stop_loss_pct,
+                        )
+                    except Exception:
+                        df = None
+                    if df is None:
+                        progress.progress((idx + 1) / len(target_tickers))
+                        continue
+                    row = {"Ticker": t}
+                    rule_results = [_eval_rule(df, r) for r in rules]
+                    row["Matches"] = (
+                        all(r is True for r in rule_results)
+                        if rule_results else False
+                    )
+                    for k in ["Close", "RSI", "MACD_HIST", "DAILY_CHG_PCT"]:
+                        v = _last_value(df, k)
+                        row[k] = round(v, 4) if v is not None else None
+                    details.append(row)
+                    if row["Matches"]:
+                        matches.append(t)
+                    progress.progress((idx + 1) / len(target_tickers))
+                    if (idx + 1) % 20 == 0 or idx == len(target_tickers) - 1:
+                        status.caption(
+                            f"Scanned {idx + 1}/{len(target_tickers)} · "
+                            f"{len(matches)} matches so far"
+                        )
+                progress.empty()
+                status.empty()
 
-            st.markdown("##### Details")
-            st.dataframe(
-                pd.DataFrame(details),
-                use_container_width=True,
-                hide_index=True,
-            )
+                if matches:
+                    st.success(
+                        f"✅ {len(matches)} match{'es' if len(matches) > 1 else ''} "
+                        f"out of {len(target_tickers)} scanned"
+                    )
+                    if len(matches) <= 50:
+                        st.markdown("**Tickers:** " + ", ".join(matches))
+                else:
+                    st.info(
+                        f"No matches in {len(target_tickers)} tickers scanned."
+                    )
+
+                st.markdown("##### Details")
+                st.dataframe(
+                    pd.DataFrame(details),
+                    use_container_width=True,
+                    hide_index=True,
+                )
 
 
 # === News tab ===
