@@ -2403,6 +2403,7 @@ with tab_patterns:
         min_value=10, max_value=10000, value=200, step=50,
         key="patterns_max_tickers",
         help="Cap how many tickers are scanned (helps speed up bigger universes)",
+        label_visibility="collapsed",
     )
 
     run_btn = st.button("🔍 Evaluate", key="rules_run", type="primary")
