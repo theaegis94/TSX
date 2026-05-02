@@ -949,16 +949,26 @@ def show_quick_analysis_dialog(ticker: str):
     adx_filter = st.session_state.get("_adx_filter", False)
     stop_loss_pct = st.session_state.get("_stop_loss_pct")
 
-    # Strategy selector (lookback is fixed at 5y; chart zoom narrows visually)
+    # Strategy + lookback selectors
+    sel_l, sel_r = st.columns([3, 2])
     _strategy_keys = list(ss.STRATEGY_LABELS.keys())
-    strategy = st.selectbox(
+    strategy = sel_l.selectbox(
         "Strategy",
         options=_strategy_keys,
         format_func=lambda k: ss.STRATEGY_LABELS[k],
         index=_strategy_keys.index(ss.DEFAULT_STRATEGY_KEY),
         key=f"dlg_strategy_{ticker}",
     )
-    period = st.session_state.get("_period", "max")
+    _period_options = ["6mo", "1y", "2y", "5y", "10y", "max"]
+    _saved_period = st.session_state.get("_period", "max")
+    period = sel_r.selectbox(
+        "Lookback",
+        _period_options,
+        index=(_period_options.index(_saved_period)
+               if _saved_period in _period_options
+               else _period_options.index("max")),
+        key=f"dlg_period_{ticker}",
+    )
     dlg_indicators = st.multiselect(
         "Indicators",
         options=list(ss.INDICATOR_LABELS.keys()),
