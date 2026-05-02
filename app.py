@@ -316,23 +316,65 @@ _init_watchlist_from_url()
 
 
 def _consume_open_param():
-    """If ?open=TICKER is in the URL, set selected_tile and strip the param."""
+    """Read ?open=TICKER and ?from_tab=News from URL, set state, clean URL."""
     if "open" in st.query_params:
         t = st.query_params["open"]
         if t:
             st.session_state["selected_tile"] = t.upper()
         del st.query_params["open"]
+    if "from_tab" in st.query_params:
+        ft = st.query_params["from_tab"]
+        if ft:
+            st.session_state["__active_tab"] = ft
+            # Re-click the tab for 2 reruns: popup-open render + popup-close render
+            st.session_state["__redirect_pending"] = 2
+        del st.query_params["from_tab"]
 
 
 _consume_open_param()
 
 
-def _chip_href(ticker: str) -> str:
-    """URL preserving current query params + open=ticker so chip links open chart."""
+def _chip_href(ticker: str, from_tab: str = "News") -> str:
+    """URL preserving current query params + open=ticker + from_tab."""
     qp = dict(st.query_params)
     qp["open"] = ticker
+    qp["from_tab"] = from_tab
     parts = [f"{k}={v}" for k, v in qp.items()]
-    return "?" + "&".join(parts) if parts else f"?open={ticker}"
+    return "?" + "&".join(parts)
+
+
+def _restore_active_tab():
+    """JS-click the originating tab after a rerun caused by a chip click."""
+    target = st.session_state.get("__active_tab")
+    pending = st.session_state.get("__redirect_pending", 0)
+    if not target or pending <= 0:
+        st.session_state.pop("__active_tab", None)
+        st.session_state.pop("__redirect_pending", None)
+        return
+    import streamlit.components.v1 as components
+    components.html(
+        f"""<script>
+        (function() {{
+            const target = "{target}";
+            const ttd = window.parent.document;
+            const click = () => {{
+                const tabs = ttd.querySelectorAll(
+                    'button[data-baseweb="tab"]'
+                );
+                let found = null;
+                tabs.forEach(t => {{
+                    if (t.innerText.indexOf(target) !== -1) found = t;
+                }});
+                if (found && found.getAttribute('aria-selected') !== 'true') {{
+                    found.click();
+                }}
+            }};
+            [60, 200, 500, 1000].forEach(d => setTimeout(click, d));
+        }})();
+        </script>""",
+        height=0,
+    )
+    st.session_state["__redirect_pending"] = pending - 1
 
 
 def _is_dark_theme() -> bool:
@@ -1337,6 +1379,8 @@ st.session_state["_stop_loss_pct"] = stop_loss_pct
     ["📊 Stocks/ETFs", "🔍 Single Ticker", "🎯 Screener",
      "🧩 Custom Patterns", "📰 News", "ℹ️ Help"]
 )
+# After the popup closes, restore the tab the user was on (if any)
+_restore_active_tab()
 
 
 # === Scan tab ===
