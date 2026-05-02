@@ -609,13 +609,19 @@ def _inject_scroll_to_pan():
                 chart.dataset.scrollZoomAttached = '1';
 
                 // ============ Wheel = zoom on X (cursor-anchored) ============
-                chart.addEventListener('wheel', function(e) {
+                const wheelHandler = function(e) {
                     e.preventDefault();
-                    const layout = chart.layout || {};
-                    const ax = layout.xaxis || {};
-                    if (!ax.range) return;
-                    const xMin = new Date(ax.range[0]).getTime();
-                    const xMax = new Date(ax.range[1]).getTime();
+                    e.stopPropagation();
+                    let layout = chart.layout || {};
+                    let ax = layout.xaxis || {};
+                    // Fallback: read from DOM data if layout not populated
+                    let xMin, xMax;
+                    if (ax.range) {
+                        xMin = new Date(ax.range[0]).getTime();
+                        xMax = new Date(ax.range[1]).getTime();
+                    } else {
+                        return;
+                    }
                     const span = xMax - xMin;
                     if (!isFinite(span) || span <= 0) return;
 
@@ -646,7 +652,11 @@ def _inject_scroll_to_pan():
                             ],
                         });
                     } catch (err) {}
-                }, { passive: false, capture: true });
+                };
+                // Attach in BOTH capture and bubble phase to maximize chances
+                // of catching the event before/after Plotly's own handlers.
+                chart.addEventListener('wheel', wheelHandler,
+                    { passive: false, capture: true });
 
                 // ============ Middle-click drag = pan on X axis ============
                 // Use CAPTURE phase so we get the event before Plotly's zoom
