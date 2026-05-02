@@ -502,15 +502,15 @@ def _inject_auto_rescale_y():
                     // Tight fit: 5% padding above and below the visible range
                     // so the chart fills the available y-space.
                     const pad = range > 0 ? range * 0.05 : Math.abs(hi) * 0.02;
-                    // Floor never below 0 (prices can't go negative).
-                    const yLo = Math.max(0, lo - pad);
+                    // Floor at -1 (invisible — tick0=0 hides the negative band)
+                    // for a slight visual buffer at the bottom.
+                    const yLo = Math.max(-1, lo - pad);
                     const yHi = hi + pad;
                     const axName = yref === 'y'
                         ? 'yaxis' : 'yaxis' + yref.slice(1);
                     updates[axName + '.range'] = [yLo, yHi];
                     updates[axName + '.autorange'] = false;
-                    updates[axName + '.minallowed'] = 0;
-                    updates[axName + '.rangemode'] = 'nonnegative';
+                    updates[axName + '.minallowed'] = -1;
                 });
                 if (Object.keys(updates).length) {
                     try {
@@ -535,21 +535,21 @@ def _inject_auto_rescale_y():
 
                     // Re-rescale on every zoom/pan (final state)
                     chart.on('plotly_relayout', function(ev) {
-                        // Clamp Price y-axis (yaxis) bottom to 0 — block any
-                        // user pan/zoom attempt that drops below $0.
+                        // Clamp Price y-axis (yaxis) bottom to -1 — block any
+                        // user pan/zoom attempt that drops below -$1.
                         const yLo = ev['yaxis.range[0]'];
                         const yHi = ev['yaxis.range[1]'];
                         const yRng = ev['yaxis.range'];
                         let needClamp = false;
                         let newRange = null;
-                        if (yLo !== undefined && yLo < 0) {
+                        if (yLo !== undefined && yLo < -1) {
                             needClamp = true;
-                            newRange = [0, yHi !== undefined ? yHi
+                            newRange = [-1, yHi !== undefined ? yHi
                                 : (chart.layout.yaxis.range
                                    ? chart.layout.yaxis.range[1] : 1)];
-                        } else if (yRng && yRng[0] < 0) {
+                        } else if (yRng && yRng[0] < -1) {
                             needClamp = true;
-                            newRange = [0, yRng[1]];
+                            newRange = [-1, yRng[1]];
                         }
                         if (needClamp) {
                             try {
@@ -1062,8 +1062,8 @@ def render_quick_analysis():
     # Inline popup uses near-full page width for maximum chart room
     _l, popup_col, _r = st.columns([0.05, 12, 0.05])
     with popup_col, st.container(border=True):
-        # Header row: title + strategy + close (lookback removed; chart zoom narrows visually)
-        h1, h2, h3 = st.columns([3, 2, 1])
+        # Header row: title + strategy + lookback + close
+        h1, h2, h3, h4 = st.columns([3, 2, 1.5, 1])
         h1.markdown(f"#### 🎯 {selected}")
         _strategy_keys = list(ss.STRATEGY_LABELS.keys())
         strategy = h2.selectbox(
@@ -1074,8 +1074,18 @@ def render_quick_analysis():
             key=f"qv_strategy_{selected}",
             label_visibility="collapsed",
         )
-        period = st.session_state.get("_period", "max")
-        if h3.button(":red[**✖**] Close", key="close_quick_view",
+        _period_options = ["6mo", "1y", "2y", "5y", "10y", "max"]
+        _saved_period = st.session_state.get("_period", "max")
+        period = h3.selectbox(
+            "Lookback",
+            _period_options,
+            index=(_period_options.index(_saved_period)
+                   if _saved_period in _period_options
+                   else _period_options.index("max")),
+            key=f"qv_period_{selected}",
+            label_visibility="collapsed",
+        )
+        if h4.button(":red[**✖**] Close", key="close_quick_view",
                      use_container_width=True):
             st.session_state.pop("selected_tile", None)
             st.rerun()
