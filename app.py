@@ -496,11 +496,18 @@ def _inject_auto_rescale_y():
                 Object.keys(yByAxis).forEach(yref => {
                     const vals = yByAxis[yref];
                     if (!vals.length) return;
+                    const lo = Math.min.apply(null, vals);
                     const hi = Math.max.apply(null, vals);
+                    const range = hi - lo;
+                    // Tight fit: 5% padding above and below the visible range
+                    // so the chart fills the available y-space.
+                    const pad = range > 0 ? range * 0.05 : Math.abs(hi) * 0.02;
+                    // Floor never below 0 (prices can't go negative).
+                    const yLo = Math.max(0, lo - pad);
+                    const yHi = hi + pad;
                     const axName = yref === 'y'
                         ? 'yaxis' : 'yaxis' + yref.slice(1);
-                    // Price panel — floor at 0, top is 10% above visible max
-                    updates[axName + '.range'] = [0, hi * 1.10];
+                    updates[axName + '.range'] = [yLo, yHi];
                     updates[axName + '.autorange'] = false;
                     updates[axName + '.minallowed'] = 0;
                     updates[axName + '.rangemode'] = 'nonnegative';

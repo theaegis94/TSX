@@ -1882,16 +1882,21 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
                 row=r, col=1, gridcolor="#5a5b5e",
             )
 
-        # Price panel — linear scale, floor strictly at $0.
-        # minallowed=0 is a hard pan/zoom floor — user can't scroll below.
-        # Top is 10% above the highest line in the data window.
+        # Price panel — tight fit to data with 5% padding both sides.
+        # Floor never below 0 (prices can't go negative). minallowed=0 is a
+        # hard pan/zoom floor.
+        price_min = float(df["Close"].min())
         price_max = float(df["Close"].max())
         if price_max > 0:
+            rng = price_max - price_min
+            pad = rng * 0.05 if rng > 0 else abs(price_max) * 0.02
+            y_lo = max(0.0, price_min - pad)
+            y_hi = price_max + pad
             fig.update_yaxes(
                 autorange=False,
                 rangemode="nonnegative",
                 minallowed=0,
-                range=[0, price_max * 1.10],
+                range=[y_lo, y_hi],
                 row=1, col=1,
             )
 
