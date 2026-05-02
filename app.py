@@ -594,8 +594,8 @@ def _inject_auto_rescale_y():
 
 def _inject_scroll_to_pan():
     """Mouse interactions:
+       - Wheel: zoom X axis (cursor-anchored). Up=in, down=out.
        - Middle-mouse-button drag: pan X axis.
-       (Scroll wheel zoom intentionally disabled.)
     """
     import streamlit.components.v1 as components
     components.html(
@@ -607,6 +607,46 @@ def _inject_scroll_to_pan():
             function attachZoom(chart) {
                 if (chart.dataset.scrollZoomAttached === '1') return;
                 chart.dataset.scrollZoomAttached = '1';
+
+                // ============ Wheel = zoom on X (cursor-anchored) ============
+                chart.addEventListener('wheel', function(e) {
+                    e.preventDefault();
+                    const layout = chart.layout || {};
+                    const ax = layout.xaxis || {};
+                    if (!ax.range) return;
+                    const xMin = new Date(ax.range[0]).getTime();
+                    const xMax = new Date(ax.range[1]).getTime();
+                    const span = xMax - xMin;
+                    if (!isFinite(span) || span <= 0) return;
+
+                    const zoomFactor = e.deltaY > 0 ? 1.10 : 0.90;
+                    const newSpan = span * zoomFactor;
+
+                    const rect = chart.getBoundingClientRect();
+                    let frac = (e.clientX - rect.left) / rect.width;
+                    if (!isFinite(frac)) frac = 0.5;
+                    frac = Math.max(0, Math.min(1, frac));
+                    const cursorTime = xMin + span * frac;
+
+                    let newMin = cursorTime - newSpan * frac;
+                    let newMax = cursorTime + newSpan * (1 - frac);
+
+                    const minA = ax.minallowed
+                        ? new Date(ax.minallowed).getTime() : null;
+                    const maxA = ax.maxallowed
+                        ? new Date(ax.maxallowed).getTime() : null;
+                    if (minA !== null && newMin < minA) newMin = minA;
+                    if (maxA !== null && newMax > maxA) newMax = maxA;
+                    if (newMax - newMin < 1000) return;
+
+                    try {
+                        window.parent.Plotly.relayout(chart, {
+                            'xaxis.range': [
+                                new Date(newMin), new Date(newMax)
+                            ],
+                        });
+                    } catch (err) {}
+                }, { passive: false, capture: true });
 
                 // ============ Middle-click drag = pan on X axis ============
                 // Use CAPTURE phase so we get the event before Plotly's zoom
@@ -1095,7 +1135,7 @@ def render_quick_analysis():
         _inject_scroll_to_pan()
         _inject_price_tick_format()
         st.caption(
-            "💡 **Left-drag** zooms region · "
+            "💡 **Left-drag** zooms region · **scroll** zooms · "
             "**middle-click drag** pans · "
             "**double-click chart for fullscreen** (Esc to exit) · "
             "📰 news + fundamentals → **Single Ticker** tab"
