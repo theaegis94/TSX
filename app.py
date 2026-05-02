@@ -649,12 +649,17 @@ def _inject_scroll_to_pan():
                 }, { passive: false });
 
                 // ============ Middle-click drag = pan on X axis ============
+                // Use CAPTURE phase so we get the event before Plotly's zoom
+                // dragmode handlers bubble it. Also use pointer events for
+                // unified mouse/pen/touch handling.
                 let panState = null;
                 let panTicking = false;
+                let lastMoveX = 0;
 
-                chart.addEventListener('mousedown', function(e) {
+                const mdHandler = function(e) {
                     if (e.button !== 1) return;  // middle button only
                     e.preventDefault();
+                    e.stopPropagation();
                     const layout = chart.layout || {};
                     const ax = layout.xaxis || {};
                     if (!ax.range) return;
@@ -664,16 +669,22 @@ def _inject_scroll_to_pan():
                         xMaxStart: new Date(ax.range[1]).getTime(),
                         rect: chart.getBoundingClientRect(),
                     };
+                    lastMoveX = e.clientX;
                     chart.style.cursor = 'grabbing';
-                });
+                };
+                // capture: true → run before Plotly's own listeners
+                chart.addEventListener('mousedown', mdHandler, true);
+                chart.addEventListener('pointerdown', mdHandler, true);
 
-                pdoc.addEventListener('mousemove', function(e) {
-                    if (!panState || panTicking) return;
+                const mmHandler = function(e) {
+                    if (!panState) return;
+                    lastMoveX = e.clientX;
+                    if (panTicking) return;
                     panTicking = true;
                     window.requestAnimationFrame(() => {
                         if (!panState) { panTicking = false; return; }
                         const ps = panState;
-                        const dx = e.clientX - ps.startX;
+                        const dx = lastMoveX - ps.startX;
                         const span = ps.xMaxStart - ps.xMinStart;
                         const delta = -(dx / ps.rect.width) * span;
                         let newMin = ps.xMinStart + delta;
@@ -701,19 +712,22 @@ def _inject_scroll_to_pan():
                         } catch (err) {}
                         panTicking = false;
                     });
-                });
+                };
+                pdoc.addEventListener('mousemove', mmHandler, true);
 
-                pdoc.addEventListener('mouseup', function(e) {
-                    if (e.button === 1 && panState) {
+                const muHandler = function(e) {
+                    if (panState && (e.button === 1 || e.button === undefined)) {
                         panState = null;
                         chart.style.cursor = '';
                     }
-                });
+                };
+                pdoc.addEventListener('mouseup', muHandler, true);
+                pdoc.addEventListener('pointerup', muHandler, true);
 
                 // Suppress browser autoscroll on middle click over the chart
                 chart.addEventListener('auxclick', function(e) {
                     if (e.button === 1) e.preventDefault();
-                });
+                }, true);
             }
 
             function attach() {
