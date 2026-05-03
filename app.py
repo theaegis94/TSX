@@ -1349,6 +1349,9 @@ def _add_ticker_to_watchlist(new_t: str) -> None:
         parts.append(new_t)
         st.session_state.watchlist_input = ", ".join(parts)
         st.session_state["_add_msg"] = f"✅ Added {new_t}"
+        # Sync to URL IMMEDIATELY so the addition survives even if the
+        # user closes the tab before the rerun finishes.
+        _sync_watchlist_to_url()
 
 
 def _add_to_watchlist():
@@ -1383,6 +1386,7 @@ def _remove_from_watchlist():
     parts = [p for p in parts if p.upper() != target.upper()]
     st.session_state.watchlist_input = ", ".join(parts)
     st.session_state["_add_msg"] = f"🗑️ Removed {target}"
+    _sync_watchlist_to_url()
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
