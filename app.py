@@ -2164,7 +2164,10 @@ RULE_INDICATORS = {
     "DIST_SMA20_PCT":  "Distance from SMA20 (%)",
     "DIST_SMA50_PCT":  "Distance from SMA50 (%)",
     "DIST_SMA200_PCT": "Distance from SMA200 (%)",
-    "BB_PCT_B":        "Bollinger %B (0–1)",
+    "BB_PCT_B":          "Bollinger %B (0=lower band, 1=upper)",
+    "BB_DIST_LOWER_PCT": "Distance to BB lower (%) [neg = below band]",
+    "BB_DIST_UPPER_PCT": "Distance to BB upper (%) [neg = above band]",
+    "BB_BANDWIDTH_PCT":  "Bollinger bandwidth (%) [low = squeeze]",
 }
 RULE_OPS = ["<", "<=", ">", ">=", "between"]
 
@@ -2190,7 +2193,10 @@ RULE_DEFAULTS: dict[str, tuple[float, float]] = {
     "DIST_SMA20_PCT":  (-5.0, 5.0),
     "DIST_SMA50_PCT":  (-7.0, 7.0),
     "DIST_SMA200_PCT": (-10.0, 10.0),
-    "BB_PCT_B":        (0.0, 1.0),
+    "BB_PCT_B":          (0.0, 1.0),
+    "BB_DIST_LOWER_PCT": (0.0, 5.0),   # < 0 = below lower band; > 5 = far above
+    "BB_DIST_UPPER_PCT": (0.0, 5.0),   # < 0 = above upper band; > 5 = far below
+    "BB_BANDWIDTH_PCT":  (5.0, 15.0),  # < 5 = squeeze; > 15 = volatile
 }
 
 
@@ -2249,6 +2255,17 @@ def _last_value(df, key: str, date_str: str | None = None):
     elif key == "BB_PCT_B" and {"BB_LOWER", "BB_UPPER"}.issubset(df.columns):
         rng = bar["BB_UPPER"] - bar["BB_LOWER"]
         v = (bar["Close"] - bar["BB_LOWER"]) / rng if rng else None
+    elif key == "BB_DIST_LOWER_PCT" and "BB_LOWER" in df.columns:
+        v = ((bar["Close"] - bar["BB_LOWER"]) / bar["BB_LOWER"] * 100
+             if bar["BB_LOWER"] else None)
+    elif key == "BB_DIST_UPPER_PCT" and "BB_UPPER" in df.columns:
+        v = ((bar["BB_UPPER"] - bar["Close"]) / bar["BB_UPPER"] * 100
+             if bar["BB_UPPER"] else None)
+    elif key == "BB_BANDWIDTH_PCT" and {
+        "BB_LOWER", "BB_UPPER", "BB_MID"
+    }.issubset(df.columns):
+        v = ((bar["BB_UPPER"] - bar["BB_LOWER"]) / bar["BB_MID"] * 100
+             if bar["BB_MID"] else None)
     else:
         return None
     try:
@@ -3145,3 +3162,49 @@ This tool is a **screener**, not a trading system. Use signals as
 # share links) preserve the user's tickers. Runs at the very end so it
 # captures any changes made during this script run.
 _sync_watchlist_to_url()
+
+
+# Browser-side localStorage backup. Survives Streamlit Cloud rebuilds and
+# situations where the URL ?wl= gets stripped (e.g., navigating to bare URL).
+# Logic on each page load:
+#   1. Mirror current ?wl= → localStorage (write-through)
+#   2. If ?wl= is missing AND localStorage has a value, redirect once with
+#      ?wl=... appended. The sessionStorage flag prevents redirect loops.
+def _inject_watchlist_localstorage():
+    import streamlit.components.v1 as components
+    current_wl = st.session_state.get("watchlist_input", "")
+    parts = [p.strip().upper() for p in current_wl.split(",") if p.strip()]
+    current_wl_str = ",".join(parts) if parts else ""
+    js_value = json.dumps(current_wl_str)
+    components.html(
+        f"""<script>
+        (function() {{
+            const win = window.parent;
+            const url = new URL(win.location.href);
+            const KEY = 'streamlit_watchlist';
+            const FLAG = 'wl_restored_once';
+            const current = {js_value};
+            if (current) {{
+                // Write-through: keep localStorage in sync with this session
+                try {{ win.localStorage.setItem(KEY, current); }} catch (e) {{}}
+            }}
+            // If URL is missing the param, try restoring from localStorage
+            if (!url.searchParams.get('wl')) {{
+                let stored = '';
+                try {{ stored = win.localStorage.getItem(KEY) || ''; }} catch (e) {{}}
+                if (stored && !win.sessionStorage.getItem(FLAG)) {{
+                    win.sessionStorage.setItem(FLAG, '1');
+                    url.searchParams.set('wl', stored);
+                    win.location.replace(url.toString());
+                }}
+            }} else {{
+                // We have a URL value — clear the redirect flag for next time
+                try {{ win.sessionStorage.removeItem(FLAG); }} catch (e) {{}}
+            }}
+        }})();
+        </script>""",
+        height=0,
+    )
+
+
+_inject_watchlist_localstorage()
