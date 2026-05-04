@@ -2168,6 +2168,43 @@ RULE_INDICATORS = {
 }
 RULE_OPS = ["<", "<=", ">", ">=", "between"]
 
+# Sensible default thresholds per indicator: (low, high)
+# Low used for `<`/`<=`, high used for `>`/`>=`, both for `between`.
+RULE_DEFAULTS: dict[str, tuple[float, float]] = {
+    "Close":           (10.0, 100.0),
+    "Volume":          (1_000_000.0, 10_000_000.0),
+    "RSI":             (30.0, 70.0),
+    "MACD":            (-1.0, 1.0),
+    "MACD_SIGNAL":     (-1.0, 1.0),
+    "MACD_HIST":       (-0.5, 0.5),
+    "SMA5":            (10.0, 100.0),
+    "SMA20":           (10.0, 100.0),
+    "SMA50":           (10.0, 100.0),
+    "SMA200":          (10.0, 100.0),
+    "BB_LOWER":        (10.0, 100.0),
+    "BB_MID":          (10.0, 100.0),
+    "BB_UPPER":        (10.0, 100.0),
+    "ADX":             (20.0, 25.0),
+    "DAILY_CHG_PCT":   (-5.0, 5.0),
+    "DIST_SMA5_PCT":   (-3.0, 3.0),
+    "DIST_SMA20_PCT":  (-5.0, 5.0),
+    "DIST_SMA50_PCT":  (-7.0, 7.0),
+    "DIST_SMA200_PCT": (-10.0, 10.0),
+    "BB_PCT_B":        (0.0, 1.0),
+}
+
+
+def _rule_default_a(indicator: str, op: str) -> float:
+    lo, hi = RULE_DEFAULTS.get(indicator, (0.0, 0.0))
+    if op in (">", ">="):
+        return hi
+    return lo
+
+
+def _rule_default_b(indicator: str) -> float:
+    _, hi = RULE_DEFAULTS.get(indicator, (0.0, 0.0))
+    return hi
+
 
 def _bar_at(df, date_str: str | None):
     """Return the dataframe row at-or-before date_str, or the last row."""
@@ -2390,10 +2427,23 @@ with tab_patterns:
             key=f"rule_op_{i}",
             label_visibility="collapsed",
         )
+
+        # When indicator or operator changes, reset value to a sensible
+        # default (e.g., RSI < → 30, RSI > → 70, ADX > → 25).
+        keyspec = f"{rule['left']}_{rule['op']}"
+        if rule.get("_keyspec") != keyspec:
+            rule["a"] = _rule_default_a(rule["left"], rule["op"])
+            if rule["op"] == "between":
+                rule["b"] = _rule_default_b(rule["left"])
+            rule["_keyspec"] = keyspec
+
+        # Dynamic key: changes when indicator/op changes so number_input
+        # picks up the new default value rather than the user's stale edit
+        # for a different indicator.
         rule["a"] = c_a.number_input(
             "Value",
             value=float(rule.get("a") or 0.0),
-            key=f"rule_a_{i}",
+            key=f"rule_a_{i}_{keyspec}",
             label_visibility="collapsed",
             format="%.4f",
         )
@@ -2401,7 +2451,7 @@ with tab_patterns:
             rule["b"] = c_b.number_input(
                 "Upper",
                 value=float(rule.get("b") or 0.0),
-                key=f"rule_b_{i}",
+                key=f"rule_b_{i}_{keyspec}",
                 label_visibility="collapsed",
                 format="%.4f",
             )
