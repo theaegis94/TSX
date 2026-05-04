@@ -1913,18 +1913,30 @@ def build_chart_plotly(df: pd.DataFrame, ticker: str, stats: dict,
                 row=1, col=1,
             )
 
-        # RSI bounded 0..100 — natural range
-        fig.update_yaxes(autorange=True, range=[0, 100], row=2, col=1)
+        # RSI fixed at 0..100 — natural bounds, locked from user pan/zoom
+        fig.update_yaxes(
+            autorange=False, range=[0, 100],
+            fixedrange=True,
+            row=2, col=1,
+        )
 
-        # MACD: data range with 5% padding (was 30% — too much)
-        macd_vals = pd.concat([df["MACD"], df["MACD_SIGNAL"], df["MACD_HIST"]]).dropna()
+        # MACD: fit to the VISIBLE window (last 2y) so historical extreme
+        # values don't compress recent MACD into invisibility. Fixed from
+        # user pan/zoom.
+        macd_visible = df.loc[x_start:x_end] if not visible.empty else df
+        macd_vals = pd.concat([
+            macd_visible["MACD"],
+            macd_visible["MACD_SIGNAL"],
+            macd_visible["MACD_HIST"],
+        ]).dropna()
         if not macd_vals.empty:
             mlo, mhi = float(macd_vals.min()), float(macd_vals.max())
             if mhi > mlo:
-                pad = (mhi - mlo) * 0.05
+                pad = (mhi - mlo) * 0.10
                 fig.update_yaxes(
-                    autorange=True,
+                    autorange=False,
                     range=[mlo - pad, mhi + pad],
+                    fixedrange=True,
                     row=3, col=1,
                 )
 

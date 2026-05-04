@@ -1715,6 +1715,9 @@ with tab_scan:
             "Comma-separated tickers — bare = US, .TO = TSX, .V = TSXV",
             default_str, height=68, key="watchlist_input",
             label_visibility="collapsed",
+            # Sync to URL immediately on edit so reopening the tab
+            # restores the latest watchlist
+            on_change=_sync_watchlist_to_url,
         )
 
     watchlist_str = st.session_state.get("watchlist_input", default_str)
