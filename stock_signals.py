@@ -132,6 +132,63 @@ def yf_metrics(ticker: str) -> dict:
     return out
 
 
+def yf_company_profile(ticker: str) -> dict:
+    """Richer company info for the chart popup: name, sector, industry,
+    market cap, 52w range, avg volume, summary. Returns {} on error.
+    Cached upstream by callers since .info is slow.
+    """
+    out: dict = {}
+    try:
+        info = yf.Ticker(ticker).info or {}
+    except Exception:
+        return out
+    for k, src in [
+        ("name", "longName"),
+        ("name", "shortName"),
+        ("sector", "sector"),
+        ("industry", "industry"),
+        ("country", "country"),
+        ("currency", "currency"),
+        ("exchange", "exchange"),
+        ("summary", "longBusinessSummary"),
+        ("website", "website"),
+    ]:
+        if k in out:
+            continue
+        v = info.get(src)
+        if v:
+            out[k] = v
+    for k, src in [
+        ("market_cap", "marketCap"),
+        ("shares", "sharesOutstanding"),
+        ("avg_vol", "averageVolume"),
+        ("avg_vol_10d", "averageVolume10days"),
+        ("week52_high", "fiftyTwoWeekHigh"),
+        ("week52_low", "fiftyTwoWeekLow"),
+        ("price", "currentPrice"),
+        ("price", "regularMarketPrice"),
+        ("prev_close", "previousClose"),
+        ("day_high", "dayHigh"),
+        ("day_low", "dayLow"),
+        ("pe", "trailingPE"),
+        ("pe_forward", "forwardPE"),
+        ("eps", "trailingEps"),
+        ("yield_pct", "dividendYield"),
+        ("beta", "beta"),
+        ("target_mean", "targetMeanPrice"),
+    ]:
+        if k in out:
+            continue
+        v = info.get(src)
+        if v is None:
+            continue
+        try:
+            out[k] = float(v)
+        except (ValueError, TypeError):
+            pass
+    return out
+
+
 def boc_valet(series: str) -> float | None:
     """Latest observation from a Bank of Canada Valet series. Free, no key."""
     try:
@@ -1067,6 +1124,62 @@ def compute_anomaly_score(df: pd.DataFrame) -> dict | None:
         return None
 
 
+def compute_conviction_score(df: pd.DataFrame) -> pd.Series:
+    """Multi-factor conviction score per bar (-100 = strong bearish bias,
+    +100 = strong bullish bias).
+
+    Combines:
+      - RSI extremes (oversold = bullish bias)
+      - Bollinger %B (near lower band = bullish reversal bias)
+      - MACD histogram (positive = bullish momentum)
+      - Volume spike (high vol confirms moves)
+      - Distance from SMA200 (trend filter)
+      - ADX (strong trend amplifies moves)
+
+    NOT a prediction — it's a historical-pattern composite. Validate
+    forward returns separately to know how it actually performs.
+    """
+    score = pd.Series(0.0, index=df.index)
+
+    # --- Reversal pressure: oversold/extreme conditions ---
+    if "RSI" in df.columns:
+        # RSI 50 = 0, RSI 30 = +10, RSI 20 = +15, RSI 70 = -10
+        score += (50.0 - df["RSI"]) * 0.5
+
+    if {"BB_LOWER", "BB_UPPER"}.issubset(df.columns):
+        rng = (df["BB_UPPER"] - df["BB_LOWER"]).replace(0, float("nan"))
+        pctb = ((df["Close"] - df["BB_LOWER"]) / rng).clip(-0.5, 1.5)
+        # %B 0.5 = 0, %B 0 = +25, %B 1 = -25
+        score += (0.5 - pctb) * 50
+
+    # --- Momentum confirmation ---
+    if "MACD_HIST" in df.columns:
+        # Normalize MACD hist by close, scale, clip
+        macd_norm = (df["MACD_HIST"] / df["Close"].replace(0, float("nan"))
+                     * 100).fillna(0)
+        score += macd_norm.clip(-20, 20)
+
+    # --- Volume confirmation (high vol on extreme = real move) ---
+    if "Volume" in df.columns:
+        vol_avg = df["Volume"].rolling(20).mean()
+        vol_ratio = (df["Volume"] / vol_avg.replace(0, float("nan"))).fillna(1)
+        # 1x = 0, 2x = +10, 0.5x = -5, capped
+        score += ((vol_ratio - 1.0) * 10.0).clip(-10, 20)
+
+    # --- Long-term trend filter ---
+    if "SMA200" in df.columns:
+        above = (df["Close"] > df["SMA200"]).astype(float)
+        score += (above * 20.0 - 10.0)  # +10 in uptrend, -10 in downtrend
+
+    # --- Trend strength amplifier ---
+    if "ADX" in df.columns:
+        # Strong trend (ADX>25) amplifies the directional bias
+        adx_factor = ((df["ADX"] - 25.0) / 25.0).clip(-0.5, 0.5)
+        score = score * (1.0 + adx_factor.fillna(0))
+
+    return score.clip(-100, 100).fillna(0)
+
+
 def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     out["SMA5"] = out["Close"].rolling(5).mean()
@@ -1080,6 +1193,9 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     out["DC_LOW"] = out["Low"].rolling(20).min()
     if {"High", "Low", "Close"}.issubset(out.columns):
         out["ADX"] = adx(out)
+    # Multi-factor conviction score (combines RSI, BB, MACD, volume,
+    # SMA200 trend, ADX). -100 to +100; positive = bullish bias.
+    out["CONVICTION"] = compute_conviction_score(out)
     return out
 
 

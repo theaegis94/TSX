@@ -2393,6 +2393,7 @@ RULE_INDICATORS = {
     "BB_BANDWIDTH_PCT":  "Bollinger bandwidth (%) [low = squeeze]",
     "ANOMALY_SCORE":     "🤖 Anomaly score (IF) [more neg = anomalous]",
     "ANOMALY_PCTILE":    "🤖 Anomaly percentile (0=most anomalous)",
+    "CONVICTION":        "🎯 Conviction score (-100 bear ↔ +100 bull)",
 }
 RULE_OPS = ["<", "<=", ">", ">=", "between"]
 
@@ -2424,35 +2425,56 @@ RULE_DEFAULTS: dict[str, tuple[float, float]] = {
     "BB_BANDWIDTH_PCT":  (5.0, 15.0),  # < 5 = squeeze; > 15 = volatile
     "ANOMALY_SCORE":     (-0.2, 0.0),  # < -0.2 ≈ anomalous; near 0 = normal
     "ANOMALY_PCTILE":    (5.0, 95.0),  # < 5 = bottom 5% (most anomalous)
+    "CONVICTION":        (-30.0, 50.0),  # < -30 = avoid; > 50 = strong buy
 }
 
 
-# One-click preset rule sets — common high-conviction setups
+# Multi-factor preset rule sets — combine indicators for higher conviction
 RULE_PRESETS: dict[str, list[dict]] = {
-    "🎯 High-conviction BUY": [
+    "🎯 Strong Buy": [
+        # Multi-factor confluence: oversold + bullish bias + uptrend filter
+        {"left": "CONVICTION", "op": ">", "a": 50.0, "b": None,
+         "date": None},
+    ],
+    "🟢 Buy now (bounce setup)": [
+        # Reversal: oversold + below band + momentum starting to turn up +
+        # in long-term uptrend + volume confirms
+        {"left": "RSI", "op": "<", "a": 35.0, "b": None, "date": None},
         {"left": "BB_PCT_B", "op": "<", "a": 0.2, "b": None, "date": None},
-        {"left": "ANOMALY_PCTILE", "op": "<", "a": 10.0, "b": None,
-         "date": None},
-    ],
-    "🎯 High-conviction SELL": [
-        {"left": "BB_PCT_B", "op": ">", "a": 0.8, "b": None, "date": None},
-        {"left": "ANOMALY_PCTILE", "op": "<", "a": 10.0, "b": None,
-         "date": None},
-    ],
-    "💥 Volatility squeeze": [
-        {"left": "BB_BANDWIDTH_PCT", "op": "<", "a": 5.0, "b": None,
-         "date": None},
-    ],
-    "📉 RSI capitulation": [
-        {"left": "RSI", "op": "<", "a": 25.0, "b": None, "date": None},
-        {"left": "ANOMALY_PCTILE", "op": "<", "a": 10.0, "b": None,
-         "date": None},
-    ],
-    "🚀 Breakout above SMA200": [
         {"left": "DIST_SMA200_PCT", "op": ">", "a": 0.0, "b": None,
+         "date": None},
+        {"left": "MACD_HIST", "op": ">", "a": -0.5, "b": None,
+         "date": None},
+        {"left": "CONVICTION", "op": ">", "a": 30.0, "b": None,
+         "date": None},
+    ],
+    "⚠️ Don't buy yet (still falling)": [
+        # Tempting setup but momentum still falling — wait for confirmation
+        {"left": "BB_PCT_B", "op": "<", "a": 0.3, "b": None, "date": None},
+        {"left": "MACD_HIST", "op": "<", "a": 0.0, "b": None, "date": None},
+        {"left": "DIST_SMA50_PCT", "op": "<", "a": 0.0, "b": None,
+         "date": None},
+        {"left": "RSI", "op": ">", "a": 30.0, "b": None, "date": None},
+    ],
+    "🚀 Momentum continuation": [
+        # Trend-following: in uptrend, bullish momentum, strong trend
+        {"left": "DIST_SMA200_PCT", "op": ">", "a": 0.0, "b": None,
+         "date": None},
+        {"left": "DIST_SMA50_PCT", "op": ">", "a": 0.0, "b": None,
          "date": None},
         {"left": "MACD_HIST", "op": ">", "a": 0.0, "b": None, "date": None},
         {"left": "ADX", "op": ">", "a": 25.0, "b": None, "date": None},
+        {"left": "RSI", "op": "between", "a": 50.0, "b": 70.0, "date": None},
+    ],
+    "🔴 Strong Sell / Avoid": [
+        # Multi-factor bearish: overbought + bearish bias + breaking trend
+        {"left": "CONVICTION", "op": "<", "a": -30.0, "b": None,
+         "date": None},
+    ],
+    "💥 Volatility squeeze": [
+        # Coiled spring: low bandwidth, breakout coming
+        {"left": "BB_BANDWIDTH_PCT", "op": "<", "a": 5.0, "b": None,
+         "date": None},
     ],
 }
 
