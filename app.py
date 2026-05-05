@@ -1420,30 +1420,110 @@ def render_quick_analysis():
                 f"sparse for some tickers._"
             )
             if news:
-                # Compact list: date · source · headline (clickable)
+                # Time formatting: relative for recent, date for older
+                now_ts = datetime.now()
+
+                def _rel_time(seconds_ago: float) -> str:
+                    if seconds_ago < 60:
+                        return "just now"
+                    if seconds_ago < 3600:
+                        return f"{int(seconds_ago/60)}m ago"
+                    if seconds_ago < 86400:
+                        return f"{int(seconds_ago/3600)}h ago"
+                    if seconds_ago < 86400 * 2:
+                        return "yesterday"
+                    if seconds_ago < 86400 * 7:
+                        return f"{int(seconds_ago/86400)}d ago"
+                    return None  # fall back to date
+
+                # Color-code sources for variety
+                def _src_color(src: str) -> str:
+                    palette = ["#60a5fa", "#a78bfa", "#f472b6",
+                               "#fbbf24", "#34d399", "#fb923c"]
+                    return palette[abs(hash(src)) % len(palette)] if src else "#9ca3af"
+
                 for art in news[:100]:
+                    raw_ts = art.get("datetime", 0)
                     try:
-                        ts = datetime.fromtimestamp(art.get("datetime", 0))
-                        when = ts.strftime("%b %d")
+                        dt = datetime.fromtimestamp(raw_ts)
+                        sec_ago = (now_ts - dt).total_seconds()
+                        rel = _rel_time(sec_ago)
+                        when = rel if rel else dt.strftime("%b %d, %Y")
+                        full_when = dt.strftime("%b %d, %Y · %H:%M")
                     except (ValueError, TypeError, OSError):
                         when = "?"
-                    src = art.get("source", "")
-                    head = art.get("headline", "")
+                        full_when = ""
+
+                    src = (art.get("source") or "").strip()
+                    head = (art.get("headline") or "").strip()
+                    summary = (art.get("summary") or "").strip()
                     url = art.get("url", "#")
-                    st.markdown(
-                        f"<div style='padding:6px 0; "
-                        f"border-bottom:1px solid #4a4b4e; "
-                        f"font-size:0.85rem; line-height:1.5;'>"
-                        f"<span style='color:#9ca3af; "
-                        f"display:inline-block; min-width:55px;'>"
-                        f"{when}</span> "
-                        f"<span style='color:#60a5fa; font-size:0.75rem; "
-                        f"margin-right:6px;'>{src}</span>"
-                        f"<a href='{url}' target='_blank' "
-                        f"style='color:#e5e7eb; text-decoration:none;'>"
-                        f"{head}</a></div>",
-                        unsafe_allow_html=True,
-                    )
+                    img = art.get("image", "")
+                    src_color = _src_color(src)
+
+                    img_html = ""
+                    if img and img.startswith("http"):
+                        img_html = (
+                            f"<div style='flex:0 0 110px; height:80px; "
+                            f"border-radius:8px; overflow:hidden; "
+                            f"background:#3a3b3e;'>"
+                            f"<img src='{img}' style='width:100%; "
+                            f"height:100%; object-fit:cover;' "
+                            f"onerror=\"this.style.display='none'\"/>"
+                            f"</div>"
+                        )
+
+                    summary_html = ""
+                    if summary:
+                        s = (summary[:220] + "…") if len(summary) > 220 else summary
+                        summary_html = (
+                            f"<div style='font-size:0.82rem; "
+                            f"color:#9ca3af; line-height:1.5; "
+                            f"margin-top:4px;'>{s}</div>"
+                        )
+
+                    card = f"""
+                    <a href="{url}" target="_blank"
+                       style="text-decoration:none; color:inherit;">
+                      <div style="display:flex; gap:14px; padding:12px 14px;
+                                  margin-bottom:10px; border-radius:10px;
+                                  background:linear-gradient(135deg,
+                                    rgba(96,165,250,0.04) 0%,
+                                    rgba(96,165,250,0.01) 100%);
+                                  border:1px solid #4a4b4e;
+                                  transition:all 0.15s ease;
+                                  cursor:pointer;"
+                           onmouseover="this.style.borderColor='#60a5fa';
+                                        this.style.background=
+                                          'rgba(96,165,250,0.08)';"
+                           onmouseout="this.style.borderColor='#4a4b4e';
+                                       this.style.background=
+                                         'linear-gradient(135deg,'+
+                                         'rgba(96,165,250,0.04) 0%,'+
+                                         'rgba(96,165,250,0.01) 100%)';">
+                        {img_html}
+                        <div style="flex:1; min-width:0;">
+                          <div style="display:flex; align-items:center;
+                                      gap:8px; margin-bottom:6px;
+                                      font-size:0.72rem;">
+                            <span style="background:{src_color};
+                                         color:#0a0a0a; padding:2px 8px;
+                                         border-radius:6px; font-weight:700;
+                                         text-transform:uppercase;
+                                         letter-spacing:0.3px;">{src}</span>
+                            <span style="color:#9ca3af;"
+                                  title="{full_when}">⏱ {when}</span>
+                          </div>
+                          <div style="font-size:0.95rem; color:#f0f0f0;
+                                      font-weight:600; line-height:1.4;">
+                            {head}
+                          </div>
+                          {summary_html}
+                        </div>
+                      </div>
+                    </a>
+                    """
+                    st.markdown(card, unsafe_allow_html=True)
 
         with info_tabs[1]:
             if prof.get("summary"):
