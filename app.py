@@ -1175,6 +1175,12 @@ def _cached_anomaly(df):
     return result
 
 
+@st.cache_data(ttl=1800, show_spinner=False)
+def cached_sentiment(ticker: str):
+    """Cache Finnhub news-sentiment for 30 minutes."""
+    return ss.finnhub_sentiment(ticker)
+
+
 def render_quick_analysis():
     """Inline analysis panel shown when a watchlist tile is clicked."""
     selected = st.session_state.get("selected_tile")
@@ -2557,6 +2563,8 @@ RULE_INDICATORS = {
     "CONVICTION":        "🎯 Conviction score (-100 bear ↔ +100 bull)",
     "MFI":               "🌊 Money Flow Index (0-100, vol-weighted RSI)",
     "CMF":               "💧 Chaikin Money Flow (-1 to +1, accumulation)",
+    "NEWS_SENT":         "📰 News sentiment (0=bear, 1=bull) [latest]",
+    "NEWS_BUZZ":         "📣 News buzz (0=quiet, 1+=above avg) [latest]",
 }
 RULE_OPS = ["<", "<=", ">", ">=", "between"]
 
@@ -2591,6 +2599,8 @@ RULE_DEFAULTS: dict[str, tuple[float, float]] = {
     "CONVICTION":        (-30.0, 50.0),  # < -30 = avoid; > 50 = strong buy
     "MFI":               (20.0, 80.0),   # < 20 = oversold; > 80 = overbought
     "CMF":               (-0.05, 0.05),  # < -0.05 dist; > 0.05 accum
+    "NEWS_SENT":         (0.4, 0.6),     # < 0.4 bearish news; > 0.6 bullish
+    "NEWS_BUZZ":         (0.5, 1.5),     # > 1 = above-avg news activity
 }
 
 
@@ -2621,6 +2631,25 @@ RULE_PRESETS: dict[str, list[dict]] = {
         {"left": "BB_PCT_B", "op": "<", "a": 0.25, "b": None, "date": None},
         {"left": "CMF", "op": ">", "a": 0.0, "b": None, "date": None},
         {"left": "DIST_SMA200_PCT", "op": ">", "a": 0.0, "b": None,
+         "date": None},
+    ],
+    "📰 News-confirmed BUY": [
+        # Technicals say buy AND news sentiment is bullish AND there's
+        # actual news activity (not stale ticker)
+        {"left": "CONVICTION", "op": ">", "a": 30.0, "b": None,
+         "date": None},
+        {"left": "NEWS_SENT", "op": ">", "a": 0.55, "b": None,
+         "date": None},
+        {"left": "NEWS_BUZZ", "op": ">", "a": 0.5, "b": None,
+         "date": None},
+    ],
+    "📰 News warning (technicals say buy, news doesn't)": [
+        # Technicals are bullish but news sentiment turned negative —
+        # be cautious, news may be reflecting something fundamentals
+        # don't see yet (lawsuit, earnings miss, etc.)
+        {"left": "CONVICTION", "op": ">", "a": 20.0, "b": None,
+         "date": None},
+        {"left": "NEWS_SENT", "op": "<", "a": 0.4, "b": None,
          "date": None},
     ],
     "⚠️ Don't buy yet (still falling)": [
@@ -2684,8 +2713,13 @@ def _bar_at(df, date_str: str | None):
         return None, None
 
 
-def _last_value(df, key: str, date_str: str | None = None):
-    """Get the value of a named indicator at a specific date (or latest bar)."""
+def _last_value(df, key: str, date_str: str | None = None,
+                ticker: str | None = None):
+    """Get the value of a named indicator at a specific date (or latest bar).
+
+    `ticker` is required for news-sentiment indicators (NEWS_SENT/NEWS_BUZZ)
+    since those come from a per-ticker API rather than the price dataframe.
+    """
     bar, sub = _bar_at(df, date_str)
     if bar is None:
         return None
@@ -2728,6 +2762,24 @@ def _last_value(df, key: str, date_str: str | None = None):
         if result is None:
             return None
         v = result["score"] if key == "ANOMALY_SCORE" else result["pctile"]
+    elif key in ("NEWS_SENT", "NEWS_BUZZ"):
+        # News sentiment is a current snapshot per ticker (Finnhub API).
+        # Date-anchored rules can't fetch historical sentiment.
+        if not ticker:
+            return None
+        sent = cached_sentiment(ticker)
+        if not sent:
+            return None
+        if key == "NEWS_SENT":
+            try:
+                v = float(sent.get("sentiment", {}).get("bullishPercent"))
+            except (TypeError, ValueError):
+                return None
+        else:  # NEWS_BUZZ
+            try:
+                v = float(sent.get("buzz", {}).get("buzz"))
+            except (TypeError, ValueError):
+                return None
     else:
         return None
     try:
@@ -2737,10 +2789,11 @@ def _last_value(df, key: str, date_str: str | None = None):
         return None
 
 
-def _eval_rule(df, rule: dict) -> bool | None:
+def _eval_rule(df, rule: dict, ticker: str | None = None) -> bool | None:
     """Evaluate one rule. If rule has a 'date', evaluate against that bar;
-    otherwise against the latest bar. Returns None if data missing."""
-    left = _last_value(df, rule["left"], rule.get("date"))
+    otherwise against the latest bar. Pass `ticker` for indicators that
+    need API lookups (news sentiment). Returns None if data missing."""
+    left = _last_value(df, rule["left"], rule.get("date"), ticker=ticker)
     if left is None:
         return None
     op = rule["op"]
@@ -3094,7 +3147,7 @@ with tab_patterns:
                         progress.progress((idx + 1) / len(target_tickers))
                         continue
                     row = {"Ticker": t}
-                    rule_results = [_eval_rule(df, r) for r in rules]
+                    rule_results = [_eval_rule(df, r, ticker=t) for r in rules]
                     row["Matches"] = (
                         all(r is True for r in rule_results)
                         if rule_results else False
