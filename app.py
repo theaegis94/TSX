@@ -1157,6 +1157,24 @@ def show_quick_analysis_dialog(ticker: str):
     st.caption("📰 News → Single Ticker tab")
 
 
+def _cached_anomaly(df):
+    """Compute anomaly score for a ticker df, cached on the latest bar's
+    timestamp + bar count so we don't retrain IsolationForest on every rerun.
+
+    Defined at module top-level so render_quick_analysis (which runs early in
+    the script) can use it. Also reused later by the Custom Patterns tab.
+    """
+    if df is None or df.empty:
+        return None
+    sig = (str(df.index[-1]), len(df))
+    cache = st.session_state.setdefault("__anomaly_cache", {})
+    if sig in cache:
+        return cache[sig]
+    result = ss.compute_anomaly_score(df)
+    cache[sig] = result
+    return result
+
+
 def render_quick_analysis():
     """Inline analysis panel shown when a watchlist tile is clicked."""
     selected = st.session_state.get("selected_tile")
@@ -2467,20 +2485,6 @@ def _bar_at(df, date_str: str | None):
         return sub.iloc[-1], sub
     except Exception:
         return None, None
-
-
-def _cached_anomaly(df):
-    """Compute anomaly score for a ticker df, cached on the latest bar's
-    timestamp + bar count so we don't retrain IsolationForest on every rerun."""
-    if df is None or df.empty:
-        return None
-    sig = (str(df.index[-1]), len(df))
-    cache = st.session_state.setdefault("__anomaly_cache", {})
-    if sig in cache:
-        return cache[sig]
-    result = ss.compute_anomaly_score(df)
-    cache[sig] = result
-    return result
 
 
 def _last_value(df, key: str, date_str: str | None = None):
