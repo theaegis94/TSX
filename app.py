@@ -1533,6 +1533,64 @@ for _raw in _wl_str.split(","):
     except SystemExit:
         continue
 render_watchlist_bar(tuple(_wl_normalized[:30]))
+
+
+def _render_save_url_banner():
+    """Show a 'bookmark this URL' prompt + copy button when the watchlist
+    has been customized. Reliable cross-browser fallback to localStorage."""
+    if not st.session_state.get("_wl_from_url", False):
+        return
+    parts = [p.strip().upper() for p in
+             st.session_state.get("watchlist_input", "").split(",")
+             if p.strip()]
+    if not parts:
+        return
+    wl_param = ",".join(parts)
+    # Inject JS that builds the absolute save-URL from the current page +
+    # provides a copy-to-clipboard button.
+    import streamlit.components.v1 as components
+    js_param = json.dumps(wl_param)
+    components.html(
+        f"""<div style='font-family:"Comic Sans MS","Comic Sans",cursive;
+             padding:6px 10px; background:#1f2937; color:#e5e7eb;
+             border-radius:6px; font-size:0.78rem; margin:4px 0;
+             display:flex; align-items:center; gap:8px;'>
+            <span>💾 <b>Save your watchlist:</b>
+              <span style='color:#9ca3af;'>bookmark this URL or click copy →</span>
+            </span>
+            <button id='wl-copy-btn'
+                style='background:#3b82f6; color:#fff; border:none;
+                       padding:3px 12px; border-radius:5px; cursor:pointer;
+                       font-family:inherit; font-size:0.78rem;'>
+              📋 Copy save URL
+            </button>
+            <span id='wl-copy-status' style='color:#22c55e;
+                 font-size:0.75rem;'></span>
+          </div>
+          <script>
+          (function() {{
+            const btn = document.getElementById('wl-copy-btn');
+            const status = document.getElementById('wl-copy-status');
+            if (!btn) return;
+            btn.addEventListener('click', () => {{
+              try {{
+                const u = new URL(window.parent.location.href);
+                u.searchParams.set('wl', {js_param});
+                navigator.clipboard.writeText(u.toString()).then(() => {{
+                  status.textContent = '✓ copied!';
+                  setTimeout(() => status.textContent = '', 2500);
+                }});
+              }} catch (e) {{
+                status.textContent = 'copy failed';
+              }}
+            }});
+          }})();
+          </script>""",
+        height=46,
+    )
+
+
+_render_save_url_banner()
 render_quick_analysis()
 
 # Macro context — view selected from sidebar
@@ -2394,6 +2452,8 @@ RULE_INDICATORS = {
     "ANOMALY_SCORE":     "🤖 Anomaly score (IF) [more neg = anomalous]",
     "ANOMALY_PCTILE":    "🤖 Anomaly percentile (0=most anomalous)",
     "CONVICTION":        "🎯 Conviction score (-100 bear ↔ +100 bull)",
+    "MFI":               "🌊 Money Flow Index (0-100, vol-weighted RSI)",
+    "CMF":               "💧 Chaikin Money Flow (-1 to +1, accumulation)",
 }
 RULE_OPS = ["<", "<=", ">", ">=", "between"]
 
