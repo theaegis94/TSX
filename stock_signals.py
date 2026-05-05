@@ -968,6 +968,70 @@ def bollinger(series: pd.Series, period: int = 20, std: float = 2.0):
     return mid - std * dev, mid, mid + std * dev
 
 
+def _build_anomaly_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Per-bar feature matrix for anomaly detection.
+
+    Captures the dimensions a stock can behave 'unusually' in:
+    short-term return, multi-day momentum, volume vs. its own norm,
+    realized volatility, RSI deviation from neutral, MACD strength
+    relative to price, and trend deviation (distance from SMAs).
+    """
+    out = pd.DataFrame(index=df.index)
+    close = df["Close"]
+    out["ret_1d"] = close.pct_change()
+    out["ret_5d"] = close.pct_change(5)
+    out["vol_5d"] = out["ret_1d"].rolling(5).std()
+    if "Volume" in df.columns:
+        v = df["Volume"]
+        vavg = v.rolling(20).mean()
+        # Cap to avoid +inf when historical volume is zero (delisted bars)
+        out["vol_ratio"] = (v / vavg.replace(0, float("nan"))).clip(0, 50)
+    if "RSI" in df.columns:
+        out["rsi_dev"] = (df["RSI"] - 50.0) / 50.0
+    if "MACD_HIST" in df.columns:
+        out["macd_hist_norm"] = df["MACD_HIST"] / close.replace(0, float("nan"))
+    if "SMA50" in df.columns:
+        out["dist_sma50"] = (close - df["SMA50"]) / df["SMA50"].replace(
+            0, float("nan")
+        )
+    if "SMA200" in df.columns:
+        out["dist_sma200"] = (close - df["SMA200"]) / df["SMA200"].replace(
+            0, float("nan")
+        )
+    return out.replace([float("inf"), float("-inf")], float("nan")).dropna()
+
+
+def compute_anomaly_score(df: pd.DataFrame) -> dict | None:
+    """Train IsolationForest on the ticker's history; score the latest bar.
+
+    Returns dict with:
+      - score: raw IF score (more negative = more anomalous; ~ -0.6 to 0)
+      - pctile: 0-100 (lower = more anomalous than historical bars)
+    Returns None if insufficient data or sklearn unavailable.
+    """
+    try:
+        from sklearn.ensemble import IsolationForest
+    except ImportError:
+        return None
+    feats = _build_anomaly_features(df)
+    if len(feats) < 60:
+        return None
+    try:
+        iso = IsolationForest(
+            n_estimators=100,
+            contamination="auto",
+            random_state=42,
+            n_jobs=1,
+        )
+        iso.fit(feats.values)
+        scores = iso.score_samples(feats.values)
+        last_score = float(scores[-1])
+        pctile = float((scores < last_score).sum() / len(scores) * 100.0)
+        return {"score": last_score, "pctile": pctile}
+    except Exception:
+        return None
+
+
 def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     out["SMA5"] = out["Close"].rolling(5).mean()

@@ -8,3 +8,4 @@ requests>=2.28
 lxml>=4.9
 beautifulsoup4>=4.12
 anthropic>=0.40
+scikit-learn>=1.3

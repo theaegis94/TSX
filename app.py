@@ -2186,6 +2186,8 @@ RULE_INDICATORS = {
     "BB_DIST_LOWER_PCT": "Distance to BB lower (%) [neg = below band]",
     "BB_DIST_UPPER_PCT": "Distance to BB upper (%) [neg = above band]",
     "BB_BANDWIDTH_PCT":  "Bollinger bandwidth (%) [low = squeeze]",
+    "ANOMALY_SCORE":     "🤖 Anomaly score (IF) [more neg = anomalous]",
+    "ANOMALY_PCTILE":    "🤖 Anomaly percentile (0=most anomalous)",
 }
 RULE_OPS = ["<", "<=", ">", ">=", "between"]
 
@@ -2215,6 +2217,8 @@ RULE_DEFAULTS: dict[str, tuple[float, float]] = {
     "BB_DIST_LOWER_PCT": (0.0, 5.0),   # < 0 = below lower band; > 5 = far above
     "BB_DIST_UPPER_PCT": (0.0, 5.0),   # < 0 = above upper band; > 5 = far below
     "BB_BANDWIDTH_PCT":  (5.0, 15.0),  # < 5 = squeeze; > 15 = volatile
+    "ANOMALY_SCORE":     (-0.2, 0.0),  # < -0.2 ≈ anomalous; near 0 = normal
+    "ANOMALY_PCTILE":    (5.0, 95.0),  # < 5 = bottom 5% (most anomalous)
 }
 
 
@@ -2246,6 +2250,20 @@ def _bar_at(df, date_str: str | None):
         return sub.iloc[-1], sub
     except Exception:
         return None, None
+
+
+def _cached_anomaly(df):
+    """Compute anomaly score for a ticker df, cached on the latest bar's
+    timestamp + bar count so we don't retrain IsolationForest on every rerun."""
+    if df is None or df.empty:
+        return None
+    sig = (str(df.index[-1]), len(df))
+    cache = st.session_state.setdefault("__anomaly_cache", {})
+    if sig in cache:
+        return cache[sig]
+    result = ss.compute_anomaly_score(df)
+    cache[sig] = result
+    return result
 
 
 def _last_value(df, key: str, date_str: str | None = None):
@@ -2284,6 +2302,14 @@ def _last_value(df, key: str, date_str: str | None = None):
     }.issubset(df.columns):
         v = ((bar["BB_UPPER"] - bar["BB_LOWER"]) / bar["BB_MID"] * 100
              if bar["BB_MID"] else None)
+    elif key in ("ANOMALY_SCORE", "ANOMALY_PCTILE"):
+        # Anomaly detection always uses the LATEST bar (training requires
+        # historical context). For date-anchored rules this evaluates the
+        # current state, not a back-in-time snapshot.
+        result = _cached_anomaly(df)
+        if result is None:
+            return None
+        v = result["score"] if key == "ANOMALY_SCORE" else result["pctile"]
     else:
         return None
     try:
