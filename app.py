@@ -2726,6 +2726,180 @@ with tab_patterns:
                 hide_index=True,
             )
 
+    # --- 🔬 Indicator Relationships analysis ---
+    st.divider()
+    with st.expander(
+        "🔬 Indicator Relationships — anomaly vs. Bollinger vs. BUY/SELL",
+        expanded=False,
+    ):
+        st.caption(
+            "Computes per-bar correlations across your watchlist between "
+            "the **anomaly score**, **Bollinger %B**, **Bollinger bandwidth**, "
+            "and the strategy's **BUY/SELL** signals. Useful for sanity-"
+            "checking whether your indicators agree (or disagree) with each other."
+        )
+        ir_strat = st.selectbox(
+            "Strategy for BUY/SELL signals",
+            options=list(ss.STRATEGY_LABELS.keys()),
+            format_func=lambda k: ss.STRATEGY_LABELS[k],
+            index=list(ss.STRATEGY_LABELS.keys()).index(
+                ss.DEFAULT_STRATEGY_KEY
+            ),
+            key="indrel_strat",
+        )
+        if st.button("🔬 Run analysis", key="indrel_run", type="primary"):
+            wl = [t.strip().upper() for t in
+                  st.session_state.get("watchlist_input", "").split(",")
+                  if t.strip()]
+            if not wl:
+                st.warning("Watchlist is empty.")
+            else:
+                pieces = []
+                progress = st.progress(0.0)
+                for idx, t in enumerate(wl):
+                    try:
+                        norm = ss.normalize_ticker(t)
+                    except SystemExit:
+                        continue
+                    try:
+                        df, _ = cached_single(
+                            norm, period, interval, ir_strat,
+                            adx_filter, stop_loss_pct,
+                        )
+                    except Exception:
+                        df = None
+                    if df is None or df.empty:
+                        progress.progress((idx + 1) / len(wl))
+                        continue
+                    # Per-bar anomaly
+                    anom = ss.compute_anomaly_per_bar(df)
+                    if anom is None or anom.empty:
+                        progress.progress((idx + 1) / len(wl))
+                        continue
+                    cols = pd.DataFrame(index=df.index)
+                    if {"BB_LOWER", "BB_UPPER", "BB_MID"}.issubset(df.columns):
+                        rng = df["BB_UPPER"] - df["BB_LOWER"]
+                        cols["bb_pct_b"] = (
+                            (df["Close"] - df["BB_LOWER"])
+                            / rng.replace(0, float("nan"))
+                        )
+                        cols["bb_bandwidth"] = (
+                            rng / df["BB_MID"].replace(0, float("nan")) * 100
+                        )
+                    cols["anomaly_score"] = anom["score"]
+                    cols["anomaly_pctile"] = anom["pctile"]
+                    cols["buy"] = df.get("BUY", False).astype(int)
+                    cols["sell"] = df.get("SELL", False).astype(int)
+                    cols["ticker"] = t
+                    pieces.append(cols.dropna())
+                    progress.progress((idx + 1) / len(wl))
+                progress.empty()
+
+                if not pieces:
+                    st.error("No data — couldn't compute features.")
+                else:
+                    all_data = pd.concat(pieces, ignore_index=True)
+                    st.session_state["indrel_results"] = all_data
+                    st.session_state["indrel_strat_used"] = (
+                        ss.STRATEGY_LABELS.get(ir_strat, ir_strat)
+                    )
+
+        ir_data = st.session_state.get("indrel_results")
+        if ir_data is not None and not ir_data.empty:
+            st.markdown(
+                f"_Pooled across {ir_data['ticker'].nunique()} tickers · "
+                f"{len(ir_data)} bars · Strategy: "
+                f"**{st.session_state.get('indrel_strat_used','')}**_"
+            )
+
+            num_cols = [
+                "anomaly_score", "anomaly_pctile",
+                "bb_pct_b", "bb_bandwidth", "buy", "sell",
+            ]
+            num_cols = [c for c in num_cols if c in ir_data.columns]
+
+            st.markdown("##### Correlation matrix (Pearson)")
+            corr = ir_data[num_cols].corr().round(3)
+            st.dataframe(
+                corr.style.background_gradient(
+                    cmap="RdBu_r", vmin=-1, vmax=1, axis=None,
+                ),
+                use_container_width=True,
+            )
+
+            buys = ir_data[ir_data["buy"] == 1]
+            sells = ir_data[ir_data["sell"] == 1]
+            n_total = len(ir_data)
+            st.markdown("##### BUY signal overlap")
+            if not buys.empty:
+                st.write({
+                    "buy_count": int(len(buys)),
+                    "buy_rate_overall": f"{len(buys)/n_total*100:.2f}%",
+                    "median_anomaly_pctile_at_buy":
+                        round(float(buys["anomaly_pctile"].median()), 1),
+                    "median_bb_pct_b_at_buy":
+                        round(float(buys["bb_pct_b"].median()), 3),
+                    "buys_with_anomaly_pctile_lt_10":
+                        f"{(buys['anomaly_pctile'] < 10).mean()*100:.1f}%",
+                    "buys_with_bb_pct_b_lt_0_2":
+                        f"{(buys['bb_pct_b'] < 0.2).mean()*100:.1f}%",
+                })
+            else:
+                st.caption("_No BUY signals in this dataset._")
+
+            st.markdown("##### SELL signal overlap")
+            if not sells.empty:
+                st.write({
+                    "sell_count": int(len(sells)),
+                    "sell_rate_overall": f"{len(sells)/n_total*100:.2f}%",
+                    "median_anomaly_pctile_at_sell":
+                        round(float(sells["anomaly_pctile"].median()), 1),
+                    "median_bb_pct_b_at_sell":
+                        round(float(sells["bb_pct_b"].median()), 3),
+                    "sells_with_anomaly_pctile_lt_10":
+                        f"{(sells['anomaly_pctile'] < 10).mean()*100:.1f}%",
+                    "sells_with_bb_pct_b_gt_0_8":
+                        f"{(sells['bb_pct_b'] > 0.8).mean()*100:.1f}%",
+                })
+            else:
+                st.caption("_No SELL signals in this dataset._")
+
+            st.markdown("##### Scatter: anomaly percentile vs. BB %B")
+            import plotly.graph_objects as go
+            fig = go.Figure()
+            normal = ir_data[(ir_data["buy"] == 0) & (ir_data["sell"] == 0)]
+            fig.add_trace(go.Scattergl(
+                x=normal["bb_pct_b"], y=normal["anomaly_pctile"],
+                mode="markers", name="hold",
+                marker=dict(size=3, color="#6b7280", opacity=0.4),
+            ))
+            if not buys.empty:
+                fig.add_trace(go.Scattergl(
+                    x=buys["bb_pct_b"], y=buys["anomaly_pctile"],
+                    mode="markers", name="BUY",
+                    marker=dict(size=7, color="#22c55e",
+                                symbol="triangle-up",
+                                line=dict(color="black", width=0.5)),
+                ))
+            if not sells.empty:
+                fig.add_trace(go.Scattergl(
+                    x=sells["bb_pct_b"], y=sells["anomaly_pctile"],
+                    mode="markers", name="SELL",
+                    marker=dict(size=7, color="#ef4444",
+                                symbol="triangle-down",
+                                line=dict(color="black", width=0.5)),
+                ))
+            fig.update_layout(
+                xaxis_title="Bollinger %B (0=lower band, 1=upper)",
+                yaxis_title="Anomaly percentile (0=most anomalous)",
+                template="plotly_dark",
+                paper_bgcolor="#4a4b4e",
+                plot_bgcolor="#4a4b4e",
+                height=450,
+                showlegend=True,
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
 
 # === News tab ===
 @st.cache_data(ttl=900, show_spinner=False)
@@ -3216,9 +3390,13 @@ _sync_watchlist_to_url()
 #      ?wl=... appended. The sessionStorage flag prevents redirect loops.
 def _inject_watchlist_localstorage():
     import streamlit.components.v1 as components
+    # Only mirror to localStorage when the watchlist is USER-OWNED
+    # (i.e., set explicitly via URL, add/remove buttons, or bulk edit).
+    # Default-fallback values must NEVER overwrite the user's saved list.
+    is_user_owned = st.session_state.get("_wl_from_url", False)
     current_wl = st.session_state.get("watchlist_input", "")
     parts = [p.strip().upper() for p in current_wl.split(",") if p.strip()]
-    current_wl_str = ",".join(parts) if parts else ""
+    current_wl_str = ",".join(parts) if (parts and is_user_owned) else ""
     js_value = json.dumps(current_wl_str)
     components.html(
         f"""<script>

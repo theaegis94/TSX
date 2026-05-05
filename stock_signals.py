@@ -1001,6 +1001,41 @@ def _build_anomaly_features(df: pd.DataFrame) -> pd.DataFrame:
     return out.replace([float("inf"), float("-inf")], float("nan")).dropna()
 
 
+def compute_anomaly_per_bar(df: pd.DataFrame) -> pd.DataFrame | None:
+    """Anomaly score for every bar in df (fitted on full history).
+
+    Returns a DataFrame indexed by date with columns:
+      score    — raw IsolationForest score
+      pctile   — 0-100 ranking against this ticker's own history
+    Returns None if sklearn missing or insufficient data.
+    """
+    try:
+        from sklearn.ensemble import IsolationForest
+    except ImportError:
+        return None
+    feats = _build_anomaly_features(df)
+    if len(feats) < 60:
+        return None
+    try:
+        iso = IsolationForest(
+            n_estimators=100,
+            contamination="auto",
+            random_state=42,
+            n_jobs=1,
+        )
+        iso.fit(feats.values)
+        scores = iso.score_samples(feats.values)
+        n = len(scores)
+        ranks = pd.Series(scores).rank(method="average").values
+        pctiles = (ranks - 1) / max(n - 1, 1) * 100.0
+        return pd.DataFrame(
+            {"score": scores, "pctile": pctiles},
+            index=feats.index,
+        )
+    except Exception:
+        return None
+
+
 def compute_anomaly_score(df: pd.DataFrame) -> dict | None:
     """Train IsolationForest on the ticker's history; score the latest bar.
 
