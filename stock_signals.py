@@ -1019,6 +1019,43 @@ def adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
     return dx.ewm(alpha=1 / period, adjust=False).mean()
 
 
+def mfi(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    """Money Flow Index — RSI-like oscillator weighted by volume.
+
+    Bounded 0-100. < 20 = oversold + selling pressure exhausted.
+    > 80 = overbought + buying pressure exhausted.
+    """
+    if not {"High", "Low", "Close", "Volume"}.issubset(df.columns):
+        return pd.Series(float("nan"), index=df.index)
+    typical = (df["High"] + df["Low"] + df["Close"]) / 3.0
+    raw_flow = typical * df["Volume"]
+    direction = typical.diff()
+    pos_flow = raw_flow.where(direction > 0, 0.0)
+    neg_flow = raw_flow.where(direction < 0, 0.0)
+    pos_sum = pos_flow.rolling(period).sum()
+    neg_sum = neg_flow.rolling(period).sum()
+    money_ratio = pos_sum / neg_sum.replace(0, float("nan"))
+    return 100.0 - (100.0 / (1.0 + money_ratio))
+
+
+def cmf(df: pd.DataFrame, period: int = 20) -> pd.Series:
+    """Chaikin Money Flow — accumulation/distribution normalized by volume.
+
+    Bounded ~-1 to +1. > 0.05 = sustained buying pressure (accumulation).
+    < -0.05 = sustained selling pressure (distribution).
+    """
+    if not {"High", "Low", "Close", "Volume"}.issubset(df.columns):
+        return pd.Series(float("nan"), index=df.index)
+    rng = (df["High"] - df["Low"]).replace(0, float("nan"))
+    mf_mult = (
+        (df["Close"] - df["Low"]) - (df["High"] - df["Close"])
+    ) / rng
+    mf_volume = mf_mult * df["Volume"]
+    vol_sum = df["Volume"].rolling(period).sum()
+    return (mf_volume.rolling(period).sum()
+            / vol_sum.replace(0, float("nan")))
+
+
 def bollinger(series: pd.Series, period: int = 20, std: float = 2.0):
     mid = series.rolling(period).mean()
     dev = series.rolling(period).std()
@@ -1171,6 +1208,19 @@ def compute_conviction_score(df: pd.DataFrame) -> pd.Series:
         above = (df["Close"] > df["SMA200"]).astype(float)
         score += (above * 20.0 - 10.0)  # +10 in uptrend, -10 in downtrend
 
+    # --- Money flow (volume-weighted) ---
+    # MFI < 20 → +15 (oversold + selling exhausted)
+    # MFI > 80 → -15 (overbought + buying exhausted)
+    if "MFI" in df.columns:
+        mfi_score = (50.0 - df["MFI"]) * 0.5  # 0 → 0; 20 → +15; 80 → -15
+        score += mfi_score.fillna(0).clip(-15, 15)
+
+    # CMF > 0.05 → bullish institutional pressure → +10
+    # CMF < -0.05 → bearish institutional pressure → -10
+    if "CMF" in df.columns:
+        cmf_score = df["CMF"].fillna(0) * 100.0  # 0.1 → 10
+        score += cmf_score.clip(-15, 15)
+
     # --- Trend strength amplifier ---
     if "ADX" in df.columns:
         # Strong trend (ADX>25) amplifies the directional bias
@@ -1193,8 +1243,12 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     out["DC_LOW"] = out["Low"].rolling(20).min()
     if {"High", "Low", "Close"}.issubset(out.columns):
         out["ADX"] = adx(out)
+    # Volume-weighted oscillators for swing trading
+    if {"High", "Low", "Close", "Volume"}.issubset(out.columns):
+        out["MFI"] = mfi(out)
+        out["CMF"] = cmf(out)
     # Multi-factor conviction score (combines RSI, BB, MACD, volume,
-    # SMA200 trend, ADX). -100 to +100; positive = bullish bias.
+    # SMA200 trend, ADX, MFI, CMF). -100 to +100; positive = bullish bias.
     out["CONVICTION"] = compute_conviction_score(out)
     return out
 

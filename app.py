@@ -2486,6 +2486,8 @@ RULE_DEFAULTS: dict[str, tuple[float, float]] = {
     "ANOMALY_SCORE":     (-0.2, 0.0),  # < -0.2 ≈ anomalous; near 0 = normal
     "ANOMALY_PCTILE":    (5.0, 95.0),  # < 5 = bottom 5% (most anomalous)
     "CONVICTION":        (-30.0, 50.0),  # < -30 = avoid; > 50 = strong buy
+    "MFI":               (20.0, 80.0),   # < 20 = oversold; > 80 = overbought
+    "CMF":               (-0.05, 0.05),  # < -0.05 dist; > 0.05 accum
 }
 
 
@@ -2506,6 +2508,16 @@ RULE_PRESETS: dict[str, list[dict]] = {
         {"left": "MACD_HIST", "op": ">", "a": -0.5, "b": None,
          "date": None},
         {"left": "CONVICTION", "op": ">", "a": 30.0, "b": None,
+         "date": None},
+    ],
+    "🌊 Strong swing buy (vol confirmed)": [
+        # Classic swing trade: MFI oversold + price near lower band +
+        # CMF showing accumulation (institutional buying the dip) +
+        # in long-term uptrend
+        {"left": "MFI", "op": "<", "a": 25.0, "b": None, "date": None},
+        {"left": "BB_PCT_B", "op": "<", "a": 0.25, "b": None, "date": None},
+        {"left": "CMF", "op": ">", "a": 0.0, "b": None, "date": None},
+        {"left": "DIST_SMA200_PCT", "op": ">", "a": 0.0, "b": None,
          "date": None},
     ],
     "⚠️ Don't buy yet (still falling)": [
