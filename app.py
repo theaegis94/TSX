@@ -1243,6 +1243,166 @@ def render_quick_analysis():
             unsafe_allow_html=True,
         )
 
+        # === Info panel: company + price context + technicals + analyst ===
+        prof = cached_company_profile(ticker)
+        rec = cached_recommendation(ticker)
+        anom_data = _cached_anomaly(df)
+
+        # Header line: company name + sector
+        if prof.get("name"):
+            sector_bits = []
+            if prof.get("sector"): sector_bits.append(prof["sector"])
+            if prof.get("industry"): sector_bits.append(prof["industry"])
+            if prof.get("country"): sector_bits.append(prof["country"])
+            sector_str = " · ".join(sector_bits) if sector_bits else ""
+            st.markdown(
+                f"<div style='padding:4px 0 8px;'>"
+                f"<span style='font-size:1.05rem; color:#e5e7eb; "
+                f"font-weight:600;'>{prof['name']}</span>"
+                + (f"<br><span style='font-size:0.8rem; color:#9ca3af;'>"
+                   f"{sector_str}</span>" if sector_str else "")
+                + "</div>",
+                unsafe_allow_html=True,
+            )
+
+        # Row 1: market cap | 52w range position | volume vs avg | next earnings
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Market cap", _fmt_compact_num(prof.get("market_cap")))
+        wk_hi = prof.get("week52_high"); wk_lo = prof.get("week52_low")
+        cur = float(last["Close"])
+        if wk_hi and wk_lo and wk_hi > wk_lo:
+            pct_in_range = (cur - wk_lo) / (wk_hi - wk_lo) * 100
+            m2.metric(
+                "52w range",
+                f"${wk_lo:.2f} – ${wk_hi:.2f}",
+                delta=f"{pct_in_range:.0f}% of range",
+                delta_color="off",
+            )
+        else:
+            m2.metric("52w range", "—")
+        avg_vol = prof.get("avg_vol")
+        today_vol = float(last.get("Volume", 0)) if "Volume" in last else 0
+        if avg_vol:
+            ratio = today_vol / avg_vol if avg_vol else 1
+            m3.metric(
+                "Volume",
+                _fmt_compact_num(today_vol),
+                delta=f"{ratio:.2f}× avg",
+                delta_color="normal" if ratio > 1 else "inverse",
+            )
+        else:
+            m3.metric("Volume", _fmt_compact_num(today_vol))
+        # Earnings days from yfinance (cached upstream via metrics)
+        try:
+            metrics = ss.yf_metrics(ticker)
+            earn_days = metrics.get("earn_days")
+        except Exception:
+            earn_days = None
+        if earn_days is not None:
+            m4.metric("Next earnings", f"in {earn_days}d")
+        else:
+            m4.metric("Next earnings", "—")
+
+        # Row 2: RSI | MACD direction | BB %B | Anomaly pctile
+        r1, r2, r3, r4 = st.columns(4)
+        rsi_v = float(last["RSI"]) if "RSI" in last and pd.notna(last["RSI"]) else None
+        if rsi_v is not None:
+            tag = ("oversold" if rsi_v < 30
+                   else "overbought" if rsi_v > 70
+                   else "neutral")
+            r1.metric("RSI(14)", f"{rsi_v:.1f}", delta=tag, delta_color="off")
+        else:
+            r1.metric("RSI(14)", "—")
+        if "MACD" in last and "MACD_SIGNAL" in last:
+            mh = float(last.get("MACD_HIST", 0))
+            direction = "bullish" if mh > 0 else "bearish"
+            r2.metric("MACD hist", f"{mh:+.3f}", delta=direction,
+                      delta_color="normal" if mh > 0 else "inverse")
+        else:
+            r2.metric("MACD hist", "—")
+        if {"BB_LOWER", "BB_UPPER"}.issubset(df.columns):
+            bb_rng = float(last["BB_UPPER"]) - float(last["BB_LOWER"])
+            if bb_rng > 0:
+                pctb = (cur - float(last["BB_LOWER"])) / bb_rng
+                tag = ("near lower" if pctb < 0.2
+                       else "near upper" if pctb > 0.8
+                       else "mid")
+                r3.metric("BB %B", f"{pctb:.2f}", delta=tag, delta_color="off")
+            else:
+                r3.metric("BB %B", "—")
+        else:
+            r3.metric("BB %B", "—")
+        if anom_data:
+            pctile = anom_data.get("pctile", 50)
+            tag = ("anomalous" if pctile < 10
+                   else "unusual" if pctile < 25
+                   else "normal")
+            r4.metric("🤖 Anomaly", f"{pctile:.0f}%ile",
+                      delta=tag,
+                      delta_color="inverse" if pctile < 25 else "off")
+        else:
+            r4.metric("🤖 Anomaly", "—")
+
+        # Row 3: P/E | Yield | Beta | Analyst rec
+        f1, f2, f3, f4 = st.columns(4)
+        pe = prof.get("pe") or prof.get("pe_forward")
+        f1.metric("P/E", f"{pe:.1f}" if pe else "—")
+        yld = prof.get("yield_pct")
+        if yld is not None:
+            # Some yfinance values come pct-scaled (1.5 = 1.5%), some fractional.
+            yld_disp = yld * 100 if yld < 1 else yld
+            f2.metric("Yield", f"{yld_disp:.2f}%")
+        else:
+            f2.metric("Yield", "—")
+        beta = prof.get("beta")
+        f3.metric("Beta", f"{beta:.2f}" if beta else "—")
+        if rec:
+            b, h, s = rec
+            total = b + h + s
+            if total > 0:
+                f4.metric(
+                    "Analysts",
+                    f"{b}B · {h}H · {s}S",
+                    delta=f"{b/total*100:.0f}% buy",
+                    delta_color=("normal" if b > s else "inverse"
+                                 if s > b else "off"),
+                )
+            else:
+                f4.metric("Analysts", "—")
+        else:
+            f4.metric("Analysts", "—")
+
+        # Recent news (collapsible)
+        news = cached_news(ticker, days=5)
+        if news:
+            with st.expander(f"📰 Recent news ({len(news)} articles)",
+                             expanded=False):
+                for art in news[:5]:
+                    try:
+                        ts = datetime.fromtimestamp(art.get("datetime", 0))
+                        when = ts.strftime("%b %d %H:%M")
+                    except (ValueError, TypeError, OSError):
+                        when = "?"
+                    src = art.get("source", "")
+                    head = art.get("headline", "")
+                    url = art.get("url", "#")
+                    st.markdown(
+                        f"<div style='padding:4px 0; "
+                        f"border-bottom:1px solid #4a4b4e; "
+                        f"font-size:0.85rem;'>"
+                        f"<span style='color:#9ca3af;'>{when} · {src}</span>"
+                        f"<br>"
+                        f"<a href='{url}' target='_blank' "
+                        f"style='color:#e5e7eb; text-decoration:none;'>"
+                        f"{head}</a></div>",
+                        unsafe_allow_html=True,
+                    )
+
+        # Business summary (collapsed, since long)
+        if prof.get("summary"):
+            with st.expander("ℹ️ Business summary", expanded=False):
+                st.write(prof["summary"])
+
         # Build chart
         fig = ss.build_chart_plotly(df, ticker, stats, compact=True,
                                     indicators=indicators,
@@ -1307,6 +1467,33 @@ def cached_single(ticker: str, period: str, interval: str,
 @st.cache_data(ttl=900, show_spinner=False)
 def cached_news(ticker: str, days: int = 7) -> list:
     return ss.finnhub_news(ticker, days=days)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_company_profile(ticker: str) -> dict:
+    return ss.yf_company_profile(ticker)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_recommendation(ticker: str):
+    return ss.finnhub_recommendation(ticker)
+
+
+def _fmt_compact_num(v: float | None) -> str:
+    """Format big numbers compactly: 1234567 → 1.23M, 1234567890 → 1.23B."""
+    if v is None:
+        return "—"
+    try:
+        v = float(v)
+    except (ValueError, TypeError):
+        return "—"
+    sign = "-" if v < 0 else ""
+    av = abs(v)
+    if av >= 1e12: return f"{sign}{av/1e12:.2f}T"
+    if av >= 1e9:  return f"{sign}{av/1e9:.2f}B"
+    if av >= 1e6:  return f"{sign}{av/1e6:.2f}M"
+    if av >= 1e3:  return f"{sign}{av/1e3:.1f}K"
+    return f"{sign}{av:.2f}"
 
 
 # --------- header / macro ---------
@@ -2432,9 +2619,8 @@ def _sync_active_rules_to_url():
 with tab_patterns:
     st.subheader("Custom Watchlist Screener")
     st.caption(
-        "Build a set of indicator rules. Tickers in your watchlist matching "
-        "**all** rules (AND) on the latest bar are listed below. "
-        "Save named rule sets to reload later or share via the JSON file."
+        "Pick a preset, or build your own indicator rules. "
+        "Tickers matching **all** rules are returned."
     )
 
     _init_active_rules_from_url()
@@ -2443,11 +2629,8 @@ with tab_patterns:
 
     saved = st.session_state.saved_rules
 
-    # --- Quick presets ---
-    st.markdown("##### ⚡ Quick presets")
-    st.caption(
-        "One-click rule sets. Loading replaces your current rules."
-    )
+    # --- ⚡ Quick presets (always visible — easiest entry point) ---
+    st.markdown("**⚡ Quick presets** — one click loads ready-made rules")
     preset_names = list(RULE_PRESETS.keys())
     preset_cols = st.columns(len(preset_names))
     for col, pname in zip(preset_cols, preset_names):
@@ -2456,73 +2639,80 @@ with tab_patterns:
             st.session_state.custom_rules = [
                 dict(r) for r in RULE_PRESETS[pname]
             ]
-            # Reset the keyspec markers so number_inputs pick up the
-            # new defaults instead of stale user edits
             for r in st.session_state.custom_rules:
                 r.pop("_keyspec", None)
             st.rerun()
 
-    # --- Saved rules ---
-    st.markdown("##### Saved rule sets")
-    if saved:
-        for name in list(saved.keys()):
-            sc1, sc2, sc3, sc4 = st.columns([4, 2, 1, 1])
-            sc1.markdown(
-                f"**{name}** &nbsp;·&nbsp; "
-                f"<span style='color:#9ca3af'>"
-                f"{len(saved[name])} rule(s)</span>",
-                unsafe_allow_html=True,
-            )
-            if sc2.button("📂 Load", key=f"saved_load_{name}",
+    # --- 💾 Saved rule sets — collapsed by default ---
+    saved_count = len(saved)
+    saved_label = (f"💾 Saved rule sets ({saved_count})"
+                   if saved_count else "💾 Save / load rule sets")
+    with st.expander(saved_label, expanded=False):
+        if saved:
+            for name in list(saved.keys()):
+                sc1, sc2, sc3 = st.columns([4, 2, 1])
+                sc1.markdown(
+                    f"**{name}** &nbsp;·&nbsp; "
+                    f"<span style='color:#9ca3af'>"
+                    f"{len(saved[name])} rule(s)</span>",
+                    unsafe_allow_html=True,
+                )
+                if sc2.button("📂 Load", key=f"saved_load_{name}",
+                              use_container_width=True):
+                    st.session_state.custom_rules = [
+                        dict(r) for r in saved[name]
+                    ]
+                    for r in st.session_state.custom_rules:
+                        r.pop("_keyspec", None)
+                    st.rerun()
+                if sc3.button("🗑️", key=f"saved_del_{name}",
+                              help=f"Delete '{name}'"):
+                    del saved[name]
+                    _persist_saved_rules(saved)
+                    st.rerun()
+            st.divider()
+        save_c1, save_c2 = st.columns([4, 1.5])
+        new_name = save_c1.text_input(
+            "Save current rules as…",
+            key="saved_new_name",
+            placeholder="e.g. Oversold mean reversion",
+            label_visibility="collapsed",
+        )
+        if save_c2.button("💾 Save", key="saved_save_btn",
                           use_container_width=True):
-                st.session_state.custom_rules = [
-                    dict(r) for r in saved[name]
-                ]
-                st.rerun()
-            if sc3.button("🗑️", key=f"saved_del_{name}",
-                          help=f"Delete '{name}'"):
-                del saved[name]
+            nm = (new_name or "").strip()
+            if not nm:
+                st.warning("Give the rule set a name first.")
+            elif not st.session_state.custom_rules:
+                st.warning("No rules to save.")
+            else:
+                saved[nm] = [dict(r) for r in st.session_state.custom_rules]
                 _persist_saved_rules(saved)
+                st.success(f"Saved “{nm}”.")
                 st.rerun()
-            sc4.markdown("")
-    else:
-        st.caption("_No saved rule sets yet._")
-
-    save_c1, save_c2 = st.columns([4, 1.5])
-    new_name = save_c1.text_input(
-        "Save current rules as…",
-        key="saved_new_name",
-        placeholder="e.g. Oversold mean reversion",
-        label_visibility="collapsed",
-    )
-    if save_c2.button("💾 Save", key="saved_save_btn",
-                      use_container_width=True):
-        nm = (new_name or "").strip()
-        if not nm:
-            st.warning("Give the rule set a name first.")
-        elif not st.session_state.custom_rules:
-            st.warning("No rules to save.")
-        else:
-            saved[nm] = [dict(r) for r in st.session_state.custom_rules]
-            _persist_saved_rules(saved)
-            st.success(f"Saved “{nm}”.")
-            st.rerun()
 
     st.divider()
 
     rules = st.session_state.custom_rules
 
-    # --- Rule editor ---
-    st.markdown("##### Rules")
+    # --- Rule editor (simplified) ---
+    st.markdown("**🛠️ Rules**")
     st.caption(
-        "Each rule can target the **latest bar** (default) or a **specific date** "
-        "in history. Multiple rules with different dates let you screen for "
-        "patterns like *RSI < 30 on Mar 26* AND *RSI > 70 on Apr 10*."
+        "Indicator + comparison + value. Click 📅 to lock a rule to a "
+        "specific historical date instead of the latest bar."
     )
     today = datetime.now().date()
     for i, rule in enumerate(rules):
-        cols = st.columns([2.5, 1.5, 1.8, 1.8, 1.4, 2.2, 0.6])
-        c_left, c_op, c_a, c_b, c_use_date, c_date, c_del = cols
+        # Layout: indicator | op | value (+ optional upper) | date | delete
+        is_between = rule["op"] == "between"
+        if is_between:
+            cols = st.columns([3, 1.4, 1.5, 1.5, 0.6, 0.6])
+            c_left, c_op, c_a, c_b, c_date, c_del = cols
+        else:
+            cols = st.columns([3, 1.4, 2, 0.6, 0.6])
+            c_left, c_op, c_a, c_date, c_del = cols
+            c_b = None
+
         rule["left"] = c_left.selectbox(
             "Indicator",
             options=list(RULE_INDICATORS.keys()),
@@ -2538,8 +2728,7 @@ with tab_patterns:
             label_visibility="collapsed",
         )
 
-        # When indicator or operator changes, reset value to a sensible
-        # default (e.g., RSI < → 30, RSI > → 70, ADX > → 25).
+        # Auto-default value when indicator/op changes
         keyspec = f"{rule['left']}_{rule['op']}"
         if rule.get("_keyspec") != keyspec:
             rule["a"] = _rule_default_a(rule["left"], rule["op"])
@@ -2547,9 +2736,6 @@ with tab_patterns:
                 rule["b"] = _rule_default_b(rule["left"])
             rule["_keyspec"] = keyspec
 
-        # Dynamic key: changes when indicator/op changes so number_input
-        # picks up the new default value rather than the user's stale edit
-        # for a different indicator.
         rule["a"] = c_a.number_input(
             "Value",
             value=float(rule.get("a") or 0.0),
@@ -2557,7 +2743,7 @@ with tab_patterns:
             label_visibility="collapsed",
             format="%.4f",
         )
-        if rule["op"] == "between":
+        if is_between and c_b is not None:
             rule["b"] = c_b.number_input(
                 "Upper",
                 value=float(rule.get("b") or 0.0),
@@ -2565,34 +2751,38 @@ with tab_patterns:
                 label_visibility="collapsed",
                 format="%.4f",
             )
-        else:
-            c_b.markdown("&nbsp;", unsafe_allow_html=True)
+        elif not is_between:
             rule["b"] = None
 
-        use_date = c_use_date.checkbox(
-            "On date",
-            value=bool(rule.get("date")),
-            key=f"rule_usedate_{i}",
-            help="Evaluate against a specific historical date instead of the latest bar",
-        )
-        if use_date:
+        # Date as a popover — clean, compact, no checkbox needed
+        has_date = bool(rule.get("date"))
+        date_icon = "📅✓" if has_date else "📅"
+        with c_date.popover(date_icon,
+                            help="Evaluate this rule on a specific date "
+                                 "(defaults to latest bar)"):
             existing_date = rule.get("date")
             try:
                 init_date = (datetime.strptime(existing_date, "%Y-%m-%d").date()
                              if existing_date else today)
             except ValueError:
                 init_date = today
-            picked = c_date.date_input(
-                "Date",
-                value=init_date,
-                max_value=today,
-                key=f"rule_date_{i}",
-                label_visibility="collapsed",
+            use_date = st.checkbox(
+                "Use specific date",
+                value=has_date,
+                key=f"rule_usedate_{i}",
             )
-            rule["date"] = picked.strftime("%Y-%m-%d")
-        else:
-            c_date.markdown("&nbsp;", unsafe_allow_html=True)
-            rule["date"] = None
+            if use_date:
+                picked = st.date_input(
+                    "Date",
+                    value=init_date,
+                    max_value=today,
+                    key=f"rule_date_{i}",
+                )
+                rule["date"] = picked.strftime("%Y-%m-%d")
+                st.caption(f"_Rule fires only on bar at/before {rule['date']}_")
+            else:
+                rule["date"] = None
+                st.caption("_Rule evaluates the latest bar_")
 
         if c_del.button("🗑️", key=f"rule_del_{i}",
                         help="Remove this rule"):
@@ -2636,9 +2826,10 @@ with tab_patterns:
     )
     max_tickers = lim_col.number_input(
         "Max tickers",
-        min_value=10, max_value=10000, value=200, step=50,
+        min_value=10, max_value=10000, value=10000, step=100,
         key="patterns_max_tickers",
-        help="Cap how many tickers are scanned (helps speed up bigger universes)",
+        help="Cap how many tickers are scanned. Default = max (no cap). "
+             "Lower it to speed up scans on Full TSX / Full US.",
         label_visibility="collapsed",
     )
 
