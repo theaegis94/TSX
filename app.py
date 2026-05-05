@@ -1464,65 +1464,56 @@ def render_quick_analysis():
                     img_html = ""
                     if img and img.startswith("http"):
                         img_html = (
-                            f"<div style='flex:0 0 110px; height:80px; "
-                            f"border-radius:8px; overflow:hidden; "
-                            f"background:#3a3b3e;'>"
-                            f"<img src='{img}' style='width:100%; "
-                            f"height:100%; object-fit:cover;' "
-                            f"onerror=\"this.style.display='none'\"/>"
-                            f"</div>"
+                            f'<div style="flex:0 0 110px; height:80px; '
+                            f'border-radius:8px; overflow:hidden; '
+                            f'background:#3a3b3e;">'
+                            f'<img src="{img}" style="width:100%; '
+                            f'height:100%; object-fit:cover;" '
+                            f'onerror="this.style.display=\'none\'"/></div>'
                         )
 
                     summary_html = ""
                     if summary:
                         s = (summary[:220] + "…") if len(summary) > 220 else summary
                         summary_html = (
-                            f"<div style='font-size:0.82rem; "
-                            f"color:#9ca3af; line-height:1.5; "
-                            f"margin-top:4px;'>{s}</div>"
+                            f'<div style="font-size:0.82rem; '
+                            f'color:#9ca3af; line-height:1.5; '
+                            f'margin-top:4px;">{s}</div>'
                         )
 
-                    card = f"""
-                    <a href="{url}" target="_blank"
-                       style="text-decoration:none; color:inherit;">
-                      <div style="display:flex; gap:14px; padding:12px 14px;
-                                  margin-bottom:10px; border-radius:10px;
-                                  background:linear-gradient(135deg,
-                                    rgba(96,165,250,0.04) 0%,
-                                    rgba(96,165,250,0.01) 100%);
-                                  border:1px solid #4a4b4e;
-                                  transition:all 0.15s ease;
-                                  cursor:pointer;"
-                           onmouseover="this.style.borderColor='#60a5fa';
-                                        this.style.background=
-                                          'rgba(96,165,250,0.08)';"
-                           onmouseout="this.style.borderColor='#4a4b4e';
-                                       this.style.background=
-                                         'linear-gradient(135deg,'+
-                                         'rgba(96,165,250,0.04) 0%,'+
-                                         'rgba(96,165,250,0.01) 100%)';">
-                        {img_html}
-                        <div style="flex:1; min-width:0;">
-                          <div style="display:flex; align-items:center;
-                                      gap:8px; margin-bottom:6px;
-                                      font-size:0.72rem;">
-                            <span style="background:{src_color};
-                                         color:#0a0a0a; padding:2px 8px;
-                                         border-radius:6px; font-weight:700;
-                                         text-transform:uppercase;
-                                         letter-spacing:0.3px;">{src}</span>
-                            <span style="color:#9ca3af;"
-                                  title="{full_when}">⏱ {when}</span>
-                          </div>
-                          <div style="font-size:0.95rem; color:#f0f0f0;
-                                      font-weight:600; line-height:1.4;">
-                            {head}
-                          </div>
-                          {summary_html}
-                        </div>
-                      </div>
-                    </a>
-                    """
+                    # Single-line HTML so Streamlit's markdown parser
+                    # doesn't mistake indented lines for a code block.
+                    card = (
+                        f'<a href="{url}" target="_blank" '
+                        f'style="text-decoration:none; color:inherit;">'
+                        f'<div style="display:flex; gap:14px; '
+                        f'padding:12px 14px; margin-bottom:10px; '
+                        f'border-radius:10px; '
+                        f'background:rgba(96,165,250,0.04); '
+                        f'border:1px solid #4a4b4e; '
+                        f'transition:all 0.15s ease; cursor:pointer;" '
+                        f'onmouseover="this.style.borderColor=\'#60a5fa\';'
+                        f'this.style.background=\'rgba(96,165,250,0.10)\';" '
+                        f'onmouseout="this.style.borderColor=\'#4a4b4e\';'
+                        f'this.style.background=\'rgba(96,165,250,0.04)\';">'
+                        f'{img_html}'
+                        f'<div style="flex:1; min-width:0;">'
+                        f'<div style="display:flex; align-items:center; '
+                        f'gap:8px; margin-bottom:6px; font-size:0.72rem;">'
+                        f'<span style="background:{src_color}; '
+                        f'color:#0a0a0a; padding:2px 8px; border-radius:6px; '
+                        f'font-weight:700; text-transform:uppercase; '
+                        f'letter-spacing:0.3px;">{src}</span>'
+                        f'<span style="color:#9ca3af;" '
+                        f'title="{full_when}">⏱ {when}</span>'
+                        f'</div>'
+                        f'<div style="font-size:0.95rem; color:#f0f0f0; '
+                        f'font-weight:600; line-height:1.4;">{head}</div>'
+                        f'{summary_html}'
+                        f'</div>'
+                        f'</div>'
+                        f'</a>'
+                    )
                     st.markdown(card, unsafe_allow_html=True)
 
         with info_tabs[1]:
