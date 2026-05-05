@@ -1390,12 +1390,15 @@ def render_quick_analysis():
         else:
             f4.metric("Analysts", "—")
 
-        # Recent news (collapsible)
-        news = cached_news(ticker, days=5)
-        if news:
-            with st.expander(f"📰 Recent news ({len(news)} articles)",
-                             expanded=False):
-                for art in news[:5]:
+        # --- Tabs: ticker-specific news + business summary ---
+        news = cached_news(ticker, days=14)
+        news_label = (f"📰 News ({len(news)})" if news else "📰 News")
+        about_label = "ℹ️ About"
+        info_tabs = st.tabs([news_label, about_label])
+
+        with info_tabs[0]:
+            if news:
+                for art in news[:15]:
                     try:
                         ts = datetime.fromtimestamp(art.get("datetime", 0))
                         when = ts.strftime("%b %d %H:%M")
@@ -1403,23 +1406,36 @@ def render_quick_analysis():
                         when = "?"
                     src = art.get("source", "")
                     head = art.get("headline", "")
+                    summary = (art.get("summary") or "").strip()
                     url = art.get("url", "#")
-                    st.markdown(
-                        f"<div style='padding:4px 0; "
-                        f"border-bottom:1px solid #4a4b4e; "
-                        f"font-size:0.85rem;'>"
-                        f"<span style='color:#9ca3af;'>{when} · {src}</span>"
-                        f"<br>"
-                        f"<a href='{url}' target='_blank' "
-                        f"style='color:#e5e7eb; text-decoration:none;'>"
-                        f"{head}</a></div>",
-                        unsafe_allow_html=True,
-                    )
+                    with st.container(border=True):
+                        st.markdown(
+                            f"<div style='font-size:0.78rem; color:#9ca3af;'>"
+                            f"📅 {when} &nbsp;·&nbsp; 📰 {src}"
+                            f"</div>",
+                            unsafe_allow_html=True,
+                        )
+                        st.markdown(f"**{head}**")
+                        if summary:
+                            st.caption(
+                                summary[:300]
+                                + ("…" if len(summary) > 300 else "")
+                            )
+                        if url:
+                            st.markdown(f"[Read more →]({url})")
+            else:
+                st.caption(
+                    f"_No news for {ticker} in the last 14 days "
+                    "(Finnhub TSX coverage is sparse for some tickers)._"
+                )
 
-        # Business summary (collapsed, since long)
-        if prof.get("summary"):
-            with st.expander("ℹ️ Business summary", expanded=False):
+        with info_tabs[1]:
+            if prof.get("summary"):
                 st.write(prof["summary"])
+            else:
+                st.caption("_No business summary available._")
+            if prof.get("website"):
+                st.markdown(f"🔗 [Website]({prof['website']})")
 
         # Build chart
         fig = ss.build_chart_plotly(df, ticker, stats, compact=True,
