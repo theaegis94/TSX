@@ -298,18 +298,34 @@ def _init_watchlist_from_url():
             # Normalize: strip spaces, uppercase
             parts = [p.strip().upper() for p in wl.split(",") if p.strip()]
             st.session_state.watchlist_input = ", ".join(parts)
+            st.session_state["_wl_from_url"] = True
         else:
             st.session_state.watchlist_input = ", ".join(ss.DEFAULT_WATCHLIST)
+            # Default fallback — don't claim ownership; localStorage may
+            # restore the user's actual saved watchlist on the next render.
+            st.session_state["_wl_from_url"] = False
 
 
 def _sync_watchlist_to_url():
+    """Write the watchlist to URL ?wl= only if it's user-owned (not the
+    default fallback). This prevents the JS localStorage mirror from
+    overwriting the user's saved watchlist with default tickers on bare-URL
+    visits.
+    """
     current = st.session_state.get("watchlist_input", "")
     parts = [p.strip().upper() for p in current.split(",") if p.strip()]
-    if parts:
+    is_user_owned = st.session_state.get("_wl_from_url", False)
+    if parts and is_user_owned:
         # URL-compact form: comma-separated, no spaces
         st.query_params["wl"] = ",".join(parts)
-    elif "wl" in st.query_params:
+    elif "wl" in st.query_params and not parts:
         del st.query_params["wl"]
+
+
+def _on_bulk_edit_watchlist():
+    """Bulk-edit text area on_change → claim ownership + sync URL."""
+    st.session_state["_wl_from_url"] = True
+    _sync_watchlist_to_url()
 
 
 _init_watchlist_from_url()
@@ -1349,8 +1365,9 @@ def _add_ticker_to_watchlist(new_t: str) -> None:
         parts.append(new_t)
         st.session_state.watchlist_input = ", ".join(parts)
         st.session_state["_add_msg"] = f"✅ Added {new_t}"
-        # Sync to URL IMMEDIATELY so the addition survives even if the
-        # user closes the tab before the rerun finishes.
+        # User has explicitly modified — claim ownership so URL/localStorage
+        # mirror this watchlist instead of treating it as default.
+        st.session_state["_wl_from_url"] = True
         _sync_watchlist_to_url()
 
 
@@ -1386,6 +1403,7 @@ def _remove_from_watchlist():
     parts = [p for p in parts if p.upper() != target.upper()]
     st.session_state.watchlist_input = ", ".join(parts)
     st.session_state["_add_msg"] = f"🗑️ Removed {target}"
+    st.session_state["_wl_from_url"] = True
     _sync_watchlist_to_url()
 
 
@@ -1717,7 +1735,7 @@ with tab_scan:
             label_visibility="collapsed",
             # Sync to URL immediately on edit so reopening the tab
             # restores the latest watchlist
-            on_change=_sync_watchlist_to_url,
+            on_change=_on_bulk_edit_watchlist,
         )
 
     watchlist_str = st.session_state.get("watchlist_input", default_str)
