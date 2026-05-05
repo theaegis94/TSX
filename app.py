@@ -1391,43 +1391,59 @@ def render_quick_analysis():
             f4.metric("Analysts", "—")
 
         # --- Tabs: ticker-specific news + business summary ---
-        news = cached_news(ticker, days=14)
+        # Default 30-day window; user can widen via dropdown inside the tab.
+        days_key = f"qv_news_days_{selected}"
+        news_days = st.session_state.get(days_key, 30)
+        news = cached_news(ticker, days=news_days)
         news_label = (f"📰 News ({len(news)})" if news else "📰 News")
         about_label = "ℹ️ About"
         info_tabs = st.tabs([news_label, about_label])
 
         with info_tabs[0]:
+            # Days-back selector + count summary
+            ctl_l, ctl_r = st.columns([1, 4])
+            picked_days = ctl_l.selectbox(
+                "Window",
+                options=[7, 14, 30, 60, 90],
+                index=[7, 14, 30, 60, 90].index(news_days)
+                       if news_days in [7, 14, 30, 60, 90] else 2,
+                key=days_key,
+                format_func=lambda d: f"{d} days",
+                label_visibility="collapsed",
+            )
+            ctl_r.caption(
+                f"Showing **{len(news)} articles** for **{ticker}** "
+                f"in the last {picked_days} days"
+                if news else
+                f"_No news for {ticker} in the last {picked_days} days. "
+                f"Try widening the window — Finnhub's TSX coverage is "
+                f"sparse for some tickers._"
+            )
             if news:
-                for art in news[:15]:
+                # Compact list: date · source · headline (clickable)
+                for art in news[:100]:
                     try:
                         ts = datetime.fromtimestamp(art.get("datetime", 0))
-                        when = ts.strftime("%b %d %H:%M")
+                        when = ts.strftime("%b %d")
                     except (ValueError, TypeError, OSError):
                         when = "?"
                     src = art.get("source", "")
                     head = art.get("headline", "")
-                    summary = (art.get("summary") or "").strip()
                     url = art.get("url", "#")
-                    with st.container(border=True):
-                        st.markdown(
-                            f"<div style='font-size:0.78rem; color:#9ca3af;'>"
-                            f"📅 {when} &nbsp;·&nbsp; 📰 {src}"
-                            f"</div>",
-                            unsafe_allow_html=True,
-                        )
-                        st.markdown(f"**{head}**")
-                        if summary:
-                            st.caption(
-                                summary[:300]
-                                + ("…" if len(summary) > 300 else "")
-                            )
-                        if url:
-                            st.markdown(f"[Read more →]({url})")
-            else:
-                st.caption(
-                    f"_No news for {ticker} in the last 14 days "
-                    "(Finnhub TSX coverage is sparse for some tickers)._"
-                )
+                    st.markdown(
+                        f"<div style='padding:6px 0; "
+                        f"border-bottom:1px solid #4a4b4e; "
+                        f"font-size:0.85rem; line-height:1.5;'>"
+                        f"<span style='color:#9ca3af; "
+                        f"display:inline-block; min-width:55px;'>"
+                        f"{when}</span> "
+                        f"<span style='color:#60a5fa; font-size:0.75rem; "
+                        f"margin-right:6px;'>{src}</span>"
+                        f"<a href='{url}' target='_blank' "
+                        f"style='color:#e5e7eb; text-decoration:none;'>"
+                        f"{head}</a></div>",
+                        unsafe_allow_html=True,
+                    )
 
         with info_tabs[1]:
             if prof.get("summary"):
