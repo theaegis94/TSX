@@ -2222,6 +2222,36 @@ RULE_DEFAULTS: dict[str, tuple[float, float]] = {
 }
 
 
+# One-click preset rule sets — common high-conviction setups
+RULE_PRESETS: dict[str, list[dict]] = {
+    "🎯 High-conviction BUY": [
+        {"left": "BB_PCT_B", "op": "<", "a": 0.2, "b": None, "date": None},
+        {"left": "ANOMALY_PCTILE", "op": "<", "a": 10.0, "b": None,
+         "date": None},
+    ],
+    "🎯 High-conviction SELL": [
+        {"left": "BB_PCT_B", "op": ">", "a": 0.8, "b": None, "date": None},
+        {"left": "ANOMALY_PCTILE", "op": "<", "a": 10.0, "b": None,
+         "date": None},
+    ],
+    "💥 Volatility squeeze": [
+        {"left": "BB_BANDWIDTH_PCT", "op": "<", "a": 5.0, "b": None,
+         "date": None},
+    ],
+    "📉 RSI capitulation": [
+        {"left": "RSI", "op": "<", "a": 25.0, "b": None, "date": None},
+        {"left": "ANOMALY_PCTILE", "op": "<", "a": 10.0, "b": None,
+         "date": None},
+    ],
+    "🚀 Breakout above SMA200": [
+        {"left": "DIST_SMA200_PCT", "op": ">", "a": 0.0, "b": None,
+         "date": None},
+        {"left": "MACD_HIST", "op": ">", "a": 0.0, "b": None, "date": None},
+        {"left": "ADX", "op": ">", "a": 25.0, "b": None, "date": None},
+    ],
+}
+
+
 def _rule_default_a(indicator: str, op: str) -> float:
     lo, hi = RULE_DEFAULTS.get(indicator, (0.0, 0.0))
     if op in (">", ">="):
@@ -2412,6 +2442,25 @@ with tab_patterns:
         st.session_state.saved_rules = _load_saved_rules()
 
     saved = st.session_state.saved_rules
+
+    # --- Quick presets ---
+    st.markdown("##### ⚡ Quick presets")
+    st.caption(
+        "One-click rule sets. Loading replaces your current rules."
+    )
+    preset_names = list(RULE_PRESETS.keys())
+    preset_cols = st.columns(len(preset_names))
+    for col, pname in zip(preset_cols, preset_names):
+        if col.button(pname, key=f"preset_{pname}",
+                      use_container_width=True):
+            st.session_state.custom_rules = [
+                dict(r) for r in RULE_PRESETS[pname]
+            ]
+            # Reset the keyspec markers so number_inputs pick up the
+            # new defaults instead of stale user edits
+            for r in st.session_state.custom_rules:
+                r.pop("_keyspec", None)
+            st.rerun()
 
     # --- Saved rules ---
     st.markdown("##### Saved rule sets")
