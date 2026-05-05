@@ -2830,7 +2830,26 @@ with tab_patterns:
                 progress.empty()
 
                 if not pieces:
-                    st.error("No data — couldn't compute features.")
+                    # Diagnose why nothing came through
+                    try:
+                        import sklearn  # noqa: F401
+                        sklearn_ok = True
+                    except ImportError:
+                        sklearn_ok = False
+                    if not sklearn_ok:
+                        st.error(
+                            "❌ `scikit-learn` is not installed. "
+                            "On Streamlit Cloud: wait for the rebuild to finish "
+                            "(check Manage app → Logs). "
+                            "Locally: `pip install scikit-learn`."
+                        )
+                    else:
+                        st.error(
+                            "No data — couldn't compute features. "
+                            "Possible causes: tickers returned no data, or "
+                            "history is < 60 bars (anomaly detector needs "
+                            "at least 60 bars per ticker)."
+                        )
                 else:
                     all_data = pd.concat(pieces, ignore_index=True)
                     st.session_state["indrel_results"] = all_data
@@ -2852,66 +2871,181 @@ with tab_patterns:
             ]
             num_cols = [c for c in num_cols if c in ir_data.columns]
 
-            st.markdown("##### Correlation matrix (Pearson)")
-            corr = ir_data[num_cols].corr().round(3)
-            st.dataframe(
-                corr.style.background_gradient(
-                    cmap="RdBu_r", vmin=-1, vmax=1, axis=None,
-                ),
-                use_container_width=True,
-            )
+            import plotly.graph_objects as go
 
             buys = ir_data[ir_data["buy"] == 1]
             sells = ir_data[ir_data["sell"] == 1]
+            holds = ir_data[(ir_data["buy"] == 0) & (ir_data["sell"] == 0)]
             n_total = len(ir_data)
-            st.markdown("##### BUY signal overlap")
-            if not buys.empty:
-                st.write({
-                    "buy_count": int(len(buys)),
-                    "buy_rate_overall": f"{len(buys)/n_total*100:.2f}%",
-                    "median_anomaly_pctile_at_buy":
-                        round(float(buys["anomaly_pctile"].median()), 1),
-                    "median_bb_pct_b_at_buy":
-                        round(float(buys["bb_pct_b"].median()), 3),
-                    "buys_with_anomaly_pctile_lt_10":
-                        f"{(buys['anomaly_pctile'] < 10).mean()*100:.1f}%",
-                    "buys_with_bb_pct_b_lt_0_2":
-                        f"{(buys['bb_pct_b'] < 0.2).mean()*100:.1f}%",
-                })
-            else:
-                st.caption("_No BUY signals in this dataset._")
 
-            st.markdown("##### SELL signal overlap")
-            if not sells.empty:
-                st.write({
-                    "sell_count": int(len(sells)),
-                    "sell_rate_overall": f"{len(sells)/n_total*100:.2f}%",
-                    "median_anomaly_pctile_at_sell":
-                        round(float(sells["anomaly_pctile"].median()), 1),
-                    "median_bb_pct_b_at_sell":
-                        round(float(sells["bb_pct_b"].median()), 3),
-                    "sells_with_anomaly_pctile_lt_10":
-                        f"{(sells['anomaly_pctile'] < 10).mean()*100:.1f}%",
-                    "sells_with_bb_pct_b_gt_0_8":
-                        f"{(sells['bb_pct_b'] > 0.8).mean()*100:.1f}%",
-                })
-            else:
-                st.caption("_No SELL signals in this dataset._")
+            DARK_BG = "#4a4b4e"
+            HOLD_C, BUY_C, SELL_C = "#9ca3af", "#22c55e", "#ef4444"
 
-            st.markdown("##### Scatter: anomaly percentile vs. BB %B")
-            import plotly.graph_objects as go
+            # === 1. Correlation heatmap ===
+            st.markdown("##### 1. Correlation heatmap (Pearson)")
+            corr = ir_data[num_cols].corr().round(3)
+            heat = go.Figure(data=go.Heatmap(
+                z=corr.values, x=corr.columns, y=corr.columns,
+                colorscale="RdBu_r", zmin=-1, zmax=1,
+                text=corr.values.round(2),
+                texttemplate="%{text}",
+                textfont=dict(size=12, color="#0a0a0a"),
+                colorbar=dict(title="ρ"),
+                hovertemplate="%{x} ↔ %{y}<br>ρ = %{z:.3f}<extra></extra>",
+            ))
+            heat.update_layout(
+                template="plotly_dark", paper_bgcolor=DARK_BG,
+                plot_bgcolor=DARK_BG, height=420,
+                margin=dict(l=120, r=20, t=20, b=80),
+            )
+            st.plotly_chart(heat, use_container_width=True)
+
+            # === 2. Overlap bar chart ===
+            st.markdown("##### 2. Signal overlap with extreme indicator regions")
+            categories = [
+                "Anomaly pctile<10",
+                "BB %B<0.2 (near lower)",
+                "BB %B>0.8 (near upper)",
+            ]
+
+            def _pct(mask, sub):
+                return float(mask.mean() * 100) if len(sub) else 0.0
+
+            buy_pct = [
+                _pct(buys["anomaly_pctile"] < 10, buys),
+                _pct(buys["bb_pct_b"] < 0.2, buys),
+                _pct(buys["bb_pct_b"] > 0.8, buys),
+            ] if not buys.empty else [0, 0, 0]
+            sell_pct = [
+                _pct(sells["anomaly_pctile"] < 10, sells),
+                _pct(sells["bb_pct_b"] < 0.2, sells),
+                _pct(sells["bb_pct_b"] > 0.8, sells),
+            ] if not sells.empty else [0, 0, 0]
+            hold_pct = [
+                _pct(holds["anomaly_pctile"] < 10, holds),
+                _pct(holds["bb_pct_b"] < 0.2, holds),
+                _pct(holds["bb_pct_b"] > 0.8, holds),
+            ] if not holds.empty else [0, 0, 0]
+
+            bar = go.Figure()
+            bar.add_trace(go.Bar(
+                x=categories, y=hold_pct, name="HOLD",
+                marker_color=HOLD_C,
+                text=[f"{v:.1f}%" for v in hold_pct],
+                textposition="outside",
+            ))
+            bar.add_trace(go.Bar(
+                x=categories, y=buy_pct, name=f"BUY (n={len(buys)})",
+                marker_color=BUY_C,
+                text=[f"{v:.1f}%" for v in buy_pct],
+                textposition="outside",
+            ))
+            bar.add_trace(go.Bar(
+                x=categories, y=sell_pct, name=f"SELL (n={len(sells)})",
+                marker_color=SELL_C,
+                text=[f"{v:.1f}%" for v in sell_pct],
+                textposition="outside",
+            ))
+            bar.update_layout(
+                template="plotly_dark", paper_bgcolor=DARK_BG,
+                plot_bgcolor=DARK_BG, height=400, barmode="group",
+                yaxis=dict(title="% of bars in this state",
+                           ticksuffix="%"),
+                margin=dict(l=40, r=20, t=20, b=60),
+            )
+            st.plotly_chart(bar, use_container_width=True)
+            st.caption(
+                "Tall **green** bar = BUY signals tend to fire when that "
+                "extreme is true. Tall **red** bar = SELL signals tend to "
+                "fire there. Compare to **gray** (HOLD baseline) — bars "
+                "much taller than gray indicate a real association."
+            )
+
+            # === 3. Distribution histograms ===
+            st.markdown("##### 3. Distributions: HOLD vs. BUY vs. SELL")
+            dh1, dh2 = st.columns(2)
+
+            def _hist(values_dict, title, x_title):
+                f = go.Figure()
+                for name, vals, color in values_dict:
+                    if len(vals) == 0:
+                        continue
+                    f.add_trace(go.Histogram(
+                        x=vals, name=name,
+                        marker_color=color, opacity=0.55,
+                        nbinsx=40,
+                        histnorm="probability density",
+                    ))
+                f.update_layout(
+                    template="plotly_dark", paper_bgcolor=DARK_BG,
+                    plot_bgcolor=DARK_BG, height=300, barmode="overlay",
+                    xaxis_title=x_title, yaxis_title="density",
+                    title=title,
+                    margin=dict(l=40, r=20, t=40, b=40),
+                )
+                return f
+
+            with dh1:
+                st.plotly_chart(_hist(
+                    [
+                        ("HOLD", holds["anomaly_pctile"], HOLD_C),
+                        ("BUY", buys["anomaly_pctile"], BUY_C),
+                        ("SELL", sells["anomaly_pctile"], SELL_C),
+                    ],
+                    "Anomaly percentile (0=most anomalous)",
+                    "Anomaly percentile",
+                ), use_container_width=True)
+            with dh2:
+                st.plotly_chart(_hist(
+                    [
+                        ("HOLD", holds["bb_pct_b"], HOLD_C),
+                        ("BUY", buys["bb_pct_b"], BUY_C),
+                        ("SELL", sells["bb_pct_b"], SELL_C),
+                    ],
+                    "Bollinger %B (0=lower, 1=upper)",
+                    "BB %B",
+                ), use_container_width=True)
+
+            # === 4. Box plots: where do signals fire? ===
+            st.markdown("##### 4. Signal locations on each indicator (box plots)")
+            box_fig = go.Figure()
+            for label, df_sub, color in [
+                ("HOLD", holds, HOLD_C),
+                ("BUY", buys, BUY_C),
+                ("SELL", sells, SELL_C),
+            ]:
+                if df_sub.empty:
+                    continue
+                box_fig.add_trace(go.Box(
+                    y=df_sub["anomaly_pctile"], name=f"{label} · anomaly%",
+                    marker_color=color, boxpoints=False,
+                ))
+                box_fig.add_trace(go.Box(
+                    y=df_sub["bb_pct_b"] * 100, name=f"{label} · BB %B×100",
+                    marker_color=color, boxpoints=False,
+                ))
+            box_fig.update_layout(
+                template="plotly_dark", paper_bgcolor=DARK_BG,
+                plot_bgcolor=DARK_BG, height=400,
+                yaxis=dict(title="value"),
+                margin=dict(l=40, r=20, t=20, b=60),
+                showlegend=True,
+            )
+            st.plotly_chart(box_fig, use_container_width=True)
+
+            # === 5. Scatter ===
+            st.markdown("##### 5. Scatter: anomaly percentile vs. BB %B")
             fig = go.Figure()
-            normal = ir_data[(ir_data["buy"] == 0) & (ir_data["sell"] == 0)]
             fig.add_trace(go.Scattergl(
-                x=normal["bb_pct_b"], y=normal["anomaly_pctile"],
-                mode="markers", name="hold",
-                marker=dict(size=3, color="#6b7280", opacity=0.4),
+                x=holds["bb_pct_b"], y=holds["anomaly_pctile"],
+                mode="markers", name="HOLD",
+                marker=dict(size=3, color=HOLD_C, opacity=0.4),
             ))
             if not buys.empty:
                 fig.add_trace(go.Scattergl(
                     x=buys["bb_pct_b"], y=buys["anomaly_pctile"],
                     mode="markers", name="BUY",
-                    marker=dict(size=7, color="#22c55e",
+                    marker=dict(size=7, color=BUY_C,
                                 symbol="triangle-up",
                                 line=dict(color="black", width=0.5)),
                 ))
@@ -2919,7 +3053,7 @@ with tab_patterns:
                 fig.add_trace(go.Scattergl(
                     x=sells["bb_pct_b"], y=sells["anomaly_pctile"],
                     mode="markers", name="SELL",
-                    marker=dict(size=7, color="#ef4444",
+                    marker=dict(size=7, color=SELL_C,
                                 symbol="triangle-down",
                                 line=dict(color="black", width=0.5)),
                 ))
@@ -2927,8 +3061,8 @@ with tab_patterns:
                 xaxis_title="Bollinger %B (0=lower band, 1=upper)",
                 yaxis_title="Anomaly percentile (0=most anomalous)",
                 template="plotly_dark",
-                paper_bgcolor="#4a4b4e",
-                plot_bgcolor="#4a4b4e",
+                paper_bgcolor=DARK_BG,
+                plot_bgcolor=DARK_BG,
                 height=450,
                 showlegend=True,
             )
