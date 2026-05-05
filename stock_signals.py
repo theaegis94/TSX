@@ -628,6 +628,70 @@ def finnhub_news(ticker: str, days: int = 7) -> list[dict]:
         return []
 
 
+def yf_news(ticker: str) -> list[dict]:
+    """Fetch recent news from yfinance and normalize to the same schema
+    Finnhub returns. Free, no API key, often has better TSX coverage than
+    Finnhub (CBC, BNN, Globe and Mail via Yahoo Canada).
+
+    Returns list of dicts with: datetime (Unix int), headline, source,
+    url, summary, image. Empty list on any failure.
+    """
+    try:
+        raw = yf.Ticker(ticker).news or []
+    except Exception:
+        return []
+    out: list[dict] = []
+    for item in raw:
+        try:
+            # Newer yfinance: { id, content: {...} }
+            # Older yfinance: { uuid, title, publisher, link, ... }
+            content = item.get("content") if isinstance(item, dict) else None
+            if content:
+                pub_date = content.get("pubDate", "")
+                try:
+                    ts = int(datetime.fromisoformat(
+                        pub_date.replace("Z", "+00:00")
+                    ).timestamp())
+                except (ValueError, TypeError, AttributeError):
+                    ts = 0
+                provider = content.get("provider", {}) or {}
+                source = provider.get("displayName", "Yahoo")
+                canon = content.get("canonicalUrl", {}) or {}
+                url = canon.get("url", "")
+                thumb = content.get("thumbnail", {}) or {}
+                img = (thumb.get("originalUrl", "")
+                       if isinstance(thumb, dict) else "")
+                out.append({
+                    "datetime": ts,
+                    "headline": content.get("title", ""),
+                    "source": source,
+                    "url": url,
+                    "summary": content.get("summary", "") or "",
+                    "image": img,
+                })
+            else:
+                # Legacy schema
+                ts = int(item.get("providerPublishTime", 0) or 0)
+                thumb = item.get("thumbnail") or {}
+                resolutions = (thumb.get("resolutions") or []) \
+                    if isinstance(thumb, dict) else []
+                img = (resolutions[0].get("url", "")
+                       if resolutions and isinstance(resolutions[0], dict)
+                       else "")
+                out.append({
+                    "datetime": ts,
+                    "headline": item.get("title", ""),
+                    "source": item.get("publisher", "Yahoo"),
+                    "url": item.get("link", ""),
+                    "summary": item.get("summary", "") or "",
+                    "image": img,
+                })
+        except Exception:
+            continue
+    out.sort(key=lambda x: x.get("datetime", 0) or 0, reverse=True)
+    return out
+
+
 def finnhub_sentiment(ticker: str) -> dict | None:
     if not FINNHUB_API_KEY:
         return None

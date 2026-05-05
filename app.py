@@ -1400,7 +1400,7 @@ def render_quick_analysis():
         # Default 30-day window; user can widen via dropdown inside the tab.
         days_key = f"qv_news_days_{selected}"
         news_days = st.session_state.get(days_key, 30)
-        news = cached_news(ticker, days=news_days)
+        news, news_source = cached_news_combined(ticker, days=news_days)
         news_label = (f"📰 News ({len(news)})" if news else "📰 News")
         about_label = "ℹ️ About"
         info_tabs = st.tabs([news_label, about_label])
@@ -1417,14 +1417,28 @@ def render_quick_analysis():
                 format_func=lambda d: f"{d} days",
                 label_visibility="collapsed",
             )
-            ctl_r.caption(
-                f"Showing **{len(news)} articles** for **{ticker}** "
-                f"in the last {picked_days} days"
-                if news else
-                f"_No news for {ticker} in the last {picked_days} days. "
-                f"Try widening the window — Finnhub's TSX coverage is "
-                f"sparse for some tickers._"
-            )
+            source_badge = {
+                "finnhub": "<span style='color:#9ca3af; "
+                           "font-size:0.75rem;'>via Finnhub</span>",
+                "yahoo":   "<span style='color:#a855f7; "
+                           "font-size:0.75rem;'>via Yahoo Finance "
+                           "(Finnhub had nothing)</span>",
+                "none":    "",
+            }.get(news_source, "")
+            if news:
+                ctl_r.markdown(
+                    f"<div style='padding-top:6px;'>"
+                    f"Showing <b>{len(news)} articles</b> for "
+                    f"<b>{ticker}</b> in the last {picked_days} days "
+                    f"&nbsp;·&nbsp; {source_badge}</div>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                ctl_r.caption(
+                    f"_No news for {ticker} in the last {picked_days} days "
+                    "from either Finnhub or Yahoo Finance. Try a wider "
+                    "window._"
+                )
             if news:
                 # Time formatting: relative for recent, date for older
                 now_ts = datetime.now()
@@ -1594,6 +1608,29 @@ def cached_single(ticker: str, period: str, interval: str,
 @st.cache_data(ttl=900, show_spinner=False)
 def cached_news(ticker: str, days: int = 7) -> list:
     return ss.finnhub_news(ticker, days=days)
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def cached_yf_news(ticker: str) -> list:
+    """Yahoo Finance news (free, no key) — better TSX coverage than Finnhub."""
+    return ss.yf_news(ticker)
+
+
+def cached_news_combined(ticker: str, days: int = 30) -> tuple[list, str]:
+    """Finnhub first; if empty, fall back to Yahoo. Returns (articles, source).
+    `source` is "finnhub", "yahoo", or "none"."""
+    fh = cached_news(ticker, days=days)
+    if fh:
+        return fh, "finnhub"
+    yf_items = cached_yf_news(ticker)
+    # Filter to the requested days window
+    if yf_items:
+        cutoff = datetime.now().timestamp() - (days * 86400)
+        yf_items = [x for x in yf_items
+                    if (x.get("datetime", 0) or 0) >= cutoff]
+        if yf_items:
+            return yf_items, "yahoo"
+    return [], "none"
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
