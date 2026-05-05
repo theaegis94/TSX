@@ -2738,7 +2738,8 @@ with tab_patterns:
             "and the strategy's **BUY/SELL** signals. Useful for sanity-"
             "checking whether your indicators agree (or disagree) with each other."
         )
-        ir_strat = st.selectbox(
+        ir_c1, ir_c2 = st.columns([2, 1])
+        ir_strat = ir_c1.selectbox(
             "Strategy for BUY/SELL signals",
             options=list(ss.STRATEGY_LABELS.keys()),
             format_func=lambda k: ss.STRATEGY_LABELS[k],
@@ -2747,12 +2748,45 @@ with tab_patterns:
             ),
             key="indrel_strat",
         )
+        ir_universe_options = {
+            "watchlist": "📋 Watchlist",
+            "popular_etfs": "🧺 Popular ETFs",
+            "sp100": "🇺🇸 S&P 100",
+            "tsx60": "🍁 TSX 60",
+            "custom": "✏️ Type tickers below",
+        }
+        ir_universe = ir_c2.selectbox(
+            "Run against",
+            options=list(ir_universe_options.keys()),
+            format_func=lambda k: ir_universe_options[k],
+            index=0,
+            key="indrel_universe",
+        )
+        ir_custom_str = ""
+        if ir_universe == "custom":
+            ir_custom_str = st.text_input(
+                "Tickers (comma-separated)",
+                placeholder="e.g. AAPL, TSLA, NVDA, RY.TO",
+                key="indrel_custom_tickers",
+            )
         if st.button("🔬 Run analysis", key="indrel_run", type="primary"):
-            wl = [t.strip().upper() for t in
-                  st.session_state.get("watchlist_input", "").split(",")
-                  if t.strip()]
+            if ir_universe == "watchlist":
+                wl = [t.strip().upper() for t in
+                      st.session_state.get("watchlist_input", "").split(",")
+                      if t.strip()]
+            elif ir_universe == "popular_etfs":
+                wl = list(ss.UNIVERSE_POPULAR_ETFS)
+            elif ir_universe == "sp100":
+                wl = list(ss.UNIVERSE_SP100)
+            elif ir_universe == "tsx60":
+                wl = list(ss.UNIVERSE_TSX60)
+            elif ir_universe == "custom":
+                wl = [t.strip().upper() for t in ir_custom_str.split(",")
+                      if t.strip()]
+            else:
+                wl = []
             if not wl:
-                st.warning("Watchlist is empty.")
+                st.warning("No tickers to analyze.")
             else:
                 pieces = []
                 progress = st.progress(0.0)
