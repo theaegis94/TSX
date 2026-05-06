@@ -1206,6 +1206,20 @@ def cached_sentiment(ticker: str):
     return ss.finnhub_sentiment(ticker)
 
 
+def _cached_vol_outlook(ticker: str, df):
+    """Cache volume outlook per (ticker, last bar) — uses news + earnings
+    APIs so we don't recompute on every rerun."""
+    if df is None or df.empty or not ticker:
+        return None
+    sig = (ticker.upper(), str(df.index[-1]), len(df))
+    cache = st.session_state.setdefault("__vol_outlook_cache", {})
+    if sig in cache:
+        return cache[sig]
+    result = ss.compute_volume_outlook(ticker, df)
+    cache[sig] = result
+    return result
+
+
 def render_quick_analysis():
     """Inline analysis panel shown when a watchlist tile is clicked."""
     selected = st.session_state.get("selected_tile")
@@ -1413,6 +1427,18 @@ def render_quick_analysis():
             chips.append(chip("🤖 Anom", f"{anom_pctile:.0f}%ile", color=ac))
         else:
             chips.append(chip("🤖 Anom", "—"))
+        # Volume outlook (next-week volume forecast)
+        vol_out = _cached_vol_outlook(ticker, df)
+        if vol_out:
+            vc = {"high": "#ef4444", "elevated": "#fbbf24",
+                  "normal": "#9ca3af", "quiet": "#60a5fa"}.get(
+                vol_out["label"], "#9ca3af")
+            chips.append(chip("🔮 VolOut",
+                              f"{vol_out['score']:.0f}",
+                              color=vc,
+                              subtle=vol_out["label"]))
+        else:
+            chips.append(chip("🔮 VolOut", "—"))
         # P/E, Yield, Beta
         chips.append(chip("P/E", f"{pe:.1f}" if pe else "—"))
         chips.append(chip("Yield", f"{yld:.2f}%" if yld is not None else "—"))
@@ -2655,6 +2681,7 @@ RULE_INDICATORS = {
     "CMF":               "💧 Chaikin Money Flow (-1 to +1, accumulation)",
     "NEWS_SENT":         "📰 News sentiment (0=bear, 1=bull) [latest]",
     "NEWS_BUZZ":         "📣 News buzz (0=quiet, 1+=above avg) [latest]",
+    "VOL_OUTLOOK":       "🔮 Volume outlook (0-100, higher=more vol coming)",
 }
 RULE_OPS = ["<", "<=", ">", ">=", "between"]
 
@@ -2693,6 +2720,7 @@ RULE_DEFAULTS: dict[str, tuple[float, float]] = {
     "CMF":               (-0.05, 0.05),  # < -0.05 dist; > 0.05 accum
     "NEWS_SENT":         (0.4, 0.6),     # < 0.4 bearish news; > 0.6 bullish
     "NEWS_BUZZ":         (0.5, 1.5),     # > 1 = above-avg news activity
+    "VOL_OUTLOOK":       (30.0, 70.0),   # < 30 quiet; > 70 elevated
 }
 
 
@@ -2755,6 +2783,13 @@ RULE_PRESETS: dict[str, list[dict]] = {
     ],
     "💥 Squeeze": [
         {"left": "BB_BANDWIDTH_PCT", "op": "<", "a": 5.0, "b": None,
+         "date": None},
+    ],
+    "🔮 Vol incoming": [
+        # High volume outlook + bullish bias = potential breakout setup
+        {"left": "VOL_OUTLOOK", "op": ">", "a": 60.0, "b": None,
+         "date": None},
+        {"left": "CONVICTION", "op": ">", "a": 20.0, "b": None,
          "date": None},
     ],
 }
@@ -2839,6 +2874,13 @@ def _last_value(df, key: str, date_str: str | None = None,
         if result is None:
             return None
         v = result["score"] if key == "ANOMALY_SCORE" else result["pctile"]
+    elif key == "VOL_OUTLOOK":
+        if not ticker:
+            return None
+        out = _cached_vol_outlook(ticker, df)
+        if not out:
+            return None
+        v = out.get("score")
     elif key in ("NEWS_SENT", "NEWS_BUZZ"):
         # News sentiment is a current snapshot per ticker (Finnhub API).
         # Date-anchored rules can't fetch historical sentiment.
@@ -3115,6 +3157,10 @@ with tab_patterns:
         "💥 Squeeze":
             "Volatility squeeze: BB bandwidth < 5%. Coiled spring — big "
             "move likely soon (direction unknown).",
+        "🔮 Vol incoming":
+            "High volume expected (earnings approaching or news buzz) + "
+            "bullish bias — possible breakout setup. VOL_OUTLOOK > 60 + "
+            "CONVICTION > 20.",
     }
     preset_cols = st.columns(len(preset_names))
     for col, pname in zip(preset_cols, preset_names):

@@ -1225,6 +1225,111 @@ def compute_anomaly_score(df: pd.DataFrame) -> dict | None:
         return None
 
 
+def compute_volume_outlook(ticker: str, df: pd.DataFrame) -> dict | None:
+    """Volume outlook score 0-100 — likelihood of elevated volume in the
+    next few sessions. NOT a price predictor — just a volume-flow predictor.
+
+    Components (weighted):
+      - News buzz (Finnhub) — high recent news activity drives attention
+        and trading volume. Weight: 35.
+      - Days to earnings — closer to earnings = much higher expected vol.
+        Weight: 35.
+      - Volume momentum (last 5d avg vs prior 20d avg) — flow already
+        building. Weight: 20.
+      - Day-of-week — Tue/Wed/Thu typically have higher vol. Weight: 10.
+
+    Returns dict with score, label, components, or None on failure.
+    """
+    components: dict = {}
+    score = 0.0
+
+    # --- News buzz (Finnhub: ~0=quiet, 1=avg, 2+=heavy) ---
+    sent = finnhub_sentiment(ticker)
+    if sent and isinstance(sent.get("buzz"), dict):
+        buzz = sent["buzz"].get("buzz")
+        try:
+            buzz = float(buzz)
+            # Map: 0 → 0, 1 → 14, 2 → 28, 3+ → 35
+            buzz_pts = min(35.0, max(0.0, buzz * 14.0))
+            components["news_buzz"] = round(buzz_pts, 1)
+            score += buzz_pts
+        except (TypeError, ValueError):
+            components["news_buzz"] = None
+    else:
+        components["news_buzz"] = None
+
+    # --- Days to earnings (Finnhub or yfinance) ---
+    earn_days = None
+    try:
+        m = yf_metrics(ticker)
+        earn_days = m.get("earn_days")
+    except Exception:
+        pass
+    if earn_days is None:
+        # Try Finnhub earnings calendar (next 30 days, this ticker)
+        try:
+            er = finnhub_earnings_calendar(days_ahead=30, symbol=ticker)
+            if er:
+                from datetime import datetime as _dt
+                today = _dt.now().date()
+                d = er[0].get("date", "")
+                if d:
+                    earn_dt = _dt.strptime(d, "%Y-%m-%d").date()
+                    earn_days = (earn_dt - today).days
+        except Exception:
+            pass
+    if earn_days is not None:
+        if earn_days <= 0:
+            earn_pts = 35.0
+        elif earn_days <= 2:
+            earn_pts = 30.0
+        elif earn_days <= 5:
+            earn_pts = 22.0
+        elif earn_days <= 10:
+            earn_pts = 14.0
+        elif earn_days <= 20:
+            earn_pts = 7.0
+        else:
+            earn_pts = 2.0
+        components["earn_days"] = earn_days
+        components["earn_pts"] = round(earn_pts, 1)
+        score += earn_pts
+
+    # --- Volume momentum (5d vs prior 20d) ---
+    if "Volume" in df.columns and len(df) >= 26:
+        recent = df["Volume"].iloc[-5:].mean()
+        prior = df["Volume"].iloc[-25:-5].mean()
+        if prior > 0:
+            mom = recent / prior
+            # Map 0.5 → 0, 1.0 → 8, 1.5 → 16, 2.0+ → 20
+            mom_pts = min(20.0, max(0.0, (mom - 0.5) * 13.3))
+            components["vol_momentum"] = round(mom, 2)
+            components["vol_momentum_pts"] = round(mom_pts, 1)
+            score += mom_pts
+
+    # --- Day of week — Tue/Wed/Thu are statistically higher volume ---
+    weekday = datetime.now().weekday()  # 0=Mon, 4=Fri
+    dow_pts = {1: 8, 2: 10, 3: 8}.get(weekday, 4)  # Mon/Fri = 4
+    components["day_of_week_pts"] = dow_pts
+    score += dow_pts
+
+    score = min(100.0, max(0.0, score))
+    if score < 30:
+        label = "quiet"
+    elif score < 55:
+        label = "normal"
+    elif score < 75:
+        label = "elevated"
+    else:
+        label = "high"
+
+    return {
+        "score": round(score, 1),
+        "label": label,
+        "components": components,
+    }
+
+
 def compute_conviction_score(df: pd.DataFrame) -> pd.Series:
     """Multi-factor conviction score per bar (-100 = strong bearish bias,
     +100 = strong bullish bias).
