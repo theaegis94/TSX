@@ -99,13 +99,17 @@ st.markdown(
         border-right: 1px solid #44454a;
     }
 
-    /* Make buttons in horizontal column groups stretch to equal height —
-       fixes uneven preset-button heights when labels wrap differently. */
+    /* Make buttons in horizontal column groups all the same height —
+       fixes uneven preset-button heights when labels wrap differently.
+       min-height pads short labels up to match 2-line buttons. */
     .stApp [data-testid="stHorizontalBlock"] [data-testid="stColumn"]
         .stButton button {
-        height: 100% !important;
+        min-height: 64px !important;
         white-space: normal;
         line-height: 1.3;
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
 
     /* Metric cards — compact */
