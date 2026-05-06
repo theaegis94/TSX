@@ -99,6 +99,15 @@ st.markdown(
         border-right: 1px solid #44454a;
     }
 
+    /* Make buttons in horizontal column groups stretch to equal height —
+       fixes uneven preset-button heights when labels wrap differently. */
+    .stApp [data-testid="stHorizontalBlock"] [data-testid="stColumn"]
+        .stButton button {
+        height: 100% !important;
+        white-space: normal;
+        line-height: 1.3;
+    }
+
     /* Metric cards — compact */
     .stApp [data-testid="stMetric"] {
         background: transparent;
@@ -2136,7 +2145,7 @@ st.session_state["_stop_loss_pct"] = stop_loss_pct
 
 (tab_scan, tab_single, tab_screener, tab_patterns, tab_news,
  tab_help) = st.tabs(
-    ["📊 Stocks/ETFs", "🔍 Single Ticker", "🎯 Screener",
+    ["📊 Watchlist", "🔍 Single Ticker", "🎯 Screener",
      "🧩 Custom Patterns", "📰 News", "ℹ️ Help"]
 )
 # After the popup closes, restore the tab the user was on (if any)
@@ -2690,13 +2699,10 @@ RULE_DEFAULTS: dict[str, tuple[float, float]] = {
 # Multi-factor preset rule sets — combine indicators for higher conviction
 RULE_PRESETS: dict[str, list[dict]] = {
     "🎯 Strong Buy": [
-        # Multi-factor confluence: oversold + bullish bias + uptrend filter
         {"left": "CONVICTION", "op": ">", "a": 50.0, "b": None,
          "date": None},
     ],
-    "🟢 Buy now (bounce setup)": [
-        # Reversal: oversold + below band + momentum starting to turn up +
-        # in long-term uptrend + volume confirms
+    "🟢 Bounce buy": [
         {"left": "RSI", "op": "<", "a": 35.0, "b": None, "date": None},
         {"left": "BB_PCT_B", "op": "<", "a": 0.2, "b": None, "date": None},
         {"left": "DIST_SMA200_PCT", "op": ">", "a": 0.0, "b": None,
@@ -2706,19 +2712,14 @@ RULE_PRESETS: dict[str, list[dict]] = {
         {"left": "CONVICTION", "op": ">", "a": 30.0, "b": None,
          "date": None},
     ],
-    "🌊 Strong swing buy (vol confirmed)": [
-        # Classic swing trade: MFI oversold + price near lower band +
-        # CMF showing accumulation (institutional buying the dip) +
-        # in long-term uptrend
+    "🌊 Vol-swing buy": [
         {"left": "MFI", "op": "<", "a": 25.0, "b": None, "date": None},
         {"left": "BB_PCT_B", "op": "<", "a": 0.25, "b": None, "date": None},
         {"left": "CMF", "op": ">", "a": 0.0, "b": None, "date": None},
         {"left": "DIST_SMA200_PCT", "op": ">", "a": 0.0, "b": None,
          "date": None},
     ],
-    "📰 News-confirmed BUY": [
-        # Technicals say buy AND news sentiment is bullish AND there's
-        # actual news activity (not stale ticker)
+    "📰 News BUY": [
         {"left": "CONVICTION", "op": ">", "a": 30.0, "b": None,
          "date": None},
         {"left": "NEWS_SENT", "op": ">", "a": 0.55, "b": None,
@@ -2726,25 +2727,20 @@ RULE_PRESETS: dict[str, list[dict]] = {
         {"left": "NEWS_BUZZ", "op": ">", "a": 0.5, "b": None,
          "date": None},
     ],
-    "📰 News warning (technicals say buy, news doesn't)": [
-        # Technicals are bullish but news sentiment turned negative —
-        # be cautious, news may be reflecting something fundamentals
-        # don't see yet (lawsuit, earnings miss, etc.)
+    "📰 News warning": [
         {"left": "CONVICTION", "op": ">", "a": 20.0, "b": None,
          "date": None},
         {"left": "NEWS_SENT", "op": "<", "a": 0.4, "b": None,
          "date": None},
     ],
-    "⚠️ Don't buy yet (still falling)": [
-        # Tempting setup but momentum still falling — wait for confirmation
+    "⚠️ Wait (falling)": [
         {"left": "BB_PCT_B", "op": "<", "a": 0.3, "b": None, "date": None},
         {"left": "MACD_HIST", "op": "<", "a": 0.0, "b": None, "date": None},
         {"left": "DIST_SMA50_PCT", "op": "<", "a": 0.0, "b": None,
          "date": None},
         {"left": "RSI", "op": ">", "a": 30.0, "b": None, "date": None},
     ],
-    "🚀 Momentum continuation": [
-        # Trend-following: in uptrend, bullish momentum, strong trend
+    "🚀 Momentum": [
         {"left": "DIST_SMA200_PCT", "op": ">", "a": 0.0, "b": None,
          "date": None},
         {"left": "DIST_SMA50_PCT", "op": ">", "a": 0.0, "b": None,
@@ -2753,13 +2749,11 @@ RULE_PRESETS: dict[str, list[dict]] = {
         {"left": "ADX", "op": ">", "a": 25.0, "b": None, "date": None},
         {"left": "RSI", "op": "between", "a": 50.0, "b": 70.0, "date": None},
     ],
-    "🔴 Strong Sell / Avoid": [
-        # Multi-factor bearish: overbought + bearish bias + breaking trend
+    "🔴 Strong Sell": [
         {"left": "CONVICTION", "op": "<", "a": -30.0, "b": None,
          "date": None},
     ],
-    "💥 Volatility squeeze": [
-        # Coiled spring: low bandwidth, breakout coming
+    "💥 Squeeze": [
         {"left": "BB_BANDWIDTH_PCT", "op": "<", "a": 5.0, "b": None,
          "date": None},
     ],
@@ -3092,10 +3086,41 @@ with tab_patterns:
     # --- ⚡ Quick presets (always visible — easiest entry point) ---
     st.markdown("**⚡ Quick presets** — one click loads ready-made rules")
     preset_names = list(RULE_PRESETS.keys())
+    # Hover descriptions so the shortened button labels keep their meaning
+    preset_help = {
+        "🎯 Strong Buy":
+            "Multi-factor bullish: CONVICTION > 50 (oversold + uptrend + "
+            "volume + momentum all aligned).",
+        "🟢 Bounce buy":
+            "Reversal setup: RSI<35 + below BB lower + above SMA200 + MACD "
+            "starting to turn + CONVICTION>30. Oversold in uptrend.",
+        "🌊 Vol-swing buy":
+            "Volume-confirmed swing: MFI<25 + near BB lower + CMF>0 "
+            "(institutional accumulation) + above SMA200.",
+        "📰 News BUY":
+            "Technicals AND news agree: CONVICTION>30 + bullish news "
+            "(NEWS_SENT>0.55) + active coverage (NEWS_BUZZ>0.5).",
+        "📰 News warning":
+            "Technicals say buy but news has turned bearish — caution. "
+            "CONVICTION>20 + NEWS_SENT<0.4. Common pre-fundamentals leak.",
+        "⚠️ Wait (falling)":
+            "Looks tempting but momentum still down: below BB lower + "
+            "MACD<0 + below SMA50 + RSI>30. Don't catch the falling knife.",
+        "🚀 Momentum":
+            "Trend continuation: above SMA200 + above SMA50 + MACD>0 + "
+            "ADX>25 + RSI 50-70 (not overbought yet).",
+        "🔴 Strong Sell":
+            "Multi-factor bearish: CONVICTION < -30 (overbought + downtrend "
+            "+ distribution + bearish momentum aligned).",
+        "💥 Squeeze":
+            "Volatility squeeze: BB bandwidth < 5%. Coiled spring — big "
+            "move likely soon (direction unknown).",
+    }
     preset_cols = st.columns(len(preset_names))
     for col, pname in zip(preset_cols, preset_names):
         if col.button(pname, key=f"preset_{pname}",
-                      use_container_width=True):
+                      use_container_width=True,
+                      help=preset_help.get(pname, "")):
             st.session_state.custom_rules = [
                 dict(r) for r in RULE_PRESETS[pname]
             ]
