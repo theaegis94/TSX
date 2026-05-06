@@ -1301,6 +1301,8 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     out["SMA50"] = out["Close"].rolling(50).mean()
     out["SMA200"] = out["Close"].rolling(200).mean()
     out["RSI"] = rsi(out["Close"])
+    out["RSI7"] = rsi(out["Close"], period=7)
+    out["RSI5"] = rsi(out["Close"], period=5)
     out["MACD"], out["MACD_SIGNAL"], out["MACD_HIST"] = macd(out["Close"])
     out["BB_LOWER"], out["BB_MID"], out["BB_UPPER"] = bollinger(out["Close"])
     out["DC_HIGH"] = out["High"].rolling(20).max()

@@ -2616,7 +2616,9 @@ with tab_screener:
 RULE_INDICATORS = {
     "Close":           "Close price ($)",
     "Volume":          "Volume",
-    "RSI":             "RSI(14)",
+    "RSI":             "RSI(14) — standard",
+    "RSI7":            "RSI(7) — short-term swing",
+    "RSI5":            "RSI(5) — fast / very short",
     "MACD":            "MACD line",
     "MACD_SIGNAL":     "MACD signal",
     "MACD_HIST":       "MACD histogram",
@@ -2653,6 +2655,8 @@ RULE_DEFAULTS: dict[str, tuple[float, float]] = {
     "Close":           (10.0, 100.0),
     "Volume":          (1_000_000.0, 10_000_000.0),
     "RSI":             (30.0, 70.0),
+    "RSI7":            (25.0, 75.0),  # tighter band for shorter period
+    "RSI5":            (20.0, 80.0),  # extreme band for very short period
     "MACD":            (-1.0, 1.0),
     "MACD_SIGNAL":     (-1.0, 1.0),
     "MACD_HIST":       (-0.5, 0.5),
@@ -2866,6 +2870,129 @@ def _last_value(df, key: str, date_str: str | None = None,
         return f if f == f else None  # NaN guard
     except (TypeError, ValueError):
         return None
+
+
+def _series_for_indicator(df, key: str):
+    """Return a pandas Series of an indicator's value across all bars.
+
+    Used by historical-validation: lets us compute a boolean mask for
+    every bar where a rule was true, instead of just the latest bar.
+    Returns None for indicators that can't be computed historically
+    (e.g., NEWS_SENT/NEWS_BUZZ are current-snapshot only).
+    """
+    if df is None or df.empty:
+        return None
+    if key in df.columns:
+        return df[key]
+    close = df["Close"]
+    if key == "DAILY_CHG_PCT":
+        return close.pct_change() * 100
+    if key == "DIST_SMA5_PCT" and "SMA5" in df.columns:
+        return (close - df["SMA5"]) / df["SMA5"].replace(0, float("nan")) * 100
+    if key == "DIST_SMA20_PCT" and "SMA20" in df.columns:
+        return (close - df["SMA20"]) / df["SMA20"].replace(0, float("nan")) * 100
+    if key == "DIST_SMA50_PCT" and "SMA50" in df.columns:
+        return (close - df["SMA50"]) / df["SMA50"].replace(0, float("nan")) * 100
+    if key == "DIST_SMA200_PCT" and "SMA200" in df.columns:
+        return (close - df["SMA200"]) / df["SMA200"].replace(0, float("nan")) * 100
+    if key == "BB_PCT_B" and {"BB_LOWER", "BB_UPPER"}.issubset(df.columns):
+        rng = (df["BB_UPPER"] - df["BB_LOWER"]).replace(0, float("nan"))
+        return (close - df["BB_LOWER"]) / rng
+    if key == "BB_DIST_LOWER_PCT" and "BB_LOWER" in df.columns:
+        return ((close - df["BB_LOWER"])
+                / df["BB_LOWER"].replace(0, float("nan")) * 100)
+    if key == "BB_DIST_UPPER_PCT" and "BB_UPPER" in df.columns:
+        return ((df["BB_UPPER"] - close)
+                / df["BB_UPPER"].replace(0, float("nan")) * 100)
+    if key == "BB_BANDWIDTH_PCT" and {
+        "BB_LOWER", "BB_UPPER", "BB_MID"
+    }.issubset(df.columns):
+        return ((df["BB_UPPER"] - df["BB_LOWER"])
+                / df["BB_MID"].replace(0, float("nan")) * 100)
+    if key in ("ANOMALY_SCORE", "ANOMALY_PCTILE"):
+        anom = ss.compute_anomaly_per_bar(df)
+        if anom is None or anom.empty:
+            return None
+        # Reindex to df's index, NaN where missing
+        return (anom["score"] if key == "ANOMALY_SCORE"
+                else anom["pctile"]).reindex(df.index)
+    # NEWS_SENT/NEWS_BUZZ are current-snapshot only — no historical series.
+    return None
+
+
+def _rule_mask(df, rule: dict):
+    """Boolean Series: True at every bar where rule passes (False/NaN else).
+    Returns None if the indicator can't be computed historically."""
+    s = _series_for_indicator(df, rule["left"])
+    if s is None:
+        return None
+    op = rule["op"]
+    a = rule.get("a")
+    b = rule.get("b")
+    if a is None:
+        return None
+    if op == "<":      return s < a
+    if op == "<=":     return s <= a
+    if op == ">":      return s > a
+    if op == ">=":     return s >= a
+    if op == "between" and b is not None:
+        lo, hi = (a, b) if a <= b else (b, a)
+        return (s >= lo) & (s <= hi)
+    return None
+
+
+def _historical_match_returns(df, rules, fwd_days: int = 5):
+    """For all bars where ALL non-date rules passed, compute the forward
+    return over `fwd_days` trading days plus max drawdown during the hold.
+
+    Returns list of dicts with keys: date, ret_pct, max_dd_pct.
+    Skips: rules with explicit dates, rules using NEWS_* (no history).
+    """
+    if df is None or df.empty:
+        return []
+    masks = []
+    for r in rules:
+        if r.get("date"):
+            continue  # date-anchored rules don't apply historically
+        m = _rule_mask(df, r)
+        if m is None:
+            continue
+        masks.append(m.fillna(False))
+    if not masks:
+        return []
+    from functools import reduce
+    combined = reduce(lambda x, y: x & y, masks)
+    if not combined.any():
+        return []
+
+    closes = df["Close"]
+    out = []
+    for ts in combined[combined].index:
+        try:
+            i = closes.index.get_loc(ts)
+        except KeyError:
+            continue
+        if i + fwd_days >= len(closes):
+            continue
+        entry = float(closes.iloc[i])
+        exit_close = float(closes.iloc[i + fwd_days])
+        if entry <= 0 or not isfinite_(entry):
+            continue
+        ret_pct = (exit_close - entry) / entry * 100.0
+        # Max drawdown during the hold (peak-to-trough on Close)
+        window = closes.iloc[i:i + fwd_days + 1]
+        peak = window.cummax()
+        dd = (window - peak) / peak * 100.0
+        max_dd_pct = float(dd.min())
+        out.append({
+            "date": ts, "ret_pct": ret_pct,
+            "max_dd_pct": max_dd_pct,
+        })
+    return out
+
+
+def isfinite_(x):
+    return x == x and x not in (float("inf"), float("-inf"))
 
 
 def _eval_rule(df, rule: dict, ticker: str | None = None) -> bool | None:
@@ -3208,6 +3335,8 @@ with tab_patterns:
             else:
                 matches = []
                 details = []
+                hist_returns = []  # forward-return validation across history
+                fwd_days = 5  # 5 trading days = ~1 week
                 progress = st.progress(0.0)
                 status = st.empty()
                 for idx, t in enumerate(target_tickers):
@@ -3237,11 +3366,22 @@ with tab_patterns:
                     details.append(row)
                     if row["Matches"]:
                         matches.append(t)
+                    # Historical validation: forward-return where rules
+                    # passed in this ticker's history
+                    try:
+                        h = _historical_match_returns(df, rules,
+                                                       fwd_days=fwd_days)
+                        for entry in h:
+                            entry["ticker"] = t
+                            hist_returns.append(entry)
+                    except Exception:
+                        pass
                     progress.progress((idx + 1) / len(target_tickers))
                     if (idx + 1) % 20 == 0 or idx == len(target_tickers) - 1:
                         status.caption(
                             f"Scanned {idx + 1}/{len(target_tickers)} · "
-                            f"{len(matches)} matches so far"
+                            f"{len(matches)} matches · "
+                            f"{len(hist_returns)} historical so far"
                         )
                 progress.empty()
                 status.empty()
@@ -3252,6 +3392,8 @@ with tab_patterns:
                     "details": details,
                     "scanned": len(target_tickers),
                     "universe": universe_options.get(universe_key, ""),
+                    "hist_returns": hist_returns,
+                    "fwd_days": fwd_days,
                 }
 
     # Render last results (if any) — survives popup open/close reruns
@@ -3297,6 +3439,121 @@ with tab_patterns:
                 pd.DataFrame(details),
                 use_container_width=True,
                 hide_index=True,
+            )
+
+        # === Historical edge: forward-return validation ===
+        hist_returns = last.get("hist_returns") or []
+        fwd_days = last.get("fwd_days", 5)
+        if hist_returns:
+            st.markdown(f"##### 📈 Historical edge (next {fwd_days}d returns)")
+            st.caption(
+                "Across this ticker history: every bar where ALL rules "
+                "would have passed, then look forward "
+                f"{fwd_days} trading days. **NOT a prediction** — "
+                "just empirical pattern measurement."
+            )
+            rets = pd.Series([h["ret_pct"] for h in hist_returns])
+            dds = pd.Series([h["max_dd_pct"] for h in hist_returns])
+            n = len(rets)
+            win_rate = (rets > 0).mean() * 100
+            avg_ret = rets.mean()
+            med_ret = rets.median()
+            avg_dd = dds.mean()
+            best = rets.max()
+            worst = rets.min()
+            std_ret = rets.std()
+
+            stats_cols = st.columns(6)
+            stats_cols[0].metric("Sample", f"{n}")
+            stats_cols[1].metric(
+                "Win rate", f"{win_rate:.1f}%",
+                delta=("edge" if win_rate > 55 else
+                       "weak" if win_rate > 50 else "no edge"),
+                delta_color=("normal" if win_rate > 55 else "off"
+                             if win_rate > 50 else "inverse"),
+            )
+            stats_cols[2].metric(
+                "Avg return", f"{avg_ret:+.2f}%",
+                delta_color="normal" if avg_ret > 0 else "inverse",
+            )
+            stats_cols[3].metric("Median", f"{med_ret:+.2f}%")
+            stats_cols[4].metric(
+                "Avg max DD", f"{avg_dd:.2f}%",
+                delta_color="off",
+            )
+            stats_cols[5].metric("σ", f"{std_ret:.2f}%")
+
+            # Distribution histogram
+            try:
+                import plotly.graph_objects as go
+                fig_h = go.Figure()
+                fig_h.add_trace(go.Histogram(
+                    x=rets, nbinsx=40,
+                    marker_color="#60a5fa", opacity=0.85,
+                ))
+                fig_h.add_vline(x=0, line_color="#e5e7eb",
+                                line_width=1, opacity=0.6)
+                fig_h.add_vline(x=avg_ret, line_color="#22c55e",
+                                line_dash="dash", line_width=1.5,
+                                annotation_text=f"avg {avg_ret:+.1f}%",
+                                annotation_position="top right")
+                fig_h.update_layout(
+                    template="plotly_dark",
+                    paper_bgcolor="#4a4b4e",
+                    plot_bgcolor="#4a4b4e",
+                    height=260,
+                    margin=dict(l=40, r=20, t=20, b=40),
+                    xaxis_title=f"{fwd_days}-day forward return %",
+                    yaxis_title="count",
+                    showlegend=False,
+                )
+                st.plotly_chart(fig_h, use_container_width=True)
+            except Exception:
+                pass
+
+            # Honest takeaway
+            if win_rate > 60 and avg_ret > 1.0 and n >= 30:
+                takeaway = (
+                    f"✅ **Real edge**: ~{win_rate:.0f}% historical win rate "
+                    f"with avg {avg_ret:+.2f}% return over {n} matches. "
+                    "But: past performance ≠ future results, and the edge "
+                    "may shrink with crowding."
+                )
+                st.success(takeaway)
+            elif win_rate > 50 and avg_ret > 0:
+                st.info(
+                    f"⚠️ **Marginal edge**: {win_rate:.0f}% win rate, "
+                    f"{avg_ret:+.2f}% avg. Better than random but might not "
+                    "survive transaction costs."
+                )
+            elif n < 30:
+                st.warning(
+                    f"📉 **Sample too small** ({n} matches) — stats are "
+                    "noisy. Try widening rules or scanning a bigger universe."
+                )
+            else:
+                st.error(
+                    f"❌ **No edge detected**: {win_rate:.0f}% win rate, "
+                    f"{avg_ret:+.2f}% avg. This rule set didn't help "
+                    "historically — refine the rules."
+                )
+        elif last.get("matches") is not None:
+            # We ran an evaluation but got 0 historical matches
+            # (e.g., all rules date-anchored or NEWS_*-only)
+            note = ""
+            if any(r.get("date") for r in rules):
+                note = (
+                    " (rules with specific dates can't be validated "
+                    "historically — drop the date pin to enable validation)."
+                )
+            elif any(r.get("left") in ("NEWS_SENT", "NEWS_BUZZ")
+                     for r in rules):
+                note = (
+                    " (news-sentiment indicators only have current values, "
+                    "not historical — they're skipped in validation)."
+                )
+            st.caption(
+                "📈 Historical edge: 0 matches across history" + note
             )
 
 
