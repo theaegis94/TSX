@@ -628,6 +628,86 @@ def finnhub_news(ticker: str, days: int = 7) -> list[dict]:
         return []
 
 
+def _stocktwits_symbols(ticker: str) -> list[str]:
+    """Map a ticker to candidate StockTwits cashtag formats.
+
+    StockTwits uses bare symbol for US, SYMBOL.CA for TSX, sometimes neither
+    if the ticker isn't covered. We try in order of likelihood.
+    """
+    base = ticker.split(".")[0].upper()
+    upper = ticker.upper()
+    if upper.endswith(".TO") or upper.endswith(".V"):
+        return [f"{base}.CA", base]  # try CA format first, then bare
+    return [base]
+
+
+def stocktwits_stream(ticker: str, limit: int = 30) -> list[dict]:
+    """Recent messages for a ticker from StockTwits public API.
+    Free, no key required. Returns [] on any failure.
+    """
+    for sym in _stocktwits_symbols(ticker):
+        try:
+            r = requests.get(
+                f"https://api.stocktwits.com/api/2/streams/symbol/{sym}.json",
+                timeout=10,
+                headers={"User-Agent": "StockSignals/1.0"},
+            )
+            if r.status_code == 200:
+                data = r.json() or {}
+                msgs = data.get("messages") or []
+                if msgs:
+                    return msgs[:limit]
+            # Symbol not found is 404 — try the next format
+        except (requests.RequestException, ValueError):
+            continue
+    return []
+
+
+def stocktwits_sentiment(ticker: str) -> dict | None:
+    """Aggregate StockTwits retail sentiment for a ticker.
+
+    Returns dict with:
+      - bullish_pct: fraction of tagged messages that were Bullish (or None)
+      - msg_count_24h: messages posted in the last 24h (buzz proxy)
+      - bullish_count, bearish_count: raw counts of tagged messages
+      - total_msgs: total messages fetched (up to 30)
+    """
+    msgs = stocktwits_stream(ticker, limit=30)
+    if not msgs:
+        return None
+
+    cutoff = datetime.now() - timedelta(days=1)
+    recent_count = 0
+    bullish = 0
+    bearish = 0
+    for m in msgs:
+        # Sentiment tag
+        ent = m.get("entities") or {}
+        sent_tag = ((ent.get("sentiment") or {}).get("basic") or "")
+        if sent_tag == "Bullish":
+            bullish += 1
+        elif sent_tag == "Bearish":
+            bearish += 1
+        # 24h count
+        try:
+            ts = m.get("created_at", "")
+            dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            if dt.replace(tzinfo=None) >= cutoff:
+                recent_count += 1
+        except (ValueError, TypeError, AttributeError):
+            continue
+
+    total_tagged = bullish + bearish
+    bullish_pct = (bullish / total_tagged) if total_tagged > 0 else None
+    return {
+        "bullish_pct": bullish_pct,
+        "msg_count_24h": recent_count,
+        "total_msgs": len(msgs),
+        "bullish_count": bullish,
+        "bearish_count": bearish,
+    }
+
+
 def yf_news(ticker: str) -> list[dict]:
     """Fetch recent news from yfinance and normalize to the same schema
     Finnhub returns. Free, no API key, often has better TSX coverage than

@@ -1206,6 +1206,12 @@ def cached_sentiment(ticker: str):
     return ss.finnhub_sentiment(ticker)
 
 
+@st.cache_data(ttl=900, show_spinner=False)
+def cached_stocktwits(ticker: str):
+    """Cache StockTwits sentiment for 15 minutes."""
+    return ss.stocktwits_sentiment(ticker)
+
+
 def _cached_vol_outlook(ticker: str, df):
     """Cache volume outlook per (ticker, last bar) — uses news + earnings
     APIs so we don't recompute on every rerun."""
@@ -1439,6 +1445,24 @@ def render_quick_analysis():
                               subtle=vol_out["label"]))
         else:
             chips.append(chip("🔮 VolOut", "—"))
+        # StockTwits retail sentiment
+        st_data = cached_stocktwits(ticker)
+        if st_data:
+            blp = st_data.get("bullish_pct")
+            buzz = st_data.get("msg_count_24h", 0)
+            if blp is not None:
+                stc = ("#22c55e" if blp >= 0.6
+                       else "#ef4444" if blp <= 0.4 else "#9ca3af")
+                chips.append(chip("💬 ST",
+                                  f"{blp*100:.0f}%🐂",
+                                  color=stc,
+                                  subtle=f"{buzz} msg/24h"))
+            else:
+                chips.append(chip("💬 ST",
+                                  f"{buzz} msg",
+                                  subtle="no tags"))
+        else:
+            chips.append(chip("💬 ST", "—"))
         # P/E, Yield, Beta
         chips.append(chip("P/E", f"{pe:.1f}" if pe else "—"))
         chips.append(chip("Yield", f"{yld:.2f}%" if yld is not None else "—"))
@@ -2682,6 +2706,8 @@ RULE_INDICATORS = {
     "NEWS_SENT":         "📰 News sentiment (0=bear, 1=bull) [latest]",
     "NEWS_BUZZ":         "📣 News buzz (0=quiet, 1+=above avg) [latest]",
     "VOL_OUTLOOK":       "🔮 Volume outlook (0-100, higher=more vol coming)",
+    "ST_BULLISH":        "💬 StockTwits bullish % (0-1, retail sentiment)",
+    "ST_BUZZ":           "💬 StockTwits buzz (msgs in last 24h)",
 }
 RULE_OPS = ["<", "<=", ">", ">=", "between"]
 
@@ -2721,6 +2747,8 @@ RULE_DEFAULTS: dict[str, tuple[float, float]] = {
     "NEWS_SENT":         (0.4, 0.6),     # < 0.4 bearish news; > 0.6 bullish
     "NEWS_BUZZ":         (0.5, 1.5),     # > 1 = above-avg news activity
     "VOL_OUTLOOK":       (30.0, 70.0),   # < 30 quiet; > 70 elevated
+    "ST_BULLISH":        (0.4, 0.65),    # < 0.4 retail bearish; > 0.65 bullish
+    "ST_BUZZ":           (5.0, 30.0),    # > 30 msgs/24h = loud
 }
 
 
@@ -2791,6 +2819,23 @@ RULE_PRESETS: dict[str, list[dict]] = {
          "date": None},
         {"left": "CONVICTION", "op": ">", "a": 20.0, "b": None,
          "date": None},
+    ],
+    "💬 Retail bullish": [
+        # Retail crowd is bullish AND there's actual chatter (not stale)
+        # AND technicals don't disagree
+        {"left": "ST_BULLISH", "op": ">", "a": 0.65, "b": None,
+         "date": None},
+        {"left": "ST_BUZZ", "op": ">", "a": 10.0, "b": None,
+         "date": None},
+        {"left": "CONVICTION", "op": ">", "a": -10.0, "b": None,
+         "date": None},
+    ],
+    "🆎 Retail vs technicals (contrarian)": [
+        # Retail very bullish but technicals say overbought — classic
+        # contrarian fade signal (retail tops are real)
+        {"left": "ST_BULLISH", "op": ">", "a": 0.75, "b": None,
+         "date": None},
+        {"left": "RSI", "op": ">", "a": 70.0, "b": None, "date": None},
     ],
 }
 
@@ -2874,6 +2919,18 @@ def _last_value(df, key: str, date_str: str | None = None,
         if result is None:
             return None
         v = result["score"] if key == "ANOMALY_SCORE" else result["pctile"]
+    elif key in ("ST_BULLISH", "ST_BUZZ"):
+        if not ticker:
+            return None
+        st_data = cached_stocktwits(ticker)
+        if not st_data:
+            return None
+        if key == "ST_BULLISH":
+            v = st_data.get("bullish_pct")
+            if v is None:
+                return None
+        else:  # ST_BUZZ
+            v = st_data.get("msg_count_24h")
     elif key == "VOL_OUTLOOK":
         if not ticker:
             return None
@@ -3161,6 +3218,13 @@ with tab_patterns:
             "High volume expected (earnings approaching or news buzz) + "
             "bullish bias — possible breakout setup. VOL_OUTLOOK > 60 + "
             "CONVICTION > 20.",
+        "💬 Retail bullish":
+            "Retail crowd on StockTwits is bullish AND active "
+            "(>65% bullish tags, 10+ messages/24h) AND technicals don't "
+            "disagree. Crowd alignment.",
+        "🆎 Retail vs technicals (contrarian)":
+            "Retail euphoric (>75% bullish) but RSI overbought (>70) — "
+            "classic contrarian fade signal. Retail tops happen.",
     }
     preset_cols = st.columns(len(preset_names))
     for col, pname in zip(preset_cols, preset_names):
