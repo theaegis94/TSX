@@ -99,10 +99,26 @@ st.markdown(
         border-right: 1px solid #44454a;
     }
 
-    /* Metric cards */
+    /* Metric cards — compact */
     .stApp [data-testid="stMetric"] {
         background: transparent;
-        padding: 4px 0;
+        padding: 2px 0;
+    }
+    .stApp [data-testid="stMetricLabel"] {
+        font-size: 0.72rem !important;
+        color: #9ca3af !important;
+    }
+    .stApp [data-testid="stMetricValue"] {
+        font-size: 1.05rem !important;
+        line-height: 1.3 !important;
+        font-weight: 600 !important;
+    }
+    .stApp [data-testid="stMetricValue"] > div {
+        font-size: 1.05rem !important;
+    }
+    .stApp [data-testid="stMetricDelta"] {
+        font-size: 0.7rem !important;
+        padding-top: 0 !important;
     }
 
     /* Dataframe styling */
@@ -1289,112 +1305,163 @@ def render_quick_analysis():
                 unsafe_allow_html=True,
             )
 
-        # Row 1: market cap | 52w range position | volume vs avg | next earnings
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Market cap", _fmt_compact_num(prof.get("market_cap")))
-        wk_hi = prof.get("week52_high"); wk_lo = prof.get("week52_low")
+        # === Single-line dense info bar (horizontally scrolls if too narrow) ===
         cur = float(last["Close"])
-        if wk_hi and wk_lo and wk_hi > wk_lo:
-            pct_in_range = (cur - wk_lo) / (wk_hi - wk_lo) * 100
-            m2.metric(
-                "52w range",
-                f"${wk_lo:.2f} – ${wk_hi:.2f}",
-                delta=f"{pct_in_range:.0f}% of range",
-                delta_color="off",
-            )
-        else:
-            m2.metric("52w range", "—")
+        wk_hi = prof.get("week52_high"); wk_lo = prof.get("week52_low")
         avg_vol = prof.get("avg_vol")
         today_vol = float(last.get("Volume", 0)) if "Volume" in last else 0
-        if avg_vol:
-            ratio = today_vol / avg_vol if avg_vol else 1
-            m3.metric(
-                "Volume",
-                _fmt_compact_num(today_vol),
-                delta=f"{ratio:.2f}× avg",
-                delta_color="normal" if ratio > 1 else "inverse",
-            )
-        else:
-            m3.metric("Volume", _fmt_compact_num(today_vol))
-        # Earnings days from yfinance (cached upstream via metrics)
         try:
-            metrics = ss.yf_metrics(ticker)
-            earn_days = metrics.get("earn_days")
+            metrics_y = ss.yf_metrics(ticker)
+            earn_days = metrics_y.get("earn_days")
         except Exception:
             earn_days = None
-        if earn_days is not None:
-            m4.metric("Next earnings", f"in {earn_days}d")
-        else:
-            m4.metric("Next earnings", "—")
-
-        # Row 2: RSI | MACD direction | BB %B | Anomaly pctile
-        r1, r2, r3, r4 = st.columns(4)
-        rsi_v = float(last["RSI"]) if "RSI" in last and pd.notna(last["RSI"]) else None
-        if rsi_v is not None:
-            tag = ("oversold" if rsi_v < 30
-                   else "overbought" if rsi_v > 70
-                   else "neutral")
-            r1.metric("RSI(14)", f"{rsi_v:.1f}", delta=tag, delta_color="off")
-        else:
-            r1.metric("RSI(14)", "—")
-        if "MACD" in last and "MACD_SIGNAL" in last:
-            mh = float(last.get("MACD_HIST", 0))
-            direction = "bullish" if mh > 0 else "bearish"
-            r2.metric("MACD hist", f"{mh:+.3f}", delta=direction,
-                      delta_color="normal" if mh > 0 else "inverse")
-        else:
-            r2.metric("MACD hist", "—")
+        rsi_v = (float(last["RSI"])
+                 if "RSI" in last and pd.notna(last["RSI"]) else None)
+        mh = (float(last.get("MACD_HIST", 0))
+              if "MACD_HIST" in last and pd.notna(last.get("MACD_HIST"))
+              else None)
+        pctb = None
         if {"BB_LOWER", "BB_UPPER"}.issubset(df.columns):
             bb_rng = float(last["BB_UPPER"]) - float(last["BB_LOWER"])
             if bb_rng > 0:
                 pctb = (cur - float(last["BB_LOWER"])) / bb_rng
-                tag = ("near lower" if pctb < 0.2
-                       else "near upper" if pctb > 0.8
-                       else "mid")
-                r3.metric("BB %B", f"{pctb:.2f}", delta=tag, delta_color="off")
-            else:
-                r3.metric("BB %B", "—")
-        else:
-            r3.metric("BB %B", "—")
-        if anom_data:
-            pctile = anom_data.get("pctile", 50)
-            tag = ("anomalous" if pctile < 10
-                   else "unusual" if pctile < 25
-                   else "normal")
-            r4.metric("🤖 Anomaly", f"{pctile:.0f}%ile",
-                      delta=tag,
-                      delta_color="inverse" if pctile < 25 else "off")
-        else:
-            r4.metric("🤖 Anomaly", "—")
-
-        # Row 3: P/E | Yield | Beta | Analyst rec
-        f1, f2, f3, f4 = st.columns(4)
+        anom_pctile = anom_data.get("pctile") if anom_data else None
         pe = prof.get("pe") or prof.get("pe_forward")
-        f1.metric("P/E", f"{pe:.1f}" if pe else "—")
         yld = prof.get("yield_pct")
         if yld is not None:
-            # Some yfinance values come pct-scaled (1.5 = 1.5%), some fractional.
-            yld_disp = yld * 100 if yld < 1 else yld
-            f2.metric("Yield", f"{yld_disp:.2f}%")
-        else:
-            f2.metric("Yield", "—")
+            yld = yld * 100 if yld < 1 else yld
         beta = prof.get("beta")
-        f3.metric("Beta", f"{beta:.2f}" if beta else "—")
+
+        # Build each chip
+        def chip(label, value, color="#e5e7eb", subtle=None):
+            sub_html = (f' <span style="color:#9ca3af; '
+                        f'font-size:0.7rem;">{subtle}</span>'
+                        if subtle else "")
+            return (
+                f'<span style="display:inline-flex; flex-direction:column; '
+                f'padding:4px 10px; margin-right:6px; border-right:'
+                f'1px solid #4a4b4e;">'
+                f'<span style="font-size:0.65rem; color:#9ca3af; '
+                f'text-transform:uppercase; letter-spacing:0.4px;">'
+                f'{label}</span>'
+                f'<span style="font-size:0.95rem; color:{color}; '
+                f'font-weight:600;">{value}{sub_html}</span></span>'
+            )
+
+        chips: list[str] = []
+        # Market cap
+        chips.append(chip("M.Cap",
+                          _fmt_compact_num(prof.get("market_cap"))))
+        # 52w range
+        if wk_hi and wk_lo and wk_hi > wk_lo:
+            pct_in_range = (cur - wk_lo) / (wk_hi - wk_lo) * 100
+            chips.append(chip(
+                "52w",
+                f"${wk_lo:.2f}–${wk_hi:.2f}",
+                subtle=f"{pct_in_range:.0f}%",
+            ))
+        else:
+            chips.append(chip("52w", "—"))
+        # Volume
+        if avg_vol:
+            ratio = today_vol / avg_vol if avg_vol else 1
+            vc = "#22c55e" if ratio > 1 else "#9ca3af"
+            chips.append(chip("Vol",
+                              _fmt_compact_num(today_vol),
+                              color=vc,
+                              subtle=f"{ratio:.2f}×"))
+        else:
+            chips.append(chip("Vol", _fmt_compact_num(today_vol)))
+        # Next earnings
+        chips.append(chip("Earn",
+                          f"{earn_days}d" if earn_days is not None else "—"))
+        # RSI
+        if rsi_v is not None:
+            rc = ("#22c55e" if rsi_v < 30
+                  else "#ef4444" if rsi_v > 70 else "#e5e7eb")
+            tag = ("OS" if rsi_v < 30 else "OB" if rsi_v > 70 else "")
+            chips.append(chip("RSI", f"{rsi_v:.1f}", color=rc,
+                              subtle=tag if tag else None))
+        else:
+            chips.append(chip("RSI", "—"))
+        # MACD hist
+        if mh is not None:
+            mc = "#22c55e" if mh > 0 else "#ef4444"
+            chips.append(chip("MACD", f"{mh:+.3f}", color=mc))
+        else:
+            chips.append(chip("MACD", "—"))
+        # BB %B
+        if pctb is not None:
+            bc = ("#22c55e" if pctb < 0.2
+                  else "#ef4444" if pctb > 0.8 else "#e5e7eb")
+            chips.append(chip("BB%B", f"{pctb:.2f}", color=bc))
+        else:
+            chips.append(chip("BB%B", "—"))
+        # Anomaly
+        if anom_pctile is not None:
+            ac = ("#ef4444" if anom_pctile < 10
+                  else "#fbbf24" if anom_pctile < 25 else "#9ca3af")
+            chips.append(chip("🤖 Anom", f"{anom_pctile:.0f}%ile", color=ac))
+        else:
+            chips.append(chip("🤖 Anom", "—"))
+        # P/E, Yield, Beta
+        chips.append(chip("P/E", f"{pe:.1f}" if pe else "—"))
+        chips.append(chip("Yield", f"{yld:.2f}%" if yld is not None else "—"))
+        chips.append(chip("Beta", f"{beta:.2f}" if beta else "—"))
+        # Analysts
         if rec:
             b, h, s = rec
             total = b + h + s
             if total > 0:
-                f4.metric(
-                    "Analysts",
-                    f"{b}B · {h}H · {s}S",
-                    delta=f"{b/total*100:.0f}% buy",
-                    delta_color=("normal" if b > s else "inverse"
-                                 if s > b else "off"),
-                )
+                buy_pct = b / total * 100
+                ac2 = ("#22c55e" if b > s
+                       else "#ef4444" if s > b else "#9ca3af")
+                chips.append(chip(
+                    "Anlst",
+                    f"{b}B·{h}H·{s}S",
+                    color=ac2,
+                    subtle=f"{buy_pct:.0f}%B",
+                ))
             else:
-                f4.metric("Analysts", "—")
+                chips.append(chip("Anlst", "—"))
         else:
-            f4.metric("Analysts", "—")
+            chips.append(chip("Anlst", "—"))
+
+        st.markdown(
+            '<div style="display:flex; overflow-x:auto; '
+            'white-space:nowrap; padding:8px 4px; '
+            'background:rgba(96,165,250,0.03); border-radius:8px; '
+            'border:1px solid #4a4b4e; margin-bottom:8px;">'
+            + "".join(chips)
+            + '</div>',
+            unsafe_allow_html=True,
+        )
+
+
+        # Build chart
+        fig = ss.build_chart_plotly(df, ticker, stats, compact=True,
+                                    indicators=indicators,
+                                    theme_dark=_is_dark_theme())
+        st.plotly_chart(fig, use_container_width=True,
+                        config={
+                            "displayModeBar": True,
+                            "displaylogo": False,
+                            "scrollZoom": False,
+                            "doubleClick": False,
+                            "modeBarButtonsToRemove": [
+                                "select2d", "lasso2d",
+                            ],
+                        })
+        _inject_double_click_fullscreen()
+        _inject_auto_rescale_y()
+        _inject_scroll_to_pan()
+        _inject_price_tick_format()
+        st.caption(
+            "💡 **Left-drag** pans · **scroll** zooms · "
+            "switch to box-zoom via the modebar · "
+            "**double-click chart for fullscreen** (Esc to exit) · "
+            "📰 news + fundamentals → **Single Ticker** tab"
+        )
 
         # --- Tabs: ticker-specific news + business summary ---
         # Default 30-day window; user can widen via dropdown inside the tab.
@@ -1543,31 +1610,6 @@ def render_quick_analysis():
                 st.caption("_No business summary available._")
             if prof.get("website"):
                 st.markdown(f"🔗 [Website]({prof['website']})")
-
-        # Build chart
-        fig = ss.build_chart_plotly(df, ticker, stats, compact=True,
-                                    indicators=indicators,
-                                    theme_dark=_is_dark_theme())
-        st.plotly_chart(fig, use_container_width=True,
-                        config={
-                            "displayModeBar": True,
-                            "displaylogo": False,
-                            "scrollZoom": False,
-                            "doubleClick": False,
-                            "modeBarButtonsToRemove": [
-                                "select2d", "lasso2d",
-                            ],
-                        })
-        _inject_double_click_fullscreen()
-        _inject_auto_rescale_y()
-        _inject_scroll_to_pan()
-        _inject_price_tick_format()
-        st.caption(
-            "💡 **Left-drag** pans · **scroll** zooms · "
-            "switch to box-zoom via the modebar · "
-            "**double-click chart for fullscreen** (Esc to exit) · "
-            "📰 news + fundamentals → **Single Ticker** tab"
-        )
 
 
 def plt_close_cleanup(fig):
