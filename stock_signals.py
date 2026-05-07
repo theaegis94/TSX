@@ -2708,6 +2708,30 @@ UNIVERSE_TSX60 = [
 ]
 
 
+# Major cryptocurrencies — yfinance format is SYMBOL-USD.
+# Trades 24/7, so backtests treat each calendar day as a "bar".
+UNIVERSE_CRYPTO = [
+    # Major caps
+    "BTC-USD", "ETH-USD", "BNB-USD", "SOL-USD", "XRP-USD",
+    "ADA-USD", "DOGE-USD", "AVAX-USD", "DOT-USD", "TRX-USD",
+    # Layer 1 / 2
+    "MATIC-USD", "ATOM-USD", "NEAR-USD", "ALGO-USD", "ARB-USD",
+    "OP-USD", "SUI-USD", "APT-USD",
+    # DeFi
+    "LINK-USD", "UNI-USD", "AAVE-USD", "MKR-USD", "CRV-USD",
+    "LDO-USD", "SNX-USD",
+    # Smart-contract / utility
+    "ETC-USD", "XLM-USD", "FIL-USD", "ICP-USD", "VET-USD",
+    "HBAR-USD",
+    # Meme / community
+    "SHIB-USD", "PEPE-USD", "WIF-USD",
+    # Stablecoins (low-volatility reference)
+    "USDT-USD", "USDC-USD",
+    # Wrapped / staked variants
+    "WBTC-USD", "STETH-USD",
+]
+
+
 DEFAULT_WATCHLIST = [
     "TSLA", "HOD.TO", "HOU.TO", "HNU.TO", "HND.TO", "NOW",
 ]

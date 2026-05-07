@@ -3427,6 +3427,7 @@ with tab_patterns:
         "tsx60": f"🍁 TSX 60 ({len(ss.UNIVERSE_TSX60)})",
         "tsx_full": "🍁 Full TSX (~1500 — much slower)",
         "us_full": "🇺🇸 Full US (~10000 — very slow, no OTC)",
+        "crypto": f"₿ Crypto ({len(ss.UNIVERSE_CRYPTO)} major coins)",
     }
     uni_col, lim_col = st.columns([3, 1])
     universe_key = uni_col.selectbox(
@@ -3479,6 +3480,8 @@ with tab_patterns:
                     target_tickers = ss.get_full_tsx_listing()
                 elif universe_key == "us_full":
                     target_tickers = ss.get_full_us_listing()
+                elif universe_key == "crypto":
+                    target_tickers = list(ss.UNIVERSE_CRYPTO)
                 else:
                     target_tickers = wl_tickers
 
