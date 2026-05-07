@@ -99,17 +99,31 @@ st.markdown(
         border-right: 1px solid #44454a;
     }
 
-    /* Make buttons in horizontal column groups all the same height —
-       fixes uneven preset-button heights when labels wrap differently.
-       min-height pads short labels up to match 2-line buttons. */
+    /* Buttons inside horizontal column groups: equal height + smaller
+       font so labels fit on one line. */
     .stApp [data-testid="stHorizontalBlock"] [data-testid="stColumn"]
         .stButton button {
-        min-height: 64px !important;
-        white-space: normal;
-        line-height: 1.3;
+        min-height: 44px !important;
+        font-size: 0.78rem !important;
+        padding: 6px 8px !important;
+        white-space: nowrap;
+        line-height: 1.2;
         display: flex;
         align-items: center;
         justify-content: center;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    /* Inner span (Streamlit wraps button label in <p>) needs the same
+       no-wrap + shrink behavior. */
+    .stApp [data-testid="stHorizontalBlock"] [data-testid="stColumn"]
+        .stButton button p {
+        font-size: 0.78rem !important;
+        line-height: 1.2 !important;
+        margin: 0 !important;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     /* Metric cards — compact */
@@ -3622,6 +3636,37 @@ with tab_patterns:
             )
             stats_cols[5].metric("σ", f"{std_ret:.2f}%")
 
+            # Asymmetric-payoff metrics
+            wins = rets[rets > 0]
+            losses = rets[rets <= 0]
+            avg_win = wins.mean() if len(wins) else 0.0
+            avg_loss = losses.mean() if len(losses) else 0.0
+            sum_wins = wins.sum() if len(wins) else 0.0
+            sum_losses = abs(losses.sum()) if len(losses) else 0.0
+            profit_factor = (
+                sum_wins / sum_losses if sum_losses > 0 else float("inf")
+            )
+            rr = (avg_win / abs(avg_loss)
+                  if avg_loss < 0 else float("inf"))
+            extra_cols = st.columns(3)
+            extra_cols[0].metric(
+                "Avg win", f"{avg_win:+.2f}%",
+                delta=f"{len(wins)} bars", delta_color="off",
+            )
+            extra_cols[1].metric(
+                "Avg loss", f"{avg_loss:+.2f}%",
+                delta=f"{len(losses)} bars", delta_color="off",
+            )
+            extra_cols[2].metric(
+                "Profit factor",
+                f"{profit_factor:.2f}" if profit_factor != float("inf")
+                else "∞",
+                delta=f"R:R {rr:.2f}" if rr != float("inf") else "—",
+                delta_color=("normal" if profit_factor > 1.3
+                             else "off" if profit_factor > 1.0
+                             else "inverse"),
+            )
+
             # Distribution histogram
             try:
                 import plotly.graph_objects as go
@@ -3650,30 +3695,46 @@ with tab_patterns:
             except Exception:
                 pass
 
-            # Honest takeaway
-            if win_rate > 60 and avg_ret > 1.0 and n >= 30:
-                takeaway = (
-                    f"✅ **Real edge**: ~{win_rate:.0f}% historical win rate "
-                    f"with avg {avg_ret:+.2f}% return over {n} matches. "
-                    "But: past performance ≠ future results, and the edge "
-                    "may shrink with crowding."
-                )
-                st.success(takeaway)
-            elif win_rate > 50 and avg_ret > 0:
-                st.info(
-                    f"⚠️ **Marginal edge**: {win_rate:.0f}% win rate, "
-                    f"{avg_ret:+.2f}% avg. Better than random but might not "
-                    "survive transaction costs."
-                )
-            elif n < 30:
+            # Honest takeaway — based primarily on profit factor + avg return,
+            # not just win rate. Trend-following systems often have <50% win
+            # rate but positive expectancy from asymmetric R:R.
+            if n < 30:
                 st.warning(
                     f"📉 **Sample too small** ({n} matches) — stats are "
-                    "noisy. Try widening rules or scanning a bigger universe."
+                    "noisy. Widen the rules or scan a bigger universe."
+                )
+            elif profit_factor >= 1.5 and avg_ret > 0.5:
+                st.success(
+                    f"✅ **Real edge**: profit factor "
+                    f"{profit_factor:.2f}, avg {avg_ret:+.2f}% over "
+                    f"{n} matches. Asymmetric payoff (R:R {rr:.2f}) — "
+                    f"{win_rate:.0f}% win rate is fine here."
+                    if win_rate < 55 else
+                    f"✅ **Real edge**: {win_rate:.0f}% win rate + "
+                    f"{avg_ret:+.2f}% avg over {n} matches "
+                    f"(profit factor {profit_factor:.2f})."
+                )
+            elif profit_factor >= 1.15 and avg_ret > 0:
+                st.info(
+                    f"⚠️ **Marginal edge**: profit factor "
+                    f"{profit_factor:.2f}, avg {avg_ret:+.2f}%, "
+                    f"win rate {win_rate:.0f}%. "
+                    "Real but small — might not survive transaction "
+                    "costs / slippage / taxes."
+                )
+            elif avg_ret > 0 and profit_factor >= 1.0:
+                st.info(
+                    f"💡 **Asymmetric profile**: {win_rate:.0f}% win rate "
+                    f"but {avg_ret:+.2f}% avg (avg win {avg_win:+.1f}% vs "
+                    f"avg loss {avg_loss:+.1f}%). Wins are bigger than "
+                    f"losses, but profit factor {profit_factor:.2f} is "
+                    "barely above 1 — fragile, easy to lose to costs."
                 )
             else:
                 st.error(
-                    f"❌ **No edge detected**: {win_rate:.0f}% win rate, "
-                    f"{avg_ret:+.2f}% avg. This rule set didn't help "
+                    f"❌ **No edge**: {win_rate:.0f}% win rate, "
+                    f"{avg_ret:+.2f}% avg, profit factor "
+                    f"{profit_factor:.2f}. This rule set lost money "
                     "historically — refine the rules."
                 )
         elif last.get("matches") is not None:
