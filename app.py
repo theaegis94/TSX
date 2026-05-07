@@ -3564,25 +3564,45 @@ with tab_patterns:
                 f"✅ {len(matches)} match{'es' if len(matches) > 1 else ''} "
                 f"out of {scanned} scanned"
             )
-            if len(matches) <= 50:
-                chips = []
-                for t in matches:
-                    href = _chip_href(t, from_tab="Custom Patterns")
-                    chips.append(
-                        f"<a href='{href}' target='_self' "
-                        "style='background:#16a34a; color:#fff; "
-                        "padding:3px 10px; border-radius:8px; "
-                        "font-size:0.85rem; font-weight:700; "
-                        "margin-right:6px; text-decoration:none; "
-                        "display:inline-block; margin-top:4px;' "
-                        f"title='Open {t} chart'>📊 {t}</a>"
-                    )
-                st.markdown(
-                    "<div style='line-height:2.2;'>"
-                    "<b style='color:#9ca3af; margin-right:6px;'>Tickers:</b> "
-                    + "".join(chips) + "</div>",
-                    unsafe_allow_html=True,
+            # Render all matched-ticker chips (no cap). For long lists, the
+            # chips wrap naturally and scroll vertically with a max-height.
+            MAX_CHIPS = 300
+            shown = matches[:MAX_CHIPS]
+            chips = []
+            for t in shown:
+                href = _chip_href(t, from_tab="Custom Patterns")
+                chips.append(
+                    f"<a href='{href}' target='_self' "
+                    "style='background:#16a34a; color:#fff; "
+                    "padding:3px 10px; border-radius:8px; "
+                    "font-size:0.85rem; font-weight:700; "
+                    "margin:3px; text-decoration:none; "
+                    "display:inline-block;' "
+                    f"title='Open {t} chart'>📊 {t}</a>"
                 )
+            extra = len(matches) - len(shown)
+            extra_html = (
+                f"<span style='color:#9ca3af; font-size:0.8rem; "
+                f"margin-left:6px;'>+{extra} more (see Details table)"
+                f"</span>" if extra > 0 else ""
+            )
+            # Cap container height so 100s of chips don't dominate the page
+            max_h = 200 if len(shown) > 30 else "auto"
+            st.markdown(
+                f"<div style='max-height:{max_h}px; overflow-y:auto; "
+                f"padding:6px; border-radius:8px; "
+                f"background:rgba(34,197,94,0.04); "
+                f"border:1px solid rgba(34,197,94,0.2);'>"
+                "<b style='color:#9ca3af; margin-right:6px; "
+                "font-size:0.85rem;'>📊 Tickers (click to open chart):</b>"
+                + "".join(chips) + extra_html + "</div>"
+                if isinstance(max_h, int) else
+                "<div style='line-height:2.2;'>"
+                "<b style='color:#9ca3af; margin-right:6px;'>"
+                "📊 Tickers (click to open chart):</b>"
+                + "".join(chips) + "</div>",
+                unsafe_allow_html=True,
+            )
         else:
             st.info(f"No matches in {scanned} tickers scanned.")
 
