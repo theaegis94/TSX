@@ -2873,6 +2873,41 @@ RULE_PRESETS: dict[str, list[dict]] = {
          "date": None},
         {"left": "RSI", "op": ">", "a": 70.0, "b": None, "date": None},
     ],
+    "📚 Connors-style": [
+        # Larry Connors' canonical short-term mean-reversion strategy:
+        # RSI(2)<10 + price>SMA200. Adapted with RSI(5)<15. Works in
+        # established uptrends; volume confirmation reduces false signals.
+        {"left": "RSI5", "op": "<", "a": 15.0, "b": None, "date": None},
+        {"left": "DIST_SMA200_PCT", "op": ">", "a": 0.0, "b": None,
+         "date": None},
+        {"left": "CMF", "op": ">", "a": 0.0, "b": None, "date": None},
+    ],
+    "📚 Strong bounce": [
+        # Volume-confirmed extreme oversold in uptrend.
+        # MFI<20 (selling exhausted) + BB%B<0.15 (price extended below
+        # band) + CMF>0 (institutional accumulation) + above SMA200.
+        # The historical edge in this combo is materially better than
+        # any single indicator alone.
+        {"left": "MFI", "op": "<", "a": 20.0, "b": None, "date": None},
+        {"left": "BB_PCT_B", "op": "<", "a": 0.15, "b": None, "date": None},
+        {"left": "CMF", "op": ">", "a": 0.0, "b": None, "date": None},
+        {"left": "DIST_SMA200_PCT", "op": ">", "a": 0.0, "b": None,
+         "date": None},
+    ],
+    "📚 News drift": [
+        # Post-earnings drift proxy: high news buzz + bullish news
+        # sentiment + bullish technicals + volume incoming. PEAD is
+        # the strongest documented anomaly in finance — beats keep
+        # drifting up for weeks.
+        {"left": "NEWS_BUZZ", "op": ">", "a": 1.5, "b": None,
+         "date": None},
+        {"left": "NEWS_SENT", "op": ">", "a": 0.55, "b": None,
+         "date": None},
+        {"left": "CONVICTION", "op": ">", "a": 30.0, "b": None,
+         "date": None},
+        {"left": "VOL_OUTLOOK", "op": ">", "a": 50.0, "b": None,
+         "date": None},
+    ],
 }
 
 
@@ -3261,6 +3296,18 @@ with tab_patterns:
         "🆎 Retail vs technicals (contrarian)":
             "Retail euphoric (>75% bullish) but RSI overbought (>70) — "
             "classic contrarian fade signal. Retail tops happen.",
+        "📚 Connors-style":
+            "Larry Connors' RSI mean-reversion (RSI<15 on fast period + "
+            "above SMA200 + accumulation). Documented historical edge for "
+            "1-3 day mean reversion in uptrends.",
+        "📚 Strong bounce":
+            "Multi-factor volume-confirmed extreme oversold: MFI<20 + "
+            "BB%B<0.15 + CMF>0 + above SMA200. Combines selling "
+            "exhaustion + institutional buying + uptrend filter.",
+        "📚 News drift":
+            "Post-earnings drift proxy: high news buzz + bullish "
+            "sentiment + bullish technicals + volume incoming. "
+            "PEAD is the strongest documented finance anomaly.",
     }
     preset_cols = st.columns(len(preset_names))
     for col, pname in zip(preset_cols, preset_names):
