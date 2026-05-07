@@ -1874,10 +1874,17 @@ st.divider()
 # --------- sidebar ---------
 
 def _add_ticker_to_watchlist(new_t: str) -> None:
-    """Shared logic — add a normalized ticker to the watchlist."""
+    """Shared logic — add a normalized ticker to the watchlist.
+
+    Auto-appends `-USD` to bare crypto bases (BTC → BTC-USD, ETH → ETH-USD)
+    so users don't need to know yfinance's crypto naming convention.
+    """
     new_t = (new_t or "").strip().upper()
     if not new_t:
         return
+    # Auto-suffix bare crypto bases to yfinance format
+    if "-" not in new_t and "." not in new_t and new_t in CRYPTO_BASES:
+        new_t = f"{new_t}-USD"
     try:
         new_t = ss.normalize_ticker(new_t)
     except SystemExit:
@@ -1937,7 +1944,7 @@ def _remove_from_watchlist():
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def _all_tickers_for_dropdown() -> list:
-    """Combined sorted list of S&P 500 + TSX Composite + popular ETFs."""
+    """Combined sorted list of S&P 500 + TSX Composite + popular ETFs + crypto."""
     parts = []
     try:
         parts.extend(ss.get_sp500())
@@ -1948,7 +1955,18 @@ def _all_tickers_for_dropdown() -> list:
     except Exception:
         pass
     parts.extend(ss.UNIVERSE_POPULAR_ETFS)
+    # Crypto: include both `BTC-USD` (yfinance form) and `BTC` (bare) so
+    # users searching for "BTC" find a hit; the add-handler auto-appends
+    # `-USD` to bare crypto bases.
+    parts.extend(ss.UNIVERSE_CRYPTO)
     return sorted(set(parts))
+
+
+# Set of known crypto bases (without -USD suffix) — used to auto-append
+# the -USD suffix when a user types just "BTC".
+CRYPTO_BASES: set[str] = {
+    t.split("-")[0].upper() for t in ss.UNIVERSE_CRYPTO if "-" in t
+}
 
 
 def _build_ai_context() -> str:
