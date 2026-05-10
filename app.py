@@ -99,31 +99,32 @@ st.markdown(
         border-right: 1px solid #44454a;
     }
 
-    /* Buttons inside horizontal column groups: equal height + smaller
-       font so labels fit on one line. */
+    /* Buttons inside horizontal column groups: equal height + small
+       font + allow wrapping to 2 lines so labels stay readable when
+       there are many columns. */
     .stApp [data-testid="stHorizontalBlock"] [data-testid="stColumn"]
         .stButton button {
-        min-height: 44px !important;
-        font-size: 0.78rem !important;
-        padding: 6px 8px !important;
-        white-space: nowrap;
+        min-height: 56px !important;
+        font-size: 0.73rem !important;
+        padding: 4px 6px !important;
+        white-space: normal;
         line-height: 1.2;
         display: flex;
         align-items: center;
         justify-content: center;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        text-align: center;
+        word-break: keep-all;
+        hyphens: none;
     }
-    /* Inner span (Streamlit wraps button label in <p>) needs the same
-       no-wrap + shrink behavior. */
+    /* Inner <p> wrap that Streamlit creates inside the button */
     .stApp [data-testid="stHorizontalBlock"] [data-testid="stColumn"]
         .stButton button p {
-        font-size: 0.78rem !important;
+        font-size: 0.73rem !important;
         line-height: 1.2 !important;
         margin: 0 !important;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        white-space: normal !important;
+        text-align: center !important;
+        word-break: keep-all;
     }
 
     /* Metric cards — compact */
