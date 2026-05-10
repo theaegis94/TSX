@@ -1307,53 +1307,77 @@ def compute_anomaly_score(df: pd.DataFrame) -> dict | None:
 
 def compute_market_regime() -> dict:
     """Classify the current market regime from SPY trend + VIX.
-
-    Returns dict with:
-      - regime: short label ("trend_up_calm", "chop", "panic", etc.)
-      - emoji: visual icon for the regime
-      - label: human-readable name
-      - suitable: list of strategy types that historically work in this regime
-      - spy_trend: -1, 0, +1
-      - vix: latest VIX level
-      - spy_above_sma200: bool
-      - spy_adx: ADX of SPY (trend strength)
+    Wrapped in defensive try/except — any failure falls through to
+    the 'unknown' state without crashing.
     """
     out: dict = {
         "regime": "unknown", "emoji": "❓", "label": "Unknown",
         "suitable": [],
     }
+    # --- SPY data ---
+    spy_above = None
+    spy_adx = 0.0
+    ret_20 = 0.0
     try:
         spy = yf.download("SPY", period="1y", interval="1d",
                           auto_adjust=True, progress=False)
+        if spy is None or spy.empty:
+            return out
+        # Handle MultiIndex (newer yfinance always returns one)
         if isinstance(spy.columns, pd.MultiIndex):
             spy.columns = spy.columns.get_level_values(0)
-        if spy.empty or len(spy) < 200:
+        # Sometimes columns end up duplicated — keep first occurrence
+        spy = spy.loc[:, ~spy.columns.duplicated()]
+        if "Close" not in spy.columns or len(spy) < 200:
             return out
-        sma200 = spy["Close"].rolling(200).mean().iloc[-1]
-        last_close = float(spy["Close"].iloc[-1])
-        spy_above = last_close > sma200
-        # 20-day momentum
-        ret_20 = (last_close / float(spy["Close"].iloc[-21]) - 1) * 100
-        # ADX as trend strength
+        close_series = spy["Close"]
+        # Ensure Series (not DataFrame if duplicated columns slipped through)
+        if isinstance(close_series, pd.DataFrame):
+            close_series = close_series.iloc[:, 0]
+        sma200_val = close_series.rolling(200).mean().iloc[-1]
+        last_close = float(close_series.iloc[-1])
+        if pd.isna(sma200_val):
+            return out
+        spy_above = bool(last_close > float(sma200_val))
         try:
-            spy_adx = float(adx(spy).iloc[-1])
+            ret_20 = float(
+                (last_close / float(close_series.iloc[-21]) - 1.0) * 100
+            )
+        except (IndexError, ZeroDivisionError, ValueError):
+            ret_20 = 0.0
+        try:
+            adx_series = adx(spy)
+            if adx_series is not None and not adx_series.empty:
+                adx_val = adx_series.iloc[-1]
+                if not pd.isna(adx_val):
+                    spy_adx = float(adx_val)
         except Exception:
             spy_adx = 0.0
-        out["spy_above_sma200"] = bool(spy_above)
+        out["spy_above_sma200"] = spy_above
         out["spy_adx"] = round(spy_adx, 1)
         out["spy_ret_20d"] = round(ret_20, 2)
     except Exception:
         return out
 
+    # --- VIX ---
+    vix = None
     try:
         vix_df = yf.download("^VIX", period="1mo", interval="1d",
                              auto_adjust=False, progress=False)
-        if isinstance(vix_df.columns, pd.MultiIndex):
-            vix_df.columns = vix_df.columns.get_level_values(0)
-        vix = float(vix_df["Close"].iloc[-1]) if not vix_df.empty else None
+        if vix_df is not None and not vix_df.empty:
+            if isinstance(vix_df.columns, pd.MultiIndex):
+                vix_df.columns = vix_df.columns.get_level_values(0)
+            vix_df = vix_df.loc[:, ~vix_df.columns.duplicated()]
+            if "Close" in vix_df.columns:
+                vix_close = vix_df["Close"]
+                if isinstance(vix_close, pd.DataFrame):
+                    vix_close = vix_close.iloc[:, 0]
+                last_vix = vix_close.iloc[-1]
+                if not pd.isna(last_vix):
+                    vix = float(last_vix)
     except Exception:
         vix = None
-    out["vix"] = round(vix, 1) if vix else None
+    out["vix"] = round(vix, 1) if vix is not None else None
 
     # Classify
     if vix is None:
