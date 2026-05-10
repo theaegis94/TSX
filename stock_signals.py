@@ -1305,6 +1305,137 @@ def compute_anomaly_score(df: pd.DataFrame) -> dict | None:
         return None
 
 
+def compute_market_regime() -> dict:
+    """Classify the current market regime from SPY trend + VIX.
+
+    Returns dict with:
+      - regime: short label ("trend_up_calm", "chop", "panic", etc.)
+      - emoji: visual icon for the regime
+      - label: human-readable name
+      - suitable: list of strategy types that historically work in this regime
+      - spy_trend: -1, 0, +1
+      - vix: latest VIX level
+      - spy_above_sma200: bool
+      - spy_adx: ADX of SPY (trend strength)
+    """
+    out: dict = {
+        "regime": "unknown", "emoji": "❓", "label": "Unknown",
+        "suitable": [],
+    }
+    try:
+        spy = yf.download("SPY", period="1y", interval="1d",
+                          auto_adjust=True, progress=False)
+        if isinstance(spy.columns, pd.MultiIndex):
+            spy.columns = spy.columns.get_level_values(0)
+        if spy.empty or len(spy) < 200:
+            return out
+        sma200 = spy["Close"].rolling(200).mean().iloc[-1]
+        last_close = float(spy["Close"].iloc[-1])
+        spy_above = last_close > sma200
+        # 20-day momentum
+        ret_20 = (last_close / float(spy["Close"].iloc[-21]) - 1) * 100
+        # ADX as trend strength
+        try:
+            spy_adx = float(adx(spy).iloc[-1])
+        except Exception:
+            spy_adx = 0.0
+        out["spy_above_sma200"] = bool(spy_above)
+        out["spy_adx"] = round(spy_adx, 1)
+        out["spy_ret_20d"] = round(ret_20, 2)
+    except Exception:
+        return out
+
+    try:
+        vix_df = yf.download("^VIX", period="1mo", interval="1d",
+                             auto_adjust=False, progress=False)
+        if isinstance(vix_df.columns, pd.MultiIndex):
+            vix_df.columns = vix_df.columns.get_level_values(0)
+        vix = float(vix_df["Close"].iloc[-1]) if not vix_df.empty else None
+    except Exception:
+        vix = None
+    out["vix"] = round(vix, 1) if vix else None
+
+    # Classify
+    if vix is None:
+        regime = "trend_up_calm" if spy_above else "trend_down"
+    elif vix > 35:
+        regime = "panic"
+    elif vix > 25:
+        if spy_above:
+            regime = "volatile_uptrend"
+        else:
+            regime = "stress_downtrend"
+    elif vix < 16 and spy_above and spy_adx > 25:
+        regime = "strong_trend_up"
+    elif spy_above:
+        regime = "trend_up_calm"
+    elif not spy_above and vix < 22:
+        regime = "trend_down_calm"
+    else:
+        regime = "chop"
+
+    presets_by_regime = {
+        "strong_trend_up": {
+            "emoji": "🚀",
+            "label": "Strong uptrend (low vol)",
+            "suitable": [
+                "🚀 Momentum", "🎯 Strong Buy", "📚 News drift",
+            ],
+        },
+        "trend_up_calm": {
+            "emoji": "📈",
+            "label": "Uptrend (calm)",
+            "suitable": [
+                "🚀 Momentum", "🟢 Bounce buy", "🌊 Vol-swing buy",
+                "📚 Connors-style",
+            ],
+        },
+        "volatile_uptrend": {
+            "emoji": "⚡",
+            "label": "Volatile uptrend",
+            "suitable": [
+                "🟢 Bounce buy", "🌊 Vol-swing buy", "📚 Strong bounce",
+            ],
+        },
+        "chop": {
+            "emoji": "〰️",
+            "label": "Choppy / range-bound",
+            "suitable": [
+                "🌊 Vol-swing buy", "📚 Connors-style", "💥 Squeeze",
+            ],
+        },
+        "stress_downtrend": {
+            "emoji": "🌧️",
+            "label": "Stressed downtrend",
+            "suitable": [
+                "📚 Strong bounce", "🌊 Vol-swing buy",
+                "⚠️ Wait (falling)",
+            ],
+        },
+        "panic": {
+            "emoji": "🚨",
+            "label": "Panic / capitulation",
+            "suitable": [
+                "📚 Strong bounce", "⚠️ Wait (falling)",
+            ],
+        },
+        "trend_down_calm": {
+            "emoji": "📉",
+            "label": "Downtrend (calm)",
+            "suitable": [
+                "🔴 Strong Sell", "⚠️ Wait (falling)",
+                "🆎 Retail vs technicals (contrarian)",
+            ],
+        },
+    }
+    info = presets_by_regime.get(regime, {})
+    out["regime"] = regime
+    out["emoji"] = info.get("emoji", "❓")
+    out["label"] = info.get("label", regime)
+    out["suitable"] = info.get("suitable", [])
+    return out
+
+
 def compute_volume_outlook(ticker: str, df: pd.DataFrame) -> dict | None:
     """Volume outlook score 0-100 — likelihood of elevated volume in the
     next few sessions. NOT a price predictor — just a volume-flow predictor.
@@ -2710,25 +2841,25 @@ UNIVERSE_TSX60 = [
 
 # Major cryptocurrencies — yfinance format is SYMBOL-USD.
 # Trades 24/7, so backtests treat each calendar day as a "bar".
+# Curated to verified-working yfinance tickers. Some meme coins (PEPE, WIF,
+# FLOKI) are excluded because they require CoinMarketCap-ID-suffixed forms
+# (e.g., PEPE24478-USD) and yfinance doesn't always have data for them.
 UNIVERSE_CRYPTO = [
     # Major caps
     "BTC-USD", "ETH-USD", "BNB-USD", "SOL-USD", "XRP-USD",
     "ADA-USD", "DOGE-USD", "AVAX-USD", "DOT-USD", "TRX-USD",
+    "LTC-USD", "BCH-USD",
     # Layer 1 / 2
-    "MATIC-USD", "ATOM-USD", "NEAR-USD", "ALGO-USD", "ARB-USD",
-    "OP-USD", "SUI-USD", "APT-USD",
+    "ATOM-USD", "NEAR-USD", "ALGO-USD",
     # DeFi
-    "LINK-USD", "UNI-USD", "AAVE-USD", "MKR-USD", "CRV-USD",
-    "LDO-USD", "SNX-USD",
+    "LINK-USD", "UNI-USD", "AAVE-USD", "MKR-USD",
     # Smart-contract / utility
     "ETC-USD", "XLM-USD", "FIL-USD", "ICP-USD", "VET-USD",
     "HBAR-USD",
-    # Meme / community
-    "SHIB-USD", "PEPE-USD", "WIF-USD",
+    # Meme / community (only ones with reliable yfinance data)
+    "SHIB-USD",
     # Stablecoins (low-volatility reference)
     "USDT-USD", "USDC-USD",
-    # Wrapped / staked variants
-    "WBTC-USD", "STETH-USD",
 ]
 
 

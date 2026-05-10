@@ -1230,6 +1230,12 @@ def cached_stocktwits(ticker: str):
     return ss.stocktwits_sentiment(ticker)
 
 
+@st.cache_data(ttl=1800, show_spinner=False)
+def cached_market_regime():
+    """Cache market regime classification for 30 minutes."""
+    return ss.compute_market_regime()
+
+
 def _cached_vol_outlook(ticker: str, df):
     """Cache volume outlook per (ticker, last bar) — uses news + earnings
     APIs so we don't recompute on every rerun."""
@@ -1760,6 +1766,17 @@ def cached_company_profile(ticker: str) -> dict:
 @st.cache_data(ttl=3600, show_spinner=False)
 def cached_recommendation(ticker: str):
     return ss.finnhub_recommendation(ticker)
+
+
+def _hex_to_rgb(hex_color: str) -> str:
+    """Convert #rrggbb to 'r, g, b' string (for rgba CSS)."""
+    h = hex_color.lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    try:
+        return f"{int(h[0:2], 16)}, {int(h[2:4], 16)}, {int(h[4:6], 16)}"
+    except ValueError:
+        return "156, 163, 175"  # fallback gray
 
 
 def _fmt_compact_num(v: float | None) -> str:
@@ -3253,6 +3270,39 @@ with tab_patterns:
 
     saved = st.session_state.saved_rules
 
+    # --- 🌐 Market regime banner ---
+    regime = cached_market_regime()
+    if regime and regime.get("regime") != "unknown":
+        vix_str = (f"VIX <b>{regime['vix']:.1f}</b>"
+                   if regime.get("vix") is not None else "VIX —")
+        spy_str = ("above" if regime.get("spy_above_sma200") else "below")
+        adx_str = f"ADX <b>{regime.get('spy_adx', 0):.0f}</b>"
+        ret_str = (f"20d <b>{regime.get('spy_ret_20d', 0):+.1f}%</b>"
+                   if "spy_ret_20d" in regime else "")
+        suit_chips = "".join(
+            f"<span style='background:#16a34a; color:#fff; "
+            f"padding:2px 8px; border-radius:6px; font-size:0.72rem; "
+            f"font-weight:700; margin-right:4px;'>{p}</span>"
+            for p in regime.get("suitable", [])
+        )
+        st.markdown(
+            f"<div style='padding:10px 14px; border-radius:10px; "
+            f"background:rgba(96,165,250,0.06); "
+            f"border:1px solid #4a4b4e; margin-bottom:10px;'>"
+            f"<div style='font-size:0.95rem; color:#e5e7eb; "
+            f"font-weight:700; margin-bottom:4px;'>"
+            f"{regime['emoji']} Market regime: {regime['label']}</div>"
+            f"<div style='font-size:0.75rem; color:#9ca3af; "
+            f"margin-bottom:8px;'>"
+            f"SPY {spy_str} SMA200 · {ret_str} · {adx_str} · {vix_str}"
+            f"</div>"
+            f"<div style='font-size:0.72rem; color:#9ca3af; "
+            f"margin-bottom:4px;'>Presets that historically work in "
+            f"this regime:</div><div>{suit_chips}</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
     # --- ⚡ Quick presets (always visible — easiest entry point) ---
     st.markdown("**⚡ Quick presets** — one click loads ready-made rules")
     preset_names = list(RULE_PRESETS.keys())
@@ -3698,6 +3748,86 @@ with tab_patterns:
             n = len(rets)
             win_rate = (rets > 0).mean() * 100
             avg_ret = rets.mean()
+
+            # Compute profit factor early so verdict can use it
+            wins = rets[rets > 0]
+            losses = rets[rets <= 0]
+            sum_wins = wins.sum() if len(wins) else 0.0
+            sum_losses = abs(losses.sum()) if len(losses) else 0.0
+            pf_early = (sum_wins / sum_losses
+                        if sum_losses > 0 else float("inf"))
+
+            # === Verdict box: explicit KEEP / REFINE / KILL ===
+            verdict_emoji = "❓"
+            verdict_color = "#9ca3af"
+            verdict_label = "INCONCLUSIVE"
+            verdict_reason = ""
+
+            if n < 30:
+                verdict_emoji = "📉"
+                verdict_color = "#9ca3af"
+                verdict_label = "INCONCLUSIVE — not enough data"
+                verdict_reason = (
+                    f"Only {n} historical matches. Stats are noisy below 30. "
+                    "Widen rules or scan a bigger universe (S&P 500, "
+                    "full TSX) to get a meaningful sample."
+                )
+            elif (win_rate >= 55 and pf_early >= 1.3
+                  and avg_ret > 0.5):
+                verdict_emoji = "✅"
+                verdict_color = "#22c55e"
+                verdict_label = "KEEP — passes 55% threshold"
+                verdict_reason = (
+                    f"Win rate {win_rate:.1f}% (≥55%), profit factor "
+                    f"{pf_early:.2f}, avg return {avg_ret:+.2f}%. "
+                    "Real edge in this sample. Still expect 30-50% "
+                    "degradation in live trading from costs/slippage."
+                )
+            elif win_rate < 50 or pf_early < 1.0:
+                verdict_emoji = "❌"
+                verdict_color = "#ef4444"
+                verdict_label = "KILL — no edge"
+                verdict_reason = (
+                    f"Win rate {win_rate:.1f}% and profit factor "
+                    f"{pf_early:.2f}. These rules didn't help "
+                    "historically — refine or scrap. Common fixes: add "
+                    "a trend filter (above SMA200), require volume "
+                    "confirmation (CMF>0), tighten thresholds."
+                )
+            elif pf_early >= 1.0 and avg_ret > 0:
+                verdict_emoji = "⚠️"
+                verdict_color = "#fbbf24"
+                verdict_label = "REFINE — marginal edge"
+                verdict_reason = (
+                    f"Win rate {win_rate:.1f}%, profit factor "
+                    f"{pf_early:.2f}, avg {avg_ret:+.2f}%. Better than "
+                    "random but probably won't survive transaction "
+                    "costs. Try combining with another factor "
+                    "(volume, news sentiment) or stricter thresholds."
+                )
+            else:
+                verdict_emoji = "❌"
+                verdict_color = "#ef4444"
+                verdict_label = "KILL — negative expectancy"
+                verdict_reason = (
+                    f"Win rate {win_rate:.1f}%, avg return {avg_ret:+.2f}%. "
+                    "Losing money historically. Scrap and rebuild."
+                )
+
+            st.markdown(
+                f"<div style='padding:14px 16px; border-radius:10px; "
+                f"margin:10px 0; "
+                f"background:rgba({_hex_to_rgb(verdict_color)}, 0.12); "
+                f"border-left:4px solid {verdict_color};'>"
+                f"<div style='font-size:1.05rem; "
+                f"color:{verdict_color}; font-weight:700; "
+                f"margin-bottom:4px;'>"
+                f"{verdict_emoji} {verdict_label}</div>"
+                f"<div style='font-size:0.85rem; color:#e5e7eb; "
+                f"line-height:1.5;'>{verdict_reason}</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
             med_ret = rets.median()
             avg_dd = dds.mean()
             best = rets.max()
