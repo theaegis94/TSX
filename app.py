@@ -3911,23 +3911,53 @@ with tab_patterns:
                    if saved_count else "💾 Save / load rule sets")
     with st.expander(saved_label, expanded=False):
         if saved:
+            st.caption(
+                "🔔 Tag a rule set to receive **daily email alerts** when "
+                "it matches across the TSX + TSXV at market open."
+            )
             for name in list(saved.keys()):
-                sc1, sc2, sc3 = st.columns([4, 2, 1])
+                # Saved rule sets used to be plain lists; now support
+                # dict form {"rules": [...], "alert": bool}
+                entry = saved[name]
+                if isinstance(entry, list):
+                    rules_list = entry
+                    is_alert = False
+                else:
+                    rules_list = entry.get("rules", [])
+                    is_alert = bool(entry.get("alert", False))
+
+                sc1, sc2, sc3, sc4 = st.columns([4, 1.2, 1.2, 0.6])
                 sc1.markdown(
                     f"**{name}** &nbsp;·&nbsp; "
                     f"<span style='color:#9ca3af'>"
-                    f"{len(saved[name])} rule(s)</span>",
+                    f"{len(rules_list)} rule(s)</span>"
+                    + (" &nbsp;·&nbsp; <span style='color:#22c55e; "
+                       "font-size:0.78rem; font-weight:700;'>🔔 ALERT"
+                       "</span>" if is_alert else ""),
                     unsafe_allow_html=True,
                 )
                 if sc2.button("📂 Load", key=f"saved_load_{name}",
                               use_container_width=True):
                     st.session_state.custom_rules = [
-                        dict(r) for r in saved[name]
+                        dict(r) for r in rules_list
                     ]
                     for r in st.session_state.custom_rules:
                         r.pop("_keyspec", None)
                     st.rerun()
-                if sc3.button("🗑️", key=f"saved_del_{name}",
+                toggle_label = "🔕 Mute" if is_alert else "🔔 Alert"
+                if sc3.button(toggle_label, key=f"saved_alert_{name}",
+                              use_container_width=True,
+                              help=("Stop daily email alerts for this rule"
+                                    if is_alert else
+                                    "Get a daily email when this rule "
+                                    "matches in the TSX/TSXV scan")):
+                    saved[name] = {
+                        "rules": rules_list,
+                        "alert": not is_alert,
+                    }
+                    _persist_saved_rules(saved)
+                    st.rerun()
+                if sc4.button("🗑️", key=f"saved_del_{name}",
                               help=f"Delete '{name}'"):
                     del saved[name]
                     _persist_saved_rules(saved)
@@ -3948,7 +3978,15 @@ with tab_patterns:
             elif not st.session_state.custom_rules:
                 st.warning("No rules to save.")
             else:
-                saved[nm] = [dict(r) for r in st.session_state.custom_rules]
+                # Preserve any existing alert flag when overwriting
+                existing_alert = False
+                existing = saved.get(nm)
+                if isinstance(existing, dict):
+                    existing_alert = bool(existing.get("alert", False))
+                saved[nm] = {
+                    "rules": [dict(r) for r in st.session_state.custom_rules],
+                    "alert": existing_alert,
+                }
                 _persist_saved_rules(saved)
                 st.success(f"Saved “{nm}”.")
                 st.rerun()

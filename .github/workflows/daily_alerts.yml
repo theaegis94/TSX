@@ -1,0 +1,45 @@
+name: Daily Email Alerts
+
+# Runs every weekday at 9:30 AM Eastern (13:30 UTC during EDT, 14:30 UTC during EST).
+# GitHub Actions cron uses UTC and doesn't auto-adjust for DST, so we list both.
+# Comment out one when DST changes if you want exactly 9:30 ET — or accept the
+# 1-hour drift twice a year (most don't bother).
+on:
+  schedule:
+    # 13:30 UTC = 9:30 ET during Eastern Daylight Time (Mar-Nov)
+    - cron: "30 13 * * 1-5"
+    # 14:30 UTC = 9:30 ET during Eastern Standard Time (Nov-Mar)
+    - cron: "30 14 * * 1-5"
+  # Manual trigger from GitHub UI (Actions → Daily Email Alerts → Run workflow)
+  workflow_dispatch:
+
+jobs:
+  send_alerts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run alert scanner
+        env:
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          ALERT_TO: ${{ secrets.ALERT_TO }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          ALERTS_UNIVERSE: tsx_and_tsxv
+          ALERTS_MIN_VOL: "50000"
+          ALERTS_TOP_N: "15"
+        run: python scripts/email_alerts.py
