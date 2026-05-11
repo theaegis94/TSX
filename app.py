@@ -2724,6 +2724,210 @@ with tab_screener:
                 )
             cols[7].markdown("✓" if m["rsi_oversold"] else "·")
 
+    # ====================================================================
+    # 📊 Strategy Performance Leaderboard
+    # Runs every strategy against the selected universe, aggregates
+    # win-rate / return / drawdown / trade-count stats so you can see
+    # which strategies actually work right now.
+    # ====================================================================
+    st.divider()
+    st.subheader("📊 Strategy Performance Leaderboard")
+    st.caption(
+        "Backtest **every available strategy** against a universe of "
+        "tickers, then rank by aggregate win rate / return. Lets you see "
+        "which strategies have an edge right now — and which don't."
+    )
+
+    lb_col1, lb_col2 = st.columns([2, 1])
+    lb_universe = lb_col1.selectbox(
+        "Universe (smaller = faster)",
+        options=[
+            "Custom watchlist",
+            "TSX 60 (~60)",
+            "Popular ETFs (~80)",
+            "S&P 100 (~100)",
+            "S&P 500 (~500 — slow)",
+        ],
+        index=0,
+        key="lb_universe",
+    )
+    lb_min_trades = lb_col2.number_input(
+        "Min trades to qualify",
+        min_value=0, max_value=50, value=3, step=1,
+        help="Filter out strategies that barely traded. 3 = each ticker "
+             "must have ≥3 trades to count.",
+        key="lb_min_trades",
+    )
+
+    if st.button("🏁 Run leaderboard", key="lb_run", type="primary"):
+        # Resolve universe
+        with st.spinner("Loading universe…"):
+            if lb_universe == "Custom watchlist":
+                tickers = [t.strip().upper() for t in
+                           st.session_state.get("watchlist_input", "")
+                                .split(",") if t.strip()]
+            elif lb_universe == "TSX 60 (~60)":
+                tickers = list(ss.UNIVERSE_TSX60)
+            elif lb_universe == "Popular ETFs (~80)":
+                tickers = list(ss.UNIVERSE_POPULAR_ETFS)
+            elif lb_universe == "S&P 100 (~100)":
+                tickers = list(ss.UNIVERSE_SP100)
+            elif lb_universe == "S&P 500 (~500 — slow)":
+                tickers = ss.get_sp500()
+            else:
+                tickers = []
+
+        if not tickers:
+            st.warning("Universe is empty.")
+        else:
+            n_strats = len(ss.STRATEGY_LABELS)
+            leaderboard = []
+            progress = st.progress(0.0)
+            status = st.empty()
+            for idx, (strat_key, strat_label) in enumerate(
+                ss.STRATEGY_LABELS.items()
+            ):
+                status.caption(
+                    f"Backtesting **{strat_label}** "
+                    f"({idx + 1}/{n_strats})…"
+                )
+                try:
+                    rows = cached_scan(
+                        tuple(tickers), period, interval,
+                        strat_key, adx_filter, stop_loss_pct,
+                    )
+                except Exception:
+                    rows = []
+                progress.progress((idx + 1) / n_strats)
+                if not rows:
+                    continue
+                # Filter to tickers that actually traded
+                qualified = [r for r in rows
+                             if r.get("trades", 0) >= lb_min_trades]
+                if not qualified:
+                    continue
+                wins = [r["win_rate"] for r in qualified
+                        if r.get("win_rate") is not None]
+                rets = [r["total_return"] for r in qualified
+                        if r.get("total_return") is not None]
+                bhs = [r["buy_hold"] for r in qualified
+                       if r.get("buy_hold") is not None]
+                dds = [r["max_drawdown"] for r in qualified
+                       if r.get("max_drawdown") is not None]
+                trades = sum(r.get("trades", 0) for r in qualified)
+                profitable = sum(
+                    1 for r in qualified
+                    if (r.get("total_return") or 0) > 0
+                )
+                alpha = [
+                    (r.get("total_return") or 0) - (r.get("buy_hold") or 0)
+                    for r in qualified
+                ]
+                leaderboard.append({
+                    "Strategy": strat_label,
+                    "_key": strat_key,
+                    "Avg Win %":
+                        round(sum(wins) / len(wins) * 100, 1)
+                        if wins else None,
+                    "Avg Return %":
+                        round(sum(rets) / len(rets) * 100, 2)
+                        if rets else None,
+                    "Avg B&H %":
+                        round(sum(bhs) / len(bhs) * 100, 2)
+                        if bhs else None,
+                    "Avg α (vs B&H) %":
+                        round(sum(alpha) / len(alpha) * 100, 2)
+                        if alpha else None,
+                    "Avg Max DD %":
+                        round(sum(dds) / len(dds) * 100, 2)
+                        if dds else None,
+                    "Total Trades": int(trades),
+                    "Profitable / Total":
+                        f"{profitable}/{len(qualified)}",
+                    "Profitable %":
+                        round(profitable / len(qualified) * 100, 1),
+                    "Sample (tickers)": len(qualified),
+                })
+            progress.empty()
+            status.empty()
+
+            if not leaderboard:
+                st.info("No strategy produced trades — try lowering "
+                        "the minimum-trades threshold or pick a "
+                        "different universe.")
+            else:
+                st.session_state["lb_results"] = leaderboard
+                st.session_state["lb_universe_used"] = lb_universe
+
+    # Render last results (survive popup/rerun)
+    lb_data = st.session_state.get("lb_results")
+    if lb_data:
+        st.caption(
+            f"Last run · universe: **"
+            f"{st.session_state.get('lb_universe_used', '')}** · "
+            f"{len(lb_data)} strategies ranked"
+        )
+        df_lb = pd.DataFrame(lb_data).drop(columns=["_key"])
+        # Sort by alpha by default (strategy excess return over buy-hold)
+        if "Avg α (vs B&H) %" in df_lb.columns:
+            df_lb = df_lb.sort_values(
+                "Avg α (vs B&H) %", ascending=False, na_position="last"
+            )
+        st.dataframe(
+            df_lb,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Avg Win %": st.column_config.NumberColumn(
+                    format="%.1f%%"
+                ),
+                "Avg Return %": st.column_config.NumberColumn(
+                    format="%.2f%%"
+                ),
+                "Avg B&H %": st.column_config.NumberColumn(
+                    format="%.2f%%"
+                ),
+                "Avg α (vs B&H) %": st.column_config.NumberColumn(
+                    format="%+.2f%%",
+                    help="Avg strategy return minus buy-and-hold. "
+                         "Positive = strategy beats passive holding.",
+                ),
+                "Avg Max DD %": st.column_config.NumberColumn(
+                    format="%.2f%%"
+                ),
+                "Profitable %": st.column_config.NumberColumn(
+                    format="%.0f%%",
+                    help="% of tickers where this strategy made money.",
+                ),
+            },
+        )
+
+        # Honest takeaway based on top result
+        try:
+            top = df_lb.iloc[0]
+            alpha = top.get("Avg α (vs B&H) %")
+            win = top.get("Avg Win %")
+            if alpha is not None and alpha > 5:
+                st.success(
+                    f"**Top performer**: {top['Strategy']} — "
+                    f"+{alpha:.1f}% alpha vs buy-hold with "
+                    f"{win:.0f}% avg win rate."
+                )
+            elif alpha is not None and alpha > 0:
+                st.info(
+                    f"**Top performer**: {top['Strategy']} — "
+                    f"{alpha:+.1f}% alpha. Modest edge."
+                )
+            else:
+                st.warning(
+                    f"**Top performer**: {top['Strategy']} — "
+                    f"{alpha:+.1f}% alpha. **No strategy beat buy-and-"
+                    f"hold in this universe**. Passive may be the "
+                    f"honest call here."
+                )
+        except (KeyError, IndexError, TypeError):
+            pass
+
 
 # === Custom Patterns tab ===
 RULE_INDICATORS = {
