@@ -51,6 +51,15 @@ from pathlib import Path
 import pandas as pd
 import yfinance as yf
 
+# Ensure UTF-8 stdout so emoji in logs don't crash on Windows (cp1252).
+# GitHub Actions Ubuntu is already UTF-8; this is a no-op there.
+try:
+    if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except (AttributeError, OSError):
+    pass
+
 # Add the parent directory to sys.path so we can import stock_signals
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import stock_signals as ss  # noqa: E402
@@ -201,16 +210,10 @@ def eval_rule(df, rule: dict, ticker: str | None = None) -> bool | None:
 # Upside-potential scoring
 # ---------------------------------------------------------------------------
 
-def upside_score(df: pd.DataFrame, ticker: str) -> dict | None:
-    """Composite score for 'highest potential to move up'.
-
-    Combines:
-      - CONVICTION (multi-factor technical lean)
-      - VOL_OUTLOOK (next-day volume expected)
-      - News sentiment (if available, weighted lightly)
-      - Distance from SMA200 (in-trend filter)
-
-    Returns dict with score (-100 to +200), components, ticker.
+def upside_score_fast(df: pd.DataFrame, ticker: str) -> dict | None:
+    """FAST pass: cheap composite (no API calls, no anomaly training).
+    Only uses indicators already in `df`. Used to filter to top candidates
+    before expensive enrichment runs.
     """
     if df is None or df.empty:
         return None
@@ -218,38 +221,23 @@ def upside_score(df: pd.DataFrame, ticker: str) -> dict | None:
     score = 0.0
     parts: dict = {}
 
-    # Conviction is the workhorse
+    # Conviction (already computed in compute_indicators)
     if "CONVICTION" in df.columns:
         c = float(last.get("CONVICTION", 0) or 0)
         parts["conviction"] = round(c, 1)
-        score += c  # already -100 to +100
+        score += c
 
-    # Volume outlook adds 0-50
-    try:
-        vo = ss.compute_volume_outlook(ticker, df)
-        if vo:
-            score += vo.get("score", 0) * 0.5  # 0-50 contribution
-            parts["vol_outlook"] = vo.get("score")
-    except Exception:
-        pass
-
-    # Trend filter — bonus for being above SMA200
+    # SMA200 trend bonus
     if "SMA200" in df.columns and pd.notna(last.get("SMA200")):
         in_uptrend = float(last["Close"]) > float(last["SMA200"])
         score += 10 if in_uptrend else -10
         parts["uptrend"] = in_uptrend
 
-    # News sentiment (optional)
-    try:
-        sent = ss.finnhub_sentiment(ticker)
-        if sent:
-            bull = (sent.get("sentiment") or {}).get("bullishPercent")
-            if bull is not None:
-                # 0.5 = neutral → 0; 0.8 = +6; 0.2 = -6
-                score += (float(bull) - 0.5) * 20
-                parts["news_sent"] = round(float(bull), 2)
-    except Exception:
-        pass
+    # MFI/CMF (volume confirmation) — cheap, in df
+    if "CMF" in df.columns and pd.notna(last.get("CMF")):
+        c = float(last["CMF"])
+        score += c * 30  # CMF is -1 to +1; multiply for impact
+        parts["cmf"] = round(c, 3)
 
     return {
         "ticker": ticker,
@@ -259,6 +247,35 @@ def upside_score(df: pd.DataFrame, ticker: str) -> dict | None:
         "rsi": (round(float(last["RSI"]), 1)
                 if "RSI" in df.columns and pd.notna(last["RSI"]) else None),
     }
+
+
+def enrich_score(base: dict, df: pd.DataFrame, ticker: str) -> dict:
+    """SLOW pass: add VOL_OUTLOOK + news sentiment to a fast-pass result.
+    Only run for top candidates (cuts API calls 95%+ for big universes)."""
+    parts = dict(base.get("parts") or {})
+    score = base.get("score", 0.0)
+
+    # Volume outlook (hits Finnhub + yfinance for earnings)
+    try:
+        vo = ss.compute_volume_outlook(ticker, df)
+        if vo:
+            score += vo.get("score", 0) * 0.5
+            parts["vol_outlook"] = vo.get("score")
+    except Exception:
+        pass
+
+    # News sentiment (Finnhub)
+    try:
+        sent = ss.finnhub_sentiment(ticker)
+        if sent:
+            bull = (sent.get("sentiment") or {}).get("bullishPercent")
+            if bull is not None:
+                score += (float(bull) - 0.5) * 20
+                parts["news_sent"] = round(float(bull), 2)
+    except Exception:
+        pass
+
+    return {**base, "score": round(score, 1), "parts": parts}
 
 
 # ---------------------------------------------------------------------------
@@ -337,14 +354,16 @@ def run_scan() -> dict:
         if isinstance(rule_set, dict) and rule_set.get("alert"):
             enabled_rule_names.add(name)
 
-    top_picks: list[dict] = []
+    candidates: list[dict] = []  # fast-pass results (no API calls)
     rule_matches: dict[str, list[str]] = {n: [] for n in enabled_rule_names}
     scanned = 0
     filtered = 0
 
+    # === PASS 1: cheap scoring + rule matching across full universe ===
+    log("Pass 1: fast scoring (no API calls)…")
     for i, t in enumerate(universe):
-        if i % 100 == 0:
-            log(f"  Scanning {i}/{len(universe)}…")
+        if i % 200 == 0:
+            log(f"  Pass 1 progress {i}/{len(universe)}…")
         try:
             t_norm = ss.normalize_ticker(t)
         except SystemExit:
@@ -355,12 +374,10 @@ def run_scan() -> dict:
             continue
         scanned += 1
 
-        # Upside score
-        s = upside_score(df, t_norm)
+        s = upside_score_fast(df, t_norm)
         if s and s["score"] > 0:
-            top_picks.append(s)
+            candidates.append((s, t_norm))
 
-        # Rule matches
         for rname in enabled_rule_names:
             rules = saved.get(rname)
             if isinstance(rules, dict):
@@ -370,6 +387,22 @@ def run_scan() -> dict:
             results = [eval_rule(df, r, ticker=t_norm) for r in rules]
             if results and all(r is True for r in results):
                 rule_matches[rname].append(t_norm)
+
+    # Sort by fast-pass score, take top 2× target for enrichment
+    candidates.sort(key=lambda x: x[0]["score"], reverse=True)
+    n_to_enrich = min(ALERTS_TOP_N * 2, len(candidates))
+    log(f"Pass 2: enriching top {n_to_enrich} candidates with news + "
+        "volume-outlook…")
+
+    # === PASS 2: enrich top candidates with API-backed signals ===
+    top_picks: list[dict] = []
+    for i, (base, t_norm) in enumerate(candidates[:n_to_enrich]):
+        if i % 10 == 0:
+            log(f"  Pass 2 progress {i}/{n_to_enrich}…")
+        df = _DF_CACHE.get(t_norm)  # already cached from pass 1
+        if df is None:
+            continue
+        top_picks.append(enrich_score(base, df, t_norm))
 
     top_picks.sort(key=lambda x: x["score"], reverse=True)
     log(f"Done. Scanned {scanned}, filtered {filtered}, "
