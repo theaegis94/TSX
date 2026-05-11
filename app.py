@@ -1715,6 +1715,57 @@ def cached_scan(tickers: tuple, period: str, interval: str,
                    metrics_fn=cached_metrics)
 
 
+@st.cache_data(ttl=900, show_spinner=False)
+def cached_top_movers(tickers: tuple, window_days: int) -> list:
+    """Fetch batched OHLC for all tickers, compute window-day return.
+    Returns list of dicts: {Ticker, Price, Return %, Avg Daily %}.
+    """
+    if not tickers:
+        return []
+    # Fetch enough days for the window + buffer for weekends/holidays
+    period = f"{max(window_days * 3 + 14, 45)}d"
+    batches = [tickers[i:i + 100] for i in range(0, len(tickers), 100)]
+    rows: list[dict] = []
+    for batch in batches:
+        try:
+            df = yf.download(
+                " ".join(batch), period=period, interval="1d",
+                auto_adjust=True, progress=False, group_by="ticker",
+                threads=True,
+            )
+        except Exception:
+            continue
+        if df is None or df.empty:
+            continue
+        for t in batch:
+            try:
+                if isinstance(df.columns, pd.MultiIndex):
+                    if t not in df.columns.get_level_values(0):
+                        continue
+                    td = df[t]["Close"].dropna()
+                else:
+                    td = df["Close"].dropna()
+                if len(td) < window_days + 1:
+                    continue
+                entry = float(td.iloc[-window_days - 1])
+                exit_close = float(td.iloc[-1])
+                if entry <= 0 or not pd.notna(entry) or not pd.notna(exit_close):
+                    continue
+                ret_pct = (exit_close - entry) / entry * 100.0
+                # Per-day avg return (geometric)
+                daily_avg = ((exit_close / entry) ** (1 / window_days)
+                             - 1) * 100
+                rows.append({
+                    "Ticker": t,
+                    "Price": round(exit_close, 2),
+                    "Return %": round(ret_pct, 2),
+                    "Avg Daily %": round(daily_avg, 2),
+                })
+            except Exception:
+                continue
+    return rows
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def cached_single(ticker: str, period: str, interval: str,
                   strategy: str, adx_filter: bool,
@@ -2927,6 +2978,161 @@ with tab_screener:
                 )
         except (KeyError, IndexError, TypeError):
             pass
+
+    # ====================================================================
+    # 🏆 Top Movers — biggest gainers and losers over a chosen window
+    # ====================================================================
+    st.divider()
+    st.subheader("🏆 Top Movers")
+    st.caption(
+        "Find the biggest gainers (and losers) over a chosen window. "
+        "Useful for spotting what's running in a sector — but mind that "
+        "biggest gainers often mean-revert."
+    )
+
+    tm_col1, tm_col2, tm_col3 = st.columns([2, 1, 1])
+    tm_universe = tm_col1.selectbox(
+        "Universe",
+        options=[
+            "Entire TSX (~1500)",
+            "TSX Composite (~250)",
+            "TSX 60 (~60)",
+            "Entire TSX Venture (~1500)",
+            "S&P 100 (~100)",
+            "S&P 500 (~500 — slow)",
+            "Entire US (~7000, very slow)",
+            "Popular ETFs (~80)",
+            "Custom watchlist",
+        ],
+        index=0,
+        key="tm_universe",
+    )
+    tm_window = tm_col2.selectbox(
+        "Window",
+        options=[1, 5, 10, 20, 60],
+        index=1,
+        format_func=lambda d: f"{d} day" if d == 1 else f"{d} days",
+        key="tm_window",
+        help="Trading days, not calendar days.",
+    )
+    tm_topn = tm_col3.number_input(
+        "Show top N",
+        min_value=10, max_value=200, value=50, step=10,
+        key="tm_topn",
+    )
+
+    if st.button("🏆 Find top movers", key="tm_run", type="primary"):
+        with st.spinner("Loading universe…"):
+            if tm_universe == "Custom watchlist":
+                tickers = [t.strip().upper() for t in
+                           st.session_state.get("watchlist_input", "")
+                                .split(",") if t.strip()]
+            elif tm_universe == "TSX 60 (~60)":
+                tickers = list(ss.UNIVERSE_TSX60)
+            elif tm_universe == "TSX Composite (~250)":
+                tickers = ss.get_tsx_composite()
+            elif tm_universe == "Entire TSX (~1500)":
+                tickers = ss.get_full_tsx_listing("tsx")
+            elif tm_universe == "Entire TSX Venture (~1500)":
+                tickers = ss.get_full_tsx_listing("tsxv")
+            elif tm_universe == "S&P 100 (~100)":
+                tickers = list(ss.UNIVERSE_SP100)
+            elif tm_universe == "S&P 500 (~500 — slow)":
+                tickers = ss.get_sp500()
+            elif tm_universe == "Entire US (~7000, very slow)":
+                tickers = ss.get_full_us_listing()
+            elif tm_universe == "Popular ETFs (~80)":
+                tickers = list(ss.UNIVERSE_POPULAR_ETFS)
+            else:
+                tickers = []
+
+        if not tickers:
+            st.warning("Universe is empty.")
+        else:
+            with st.spinner(
+                f"Scanning {len(tickers)} tickers over {tm_window}d…"
+            ):
+                rows = cached_top_movers(tuple(tickers), int(tm_window))
+            st.session_state["tm_results"] = {
+                "rows": rows,
+                "window": int(tm_window),
+                "universe": tm_universe,
+                "scanned": len(tickers),
+                "topn": int(tm_topn),
+            }
+
+    # Render results
+    tm_res = st.session_state.get("tm_results")
+    if tm_res:
+        rows = tm_res["rows"]
+        window = tm_res["window"]
+        topn = tm_res["topn"]
+        if not rows:
+            st.info("No data returned — try a smaller universe.")
+        else:
+            df_tm = pd.DataFrame(rows)
+            up = df_tm.sort_values("Return %", ascending=False).head(topn)
+            down = df_tm.sort_values("Return %").head(topn)
+
+            st.caption(
+                f"Scanned **{tm_res['scanned']} tickers** in "
+                f"**{tm_res['universe']}** over **{window} days**. "
+                f"{len(rows)} returned valid data."
+            )
+
+            up_tab, down_tab = st.tabs([
+                f"📈 Top {len(up)} Gainers",
+                f"📉 Top {len(down)} Decliners",
+            ])
+
+            def _render_movers(d, color: str):
+                # Clickable ticker chips
+                chips = []
+                for _, r in d.iterrows():
+                    t = r["Ticker"]
+                    ret = r["Return %"]
+                    href = _chip_href(t, from_tab="Screener")
+                    chips.append(
+                        f"<a href='{href}' target='_self' "
+                        f"style='background:{color}; color:#fff; "
+                        "padding:3px 9px; border-radius:8px; "
+                        "font-size:0.78rem; font-weight:700; "
+                        "margin:3px; text-decoration:none; "
+                        "display:inline-block;' "
+                        f"title='Open {t} chart'>{t} "
+                        f"{ret:+.1f}%</a>"
+                    )
+                st.markdown(
+                    "<div style='max-height:200px; overflow-y:auto; "
+                    f"padding:6px; border-radius:8px; "
+                    f"background:rgba({_hex_to_rgb(color)},0.04); "
+                    f"border:1px solid rgba({_hex_to_rgb(color)},0.2); "
+                    "margin-bottom:8px;'>"
+                    + "".join(chips) + "</div>",
+                    unsafe_allow_html=True,
+                )
+                # Sortable detail table
+                st.dataframe(
+                    d, use_container_width=True, hide_index=True,
+                    column_config={
+                        "Price": st.column_config.NumberColumn(
+                            format="$%.2f"
+                        ),
+                        "Return %": st.column_config.NumberColumn(
+                            format="%+.2f%%"
+                        ),
+                        "Avg Daily %": st.column_config.NumberColumn(
+                            format="%+.2f%%",
+                            help=("Geometric mean daily return over "
+                                  "the window."),
+                        ),
+                    },
+                )
+
+            with up_tab:
+                _render_movers(up, "#16a34a")
+            with down_tab:
+                _render_movers(down, "#dc2626")
 
 
 # === Custom Patterns tab ===
