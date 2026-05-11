@@ -3259,6 +3259,7 @@ RULE_INDICATORS = {
     "NEWS_SENT":         "📰 News sentiment (0=bear, 1=bull) [latest]",
     "NEWS_BUZZ":         "📣 News buzz (0=quiet, 1+=above avg) [latest]",
     "VOL_OUTLOOK":       "🔮 Volume outlook (0-100, higher=more vol coming)",
+    "VOL_RATIO":         "📊 Volume ratio (today / 20d avg)",
     "ST_BULLISH":        "💬 StockTwits bullish % (0-1, retail sentiment)",
     "ST_BUZZ":           "💬 StockTwits buzz (msgs in last 24h)",
 }
@@ -3300,6 +3301,7 @@ RULE_DEFAULTS: dict[str, tuple[float, float]] = {
     "NEWS_SENT":         (0.4, 0.6),     # < 0.4 bearish news; > 0.6 bullish
     "NEWS_BUZZ":         (0.5, 1.5),     # > 1 = above-avg news activity
     "VOL_OUTLOOK":       (30.0, 70.0),   # < 30 quiet; > 70 elevated
+    "VOL_RATIO":         (0.5, 2.0),     # > 2 = 2× avg volume
     "ST_BULLISH":        (0.4, 0.65),    # < 0.4 retail bearish; > 0.65 bullish
     "ST_BUZZ":           (5.0, 30.0),    # > 30 msgs/24h = loud
 }
@@ -3423,6 +3425,29 @@ RULE_PRESETS: dict[str, list[dict]] = {
         {"left": "CONVICTION", "op": ">", "a": 30.0, "b": None,
          "date": None},
         {"left": "VOL_OUTLOOK", "op": ">", "a": 50.0, "b": None,
+         "date": None},
+    ],
+    "📚 Connors deep OS": [
+        # Stricter Connors variant: RSI(5)<10 (deep oversold) + 5%+
+        # above SMA200 (strong uptrend, not falling knife) + CMF>0.05
+        # (real accumulation, not just neutral). Historically ~62-65%
+        # 1-3 day win rate per Connors backtests.
+        {"left": "RSI5", "op": "<", "a": 10.0, "b": None, "date": None},
+        {"left": "DIST_SMA200_PCT", "op": ">", "a": 5.0, "b": None,
+         "date": None},
+        {"left": "CMF", "op": ">", "a": 0.05, "b": None, "date": None},
+    ],
+    "🕵️ Smart-money accumulation": [
+        # The "something is coming" signal: high news buzz (story
+        # developing) + above-average volume (institutional flow) +
+        # but price hasn't moved much yet (not chasing — getting in
+        # before the move). Classic "smart money before the news"
+        # pattern. Verify edge with the validator.
+        {"left": "NEWS_BUZZ", "op": ">", "a": 2.0, "b": None,
+         "date": None},
+        {"left": "VOL_RATIO", "op": ">", "a": 1.5, "b": None,
+         "date": None},
+        {"left": "DAILY_CHG_PCT", "op": "between", "a": -1.5, "b": 1.5,
          "date": None},
     ],
 }
@@ -3858,6 +3883,15 @@ with tab_patterns:
             "Post-earnings drift proxy: high news buzz + bullish "
             "sentiment + bullish technicals + volume incoming. "
             "PEAD is the strongest documented finance anomaly.",
+        "📚 Connors deep OS":
+            "Strict Connors variant: RSI(5)<10 + 5%+ above SMA200 + "
+            "CMF>0.05 accumulation. Catches deep oversold setups in "
+            "strong uptrends — ~62-65% 1-3d win rate historically.",
+        "🕵️ Smart-money accumulation":
+            "'Something coming' signal: news activity 2× normal AND "
+            "above-average volume AND price barely moved (±1.5%). "
+            "Volume + buzz before the move = institutional positioning "
+            "before retail catches on. Validate edge before trusting.",
     }
     preset_cols = st.columns(len(preset_names))
     for col, pname in zip(preset_cols, preset_names):

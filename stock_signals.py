@@ -1653,6 +1653,11 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     if {"High", "Low", "Close", "Volume"}.issubset(out.columns):
         out["MFI"] = mfi(out)
         out["CMF"] = cmf(out)
+    # Today's volume vs 20-day avg (institutional-flow proxy)
+    if "Volume" in out.columns:
+        avg20 = out["Volume"].rolling(20).mean()
+        out["VOL_RATIO"] = (out["Volume"] / avg20.replace(0, float("nan"))
+                            ).clip(0, 50)
     # Multi-factor conviction score (combines RSI, BB, MACD, volume,
     # SMA200 trend, ADX, MFI, CMF). -100 to +100; positive = bullish bias.
     out["CONVICTION"] = compute_conviction_score(out)
