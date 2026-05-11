@@ -3111,7 +3111,96 @@ with tab_screener:
                     + "".join(chips) + "</div>",
                     unsafe_allow_html=True,
                 )
-                # Sortable detail table
+
+                # === What triggered the move? ===
+                # Fetch news for top 10 from the same window
+                st.markdown(
+                    "<div style='font-size:0.85rem; color:#9ca3af; "
+                    "margin-top:8px; margin-bottom:4px;'>"
+                    "<b>🗞️ What triggered the move?</b> (news from the "
+                    f"last {window + 2} days for top 10)</div>",
+                    unsafe_allow_html=True,
+                )
+                news_lookback = window + 2
+                for _, r in d.head(10).iterrows():
+                    t = r["Ticker"]
+                    ret = r["Return %"]
+                    href = _chip_href(t, from_tab="Screener")
+                    # Fetch news (Finnhub → Yahoo fallback)
+                    try:
+                        news, src_kind = cached_news_combined(
+                            t, days=news_lookback
+                        )
+                    except Exception:
+                        news, src_kind = [], "none"
+                    # Pick top 2 most relevant headlines (newest first)
+                    top_news = news[:2] if news else []
+                    news_html_parts = []
+                    if top_news:
+                        for art in top_news:
+                            try:
+                                ts = datetime.fromtimestamp(
+                                    art.get("datetime", 0)
+                                )
+                                when = ts.strftime("%b %d")
+                            except (ValueError, TypeError, OSError):
+                                when = "?"
+                            head = (art.get("headline") or "")[:140]
+                            url = art.get("url", "#")
+                            src_name = art.get("source", "")
+                            news_html_parts.append(
+                                f"<div style='font-size:0.78rem; "
+                                f"color:#e5e7eb; padding:3px 0; "
+                                f"line-height:1.4;'>"
+                                f"<span style='color:#9ca3af; "
+                                f"min-width:48px; "
+                                f"display:inline-block;'>{when}</span>"
+                                f"<span style='color:#60a5fa; "
+                                f"font-size:0.7rem; "
+                                f"margin-right:6px;'>{src_name}</span>"
+                                f"<a href='{url}' target='_blank' "
+                                f"style='color:#e5e7eb; "
+                                f"text-decoration:none;'>{head}</a></div>"
+                            )
+                        news_block = "".join(news_html_parts)
+                    else:
+                        news_block = (
+                            "<div style='font-size:0.78rem; "
+                            "color:#9ca3af; padding:3px 0; "
+                            "font-style:italic;'>"
+                            "No news found in window — could be a "
+                            "technical/sector move or coverage gap"
+                            "</div>"
+                        )
+                    st.markdown(
+                        f"<div style='padding:8px 12px; margin:6px 0; "
+                        f"border-radius:8px; border-left:3px solid "
+                        f"{color}; "
+                        f"background:rgba({_hex_to_rgb(color)},0.03);'>"
+                        f"<div style='display:flex; "
+                        f"align-items:center; gap:10px; "
+                        f"margin-bottom:4px;'>"
+                        f"<a href='{href}' target='_self' "
+                        f"style='background:{color}; color:#fff; "
+                        "padding:3px 10px; border-radius:6px; "
+                        "font-size:0.8rem; font-weight:700; "
+                        "text-decoration:none;'>"
+                        f"{t} {ret:+.1f}%</a>"
+                        f"<span style='color:#9ca3af; "
+                        f"font-size:0.75rem;'>"
+                        f"${r['Price']:.2f}</span>"
+                        f"</div>"
+                        + news_block + "</div>",
+                        unsafe_allow_html=True,
+                    )
+
+                # Sortable detail table (all top N)
+                st.markdown(
+                    "<div style='font-size:0.85rem; color:#9ca3af; "
+                    "margin-top:10px;'><b>Full list</b> "
+                    f"(top {len(d)})</div>",
+                    unsafe_allow_html=True,
+                )
                 st.dataframe(
                     d, use_container_width=True, hide_index=True,
                     column_config={
