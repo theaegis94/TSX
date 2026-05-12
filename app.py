@@ -2873,44 +2873,51 @@ with tab_screener:
                 return "1d ago"
             return f"{age}d ago"
 
-        st.caption("💡 **Click any ticker** to open the chart in a popup.")
+        # Cap the results in a scrollable container so they don't dominate
+        # the page. Wrapped in an expander so user can fully collapse to
+        # see other screener sections below.
+        with st.expander(
+            f"📋 Results — {len(matches)} matches (click to collapse)",
+            expanded=True,
+        ):
+            st.caption("💡 **Click any ticker** to open the chart in a popup.")
 
-        # Header row — added Dip% column
-        col_widths = [1.2, 1.0, 0.7, 1.2, 1.4, 1.0, 0.8, 0.8]
-        h = st.columns(col_widths)
-        for col, label in zip(h, ["Ticker", "Price", "RSI", "vs BB Lower",
-                                  "BB BUY Date", "Age", "Dip%", "RSI OS"]):
-            col.markdown(f"**{label}**")
+            # Header row — added Dip% column
+            col_widths = [1.2, 1.0, 0.7, 1.2, 1.4, 1.0, 0.8, 0.8]
+            h = st.columns(col_widths)
+            for col, label in zip(h, ["Ticker", "Price", "RSI", "vs BB Lower",
+                                      "BB BUY Date", "Age", "Dip%", "RSI OS"]):
+                col.markdown(f"**{label}**")
 
-        for m in matches:
-            cols = st.columns(col_widths)
-            if cols[0].button(m["ticker"], key=f"sc_view_{m['ticker']}",
-                              use_container_width=True):
-                show_quick_analysis_dialog(m["ticker"])
-            cols[1].markdown(f"${m['price']:.2f}")
-            cols[2].markdown(f"{m['rsi']:.1f}")
-            bb_color = "#dc2626" if m["bb_distance_pct"] < 0 else "#9ca3af"
-            cols[3].markdown(
-                f'<span style="color:{bb_color}">{m["bb_distance_pct"]:+.2f}%</span>',
-                unsafe_allow_html=True,
-            )
-            cols[4].markdown(m.get("bb_buy_date") or "—")
-            age_label = _fmt_age(m.get("bb_buy_age"))
-            age_color = "#16a34a" if m.get("bb_buy_age") == 0 else "#e5e7eb"
-            cols[5].markdown(
-                f'<span style="color:{age_color}">{age_label}</span>',
-                unsafe_allow_html=True,
-            )
-            dip = m.get("dip_pct")
-            if dip is None:
-                cols[6].markdown("—")
-            else:
-                dip_color = "#dc2626" if dip < 0 else "#16a34a"
-                cols[6].markdown(
-                    f'<span style="color:{dip_color}">{dip:+.2f}%</span>',
+            for m in matches:
+                cols = st.columns(col_widths)
+                if cols[0].button(m["ticker"], key=f"sc_view_{m['ticker']}",
+                                  use_container_width=True):
+                    show_quick_analysis_dialog(m["ticker"])
+                cols[1].markdown(f"${m['price']:.2f}")
+                cols[2].markdown(f"{m['rsi']:.1f}")
+                bb_color = "#dc2626" if m["bb_distance_pct"] < 0 else "#9ca3af"
+                cols[3].markdown(
+                    f'<span style="color:{bb_color}">{m["bb_distance_pct"]:+.2f}%</span>',
                     unsafe_allow_html=True,
                 )
-            cols[7].markdown("✓" if m["rsi_oversold"] else "·")
+                cols[4].markdown(m.get("bb_buy_date") or "—")
+                age_label = _fmt_age(m.get("bb_buy_age"))
+                age_color = "#16a34a" if m.get("bb_buy_age") == 0 else "#e5e7eb"
+                cols[5].markdown(
+                    f'<span style="color:{age_color}">{age_label}</span>',
+                    unsafe_allow_html=True,
+                )
+                dip = m.get("dip_pct")
+                if dip is None:
+                    cols[6].markdown("—")
+                else:
+                    dip_color = "#dc2626" if dip < 0 else "#16a34a"
+                    cols[6].markdown(
+                        f'<span style="color:{dip_color}">{dip:+.2f}%</span>',
+                        unsafe_allow_html=True,
+                    )
+                cols[7].markdown("✓" if m["rsi_oversold"] else "·")
 
     # ====================================================================
     # 📊 Strategy Performance Leaderboard
