@@ -3117,6 +3117,260 @@ with tab_screener:
             pass
 
     # ====================================================================
+    # 🎯 Winning Tickers — per-strategy
+    # For one chosen strategy, ranks every ticker in the universe by
+    # historical win rate. Answers "which TSX names have Bollinger Mean
+    # Reversion (etc.) historically worked best on?"
+    # ====================================================================
+    st.divider()
+    st.subheader("🎯 Winning Tickers (per-strategy)")
+    st.caption(
+        "For one strategy, find tickers where it has historically worked "
+        "best. Ranks by win rate (default) or by total return / alpha. "
+        "**Past performance doesn't predict future** — but it filters "
+        "out tickers where the pattern just doesn't fit the security."
+    )
+
+    wt_col1, wt_col2 = st.columns([1, 1])
+    wt_strat = wt_col1.selectbox(
+        "Strategy",
+        options=list(ss.STRATEGY_LABELS.keys()),
+        format_func=lambda k: ss.STRATEGY_LABELS[k],
+        index=list(ss.STRATEGY_LABELS.keys()).index(
+            ss.DEFAULT_STRATEGY_KEY
+        ),
+        key="wt_strat",
+    )
+    wt_universe = wt_col2.selectbox(
+        "Universe",
+        options=[
+            "TSX Composite (~250)",
+            "TSX 60 (~60)",
+            "Entire TSX (~1500) — slow",
+            "Entire TSX Venture (~1500) — slow",
+            "S&P 100 (~100)",
+            "S&P 500 (~500) — slow",
+            "Popular ETFs (~80)",
+            "My watchlist",
+        ],
+        index=0,
+        key="wt_universe",
+    )
+
+    wt_col3, wt_col4, wt_col5 = st.columns([1, 1, 1])
+    wt_sort_by = wt_col3.selectbox(
+        "Sort by",
+        options=["Win %", "Strategy %", "α (vs B&H) %", "Profit factor"],
+        index=0,
+        key="wt_sort_by",
+    )
+    wt_min_trades = wt_col4.number_input(
+        "Min trades",
+        min_value=1, max_value=100, value=5, step=1,
+        help="Tickers with fewer trades are filtered (stats too noisy).",
+        key="wt_min_trades",
+    )
+    wt_top_n = wt_col5.number_input(
+        "Show top N",
+        min_value=10, max_value=500, value=50, step=10,
+        key="wt_top_n",
+    )
+
+    if st.button("🎯 Find winning tickers", key="wt_run",
+                 type="primary"):
+        with st.spinner("Loading universe…"):
+            if wt_universe == "My watchlist":
+                tickers = [t.strip().upper() for t in
+                           st.session_state.get("watchlist_input", "")
+                                .split(",") if t.strip()]
+            elif wt_universe == "TSX 60 (~60)":
+                tickers = list(ss.UNIVERSE_TSX60)
+            elif wt_universe == "TSX Composite (~250)":
+                tickers = ss.get_tsx_composite()
+            elif wt_universe == "Entire TSX (~1500) — slow":
+                tickers = ss.get_full_tsx_listing("tsx")
+            elif wt_universe == "Entire TSX Venture (~1500) — slow":
+                tickers = ss.get_full_tsx_listing("tsxv")
+            elif wt_universe == "S&P 100 (~100)":
+                tickers = list(ss.UNIVERSE_SP100)
+            elif wt_universe == "S&P 500 (~500) — slow":
+                tickers = ss.get_sp500()
+            elif wt_universe == "Popular ETFs (~80)":
+                tickers = list(ss.UNIVERSE_POPULAR_ETFS)
+            else:
+                tickers = []
+
+        if not tickers:
+            st.warning("Universe is empty.")
+        else:
+            with st.spinner(
+                f"Backtesting {ss.STRATEGY_LABELS[wt_strat]} on "
+                f"{len(tickers)} tickers…"
+            ):
+                try:
+                    rows = cached_scan(
+                        tuple(tickers), period, interval,
+                        wt_strat, adx_filter, stop_loss_pct,
+                    )
+                except Exception:
+                    rows = []
+            if not rows:
+                st.warning("No backtest results. Try a different "
+                           "universe.")
+            else:
+                # Augment with profit factor + alpha
+                augmented = []
+                for r in rows:
+                    if r.get("trades", 0) < int(wt_min_trades):
+                        continue
+                    win = r.get("win_rate", 0) or 0
+                    ret = r.get("total_return", 0) or 0
+                    bh = r.get("buy_hold", 0) or 0
+                    dd = r.get("max_drawdown", 0) or 0
+                    alpha = ret - bh
+                    # Profit factor proxy: total_return positive vs max_dd
+                    pf_proxy = (
+                        abs(ret) / abs(dd) if dd != 0 else
+                        (10.0 if ret > 0 else 0.0)
+                    )
+                    augmented.append({
+                        "Ticker": r["ticker"],
+                        "Win %": round(win * 100, 1),
+                        "Strategy %": round(ret * 100, 2),
+                        "B&H %": round(bh * 100, 2),
+                        "α (vs B&H) %": round(alpha * 100, 2),
+                        "Max DD %": round(dd * 100, 2),
+                        "Profit factor": round(pf_proxy, 2),
+                        "Trades": int(r.get("trades", 0) or 0),
+                        "Close": round(r.get("close", 0) or 0, 2),
+                    })
+                st.session_state["wt_results"] = {
+                    "rows": augmented,
+                    "strategy_label": ss.STRATEGY_LABELS[wt_strat],
+                    "universe": wt_universe,
+                    "sort_by": wt_sort_by,
+                    "top_n": int(wt_top_n),
+                    "scanned": len(tickers),
+                }
+
+    wt_res = st.session_state.get("wt_results")
+    if wt_res:
+        rows = wt_res["rows"]
+        if not rows:
+            st.info(
+                f"No tickers passed the min-trades filter. Lower "
+                f"'Min trades' or pick a stricter strategy that fires "
+                "more often."
+            )
+        else:
+            df_wt = pd.DataFrame(rows)
+            sort_col = wt_res["sort_by"]
+            if sort_col in df_wt.columns:
+                df_wt = df_wt.sort_values(
+                    sort_col, ascending=False, na_position="last"
+                )
+            df_wt = df_wt.head(wt_res["top_n"]).reset_index(drop=True)
+            df_wt.insert(0, "Rank", range(1, len(df_wt) + 1))
+
+            st.caption(
+                f"Strategy: **{wt_res['strategy_label']}** · "
+                f"Universe: **{wt_res['universe']}** · "
+                f"Scanned **{wt_res['scanned']}** tickers · "
+                f"{len(rows)} passed filter · "
+                f"showing top **{len(df_wt)}** by {sort_col}"
+            )
+
+            # Top tickers as clickable chips (top 30 by win rate)
+            top_30 = df_wt.head(30)
+            chips = []
+            for _, r in top_30.iterrows():
+                t = r["Ticker"]
+                wr = r["Win %"]
+                # Color-code: green for high win %, gradient down
+                if wr >= 65:
+                    color = "#16a34a"
+                elif wr >= 55:
+                    color = "#65a30d"
+                elif wr >= 45:
+                    color = "#a16207"
+                else:
+                    color = "#9ca3af"
+                href = _chip_href(t, from_tab="Screener")
+                chips.append(
+                    f"<a href='{href}' target='_self' style='"
+                    f"background:{color}; color:#fff; "
+                    "padding:3px 9px; border-radius:8px; "
+                    "font-size:0.78rem; font-weight:700; "
+                    "margin:3px; text-decoration:none; "
+                    "display:inline-block;' "
+                    f"title='Open {t} (Win {wr}%)'>"
+                    f"{t} {wr:.0f}%</a>"
+                )
+            st.markdown(
+                "<div style='padding:6px; margin-bottom:10px; "
+                "border-radius:8px; background:rgba(34,197,94,0.03); "
+                "border:1px solid rgba(34,197,94,0.2);'>"
+                "<b style='color:#9ca3af; margin-right:6px; "
+                "font-size:0.85rem;'>🎯 Top 30 by win rate "
+                "(click to open chart):</b>"
+                + "".join(chips) + "</div>",
+                unsafe_allow_html=True,
+            )
+
+            # Sortable detail table
+            st.dataframe(
+                df_wt, use_container_width=True, hide_index=True,
+                column_config={
+                    "Win %": st.column_config.NumberColumn(
+                        format="%.1f%%",
+                        help="% of trades that were winners.",
+                    ),
+                    "Strategy %": st.column_config.NumberColumn(
+                        format="%+.2f%%"
+                    ),
+                    "B&H %": st.column_config.NumberColumn(
+                        format="%+.2f%%"
+                    ),
+                    "α (vs B&H) %": st.column_config.NumberColumn(
+                        format="%+.2f%%",
+                        help="Strategy return minus buy-and-hold.",
+                    ),
+                    "Max DD %": st.column_config.NumberColumn(
+                        format="%.2f%%"
+                    ),
+                    "Close": st.column_config.NumberColumn(
+                        format="$%.2f"
+                    ),
+                },
+            )
+
+            # Honest takeaway
+            top_row = df_wt.iloc[0] if not df_wt.empty else None
+            if top_row is not None:
+                wr = top_row["Win %"]
+                alpha = top_row["α (vs B&H) %"]
+                if wr >= 65 and alpha > 5:
+                    st.success(
+                        f"**Strong fit**: {top_row['Ticker']} has "
+                        f"{wr:.0f}% win rate + {alpha:+.1f}% alpha "
+                        f"using {wt_res['strategy_label']}. Real edge "
+                        "on this name historically."
+                    )
+                elif wr >= 55 and alpha > 0:
+                    st.info(
+                        f"**Modest fit**: {top_row['Ticker']} has "
+                        f"{wr:.0f}% win rate, {alpha:+.1f}% alpha. "
+                        "Better than random but not exceptional."
+                    )
+                else:
+                    st.warning(
+                        f"**Weak fit**: even the best ticker has "
+                        f"{wr:.0f}% win rate. This strategy may not "
+                        f"work well on **{wt_res['universe']}** in "
+                        "general — try a different strategy."
+                    )
+
+    # ====================================================================
     # 🏆 Top Movers — biggest gainers and losers over a chosen window
     # ====================================================================
     st.divider()
@@ -3359,6 +3613,235 @@ with tab_screener:
                 _render_movers(up, "#16a34a")
             with down_tab:
                 _render_movers(down, "#dc2626")
+
+    # ====================================================================
+    # 🪨 TSXV Mining Catalysts
+    # Finds TSXV movers + classifies their news into mining catalyst
+    # categories (drill results, resource estimate, M&A, permits, etc.).
+    # ====================================================================
+    st.divider()
+    st.subheader("🪨 TSXV Mining Catalysts")
+    st.caption(
+        "Find TSXV stocks that moved + classify the news that drove it. "
+        "Covers drill results, resource estimates, M&A, permits, "
+        "feasibility studies, insider buying, financings. **NOT** a buy "
+        "list — many catalysts are already priced in by the time you see "
+        "the headline."
+    )
+
+    mc_col1, mc_col2, mc_col3 = st.columns([2, 1, 1])
+    mc_universe = mc_col1.selectbox(
+        "Universe",
+        options=[
+            "TSX Venture (~1500)",
+            "Entire TSX (~1500)",
+            "TSX Composite (~250)",
+            "TSX 60 (~60)",
+        ],
+        index=0,
+        key="mc_universe",
+        help="TSX Venture has the most mining juniors. The mining catalysts "
+             "screener works on other Canadian universes too.",
+    )
+    mc_window = mc_col2.selectbox(
+        "Window",
+        options=[1, 3, 5, 10, 20],
+        index=2,
+        format_func=lambda d: f"{d} day" if d == 1 else f"{d} days",
+        key="mc_window",
+    )
+    mc_min_move = mc_col3.number_input(
+        "Min |% move|",
+        min_value=0.0, max_value=200.0, value=5.0, step=1.0,
+        key="mc_min_move",
+        help="Only show stocks that moved at least this much (filters noise).",
+    )
+
+    if st.button("🪨 Find catalysts", key="mc_run", type="primary"):
+        with st.spinner("Loading universe…"):
+            if mc_universe == "TSX Venture (~1500)":
+                tickers = ss.get_full_tsx_listing("tsxv")
+            elif mc_universe == "Entire TSX (~1500)":
+                tickers = ss.get_full_tsx_listing("tsx")
+            elif mc_universe == "TSX Composite (~250)":
+                tickers = ss.get_tsx_composite()
+            elif mc_universe == "TSX 60 (~60)":
+                tickers = list(ss.UNIVERSE_TSX60)
+            else:
+                tickers = []
+
+        if not tickers:
+            st.warning("Universe is empty.")
+        else:
+            # Step 1: find movers in the window
+            with st.spinner(
+                f"Step 1/2 · Scanning {len(tickers)} tickers for movers…"
+            ):
+                rows = cached_top_movers(tuple(tickers), int(mc_window))
+            # Step 2: filter to those that moved enough
+            min_pct = float(mc_min_move)
+            big_movers = [
+                r for r in rows
+                if abs(r.get("Return %", 0)) >= min_pct
+            ]
+            # Cap the news-fetch step so we don't hit rate limits
+            big_movers.sort(key=lambda r: abs(r["Return %"]), reverse=True)
+            max_news_fetches = 50
+            to_classify = big_movers[:max_news_fetches]
+            extra_movers = big_movers[max_news_fetches:]
+
+            with st.spinner(
+                f"Step 2/2 · Classifying news for {len(to_classify)} "
+                "top movers…"
+            ):
+                classified = []
+                progress = st.progress(0.0)
+                for i, r in enumerate(to_classify):
+                    t = r["Ticker"]
+                    try:
+                        news, _src = cached_news_combined(
+                            t, days=int(mc_window) + 3
+                        )
+                    except Exception:
+                        news = []
+                    catalyst = None
+                    matched_article = None
+                    for art in news[:10]:
+                        cat = ss.classify_mining_news(art)
+                        if cat:
+                            catalyst = cat
+                            matched_article = art
+                            break
+                    classified.append({
+                        **r,
+                        "catalyst": catalyst,
+                        "article": matched_article,
+                    })
+                    progress.progress((i + 1) / len(to_classify))
+                progress.empty()
+
+            st.session_state["mc_results"] = {
+                "classified": classified,
+                "extra": extra_movers,
+                "universe": mc_universe,
+                "window": int(mc_window),
+                "min_move": min_pct,
+                "scanned": len(tickers),
+            }
+
+    mc_res = st.session_state.get("mc_results")
+    if mc_res:
+        classified = mc_res["classified"]
+        extras = mc_res.get("extra", [])
+        window = mc_res["window"]
+
+        if not classified:
+            st.info(
+                f"No tickers moved ≥{mc_res['min_move']:.0f}% over "
+                f"{window} days. Try lowering the threshold."
+            )
+        else:
+            st.caption(
+                f"Scanned **{mc_res['scanned']}** tickers in **"
+                f"{mc_res['universe']}** · {len(classified)} moved "
+                f"≥{mc_res['min_move']:.0f}% in {window}d "
+                + (f"(+{len(extras)} more not classified due to rate "
+                   f"limits)" if extras else "")
+            )
+
+            # Group by catalyst
+            with_catalyst = [c for c in classified if c["catalyst"]]
+            without_catalyst = [c for c in classified if not c["catalyst"]]
+
+            if with_catalyst:
+                st.markdown(
+                    f"<div style='color:#22c55e; font-weight:700; "
+                    f"margin-top:10px;'>🎯 Movers WITH identified "
+                    f"catalysts: {len(with_catalyst)}</div>",
+                    unsafe_allow_html=True,
+                )
+                # Sort by abs return descending
+                with_catalyst.sort(
+                    key=lambda c: abs(c["Return %"]), reverse=True
+                )
+                for c in with_catalyst:
+                    art = c.get("article") or {}
+                    try:
+                        ts = datetime.fromtimestamp(
+                            art.get("datetime", 0)
+                        )
+                        when = ts.strftime("%b %d")
+                    except (ValueError, TypeError, OSError):
+                        when = "?"
+                    head = (art.get("headline") or "")[:160]
+                    url = art.get("url", "#")
+                    src = art.get("source", "")
+                    href = _chip_href(c["Ticker"], from_tab="Screener")
+                    ret = c["Return %"]
+                    ret_color = "#16a34a" if ret > 0 else "#dc2626"
+                    st.markdown(
+                        f"<div style='padding:10px 14px; margin:8px 0; "
+                        f"border-radius:8px; border-left:4px solid "
+                        f"#22c55e; background:rgba(34,197,94,0.04);'>"
+                        f"<div style='display:flex; align-items:center; "
+                        f"gap:10px; margin-bottom:6px; flex-wrap:wrap;'>"
+                        f"<a href='{href}' target='_self' style='"
+                        f"background:{ret_color}; color:#fff; "
+                        f"padding:3px 10px; border-radius:6px; "
+                        f"font-size:0.85rem; font-weight:700; "
+                        f"text-decoration:none;'>"
+                        f"{c['Ticker']} {ret:+.1f}%</a>"
+                        f"<span style='background:#1e3a8a; color:#fff; "
+                        f"padding:3px 10px; border-radius:6px; "
+                        f"font-size:0.78rem; font-weight:700;'>"
+                        f"{c['catalyst']}</span>"
+                        f"<span style='color:#9ca3af; "
+                        f"font-size:0.75rem;'>"
+                        f"${c['Price']:.2f} · {window}d {ret:+.1f}%</span>"
+                        f"</div>"
+                        f"<div style='font-size:0.82rem; color:#e5e7eb; "
+                        f"line-height:1.4;'>"
+                        f"<a href='{url}' target='_blank' style='"
+                        f"color:#e5e7eb; text-decoration:none;'>"
+                        f"<span style='color:#9ca3af;'>{when} · "
+                        f"{src}</span> — {head}</a></div></div>",
+                        unsafe_allow_html=True,
+                    )
+
+            if without_catalyst:
+                with st.expander(
+                    f"⚪ Movers WITHOUT identified catalyst: "
+                    f"{len(without_catalyst)} (often technical or "
+                    f"sector-driven moves; no public news tagged)",
+                    expanded=False,
+                ):
+                    chips = []
+                    for c in without_catalyst[:30]:
+                        t = c["Ticker"]
+                        ret = c["Return %"]
+                        color = "#16a34a" if ret > 0 else "#dc2626"
+                        href = _chip_href(t, from_tab="Screener")
+                        chips.append(
+                            f"<a href='{href}' target='_self' style='"
+                            f"background:{color}; color:#fff; "
+                            f"padding:3px 9px; border-radius:8px; "
+                            f"font-size:0.78rem; font-weight:700; "
+                            f"margin:3px; text-decoration:none; "
+                            f"display:inline-block;' "
+                            f"title='Open {t}'>"
+                            f"{t} {ret:+.1f}%</a>"
+                        )
+                    st.markdown(
+                        "<div>" + "".join(chips) + "</div>",
+                        unsafe_allow_html=True,
+                    )
+                    st.caption(
+                        "These moved but no public news matched the "
+                        "catalyst keywords. Could be: TMX press release "
+                        "not picked up by Finnhub/Yahoo, technical/sector "
+                        "move, low-coverage ticker, or genuine momentum "
+                        "without news."
+                    )
 
 
 # === Custom Patterns tab ===
