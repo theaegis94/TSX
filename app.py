@@ -4459,886 +4459,902 @@ def _sync_active_rules_to_url():
 
 
 with tab_patterns:
-    st.subheader("Custom Watchlist Screener")
-    st.caption(
-        "Pick a preset, or build your own indicator rules. "
-        "Tickers matching **all** rules are returned."
-    )
+    (pt_sub1, pt_sub2) = st.tabs([
+        "🛠️ Build & Run",
+        "📊 Deep Analysis",
+    ])
 
-    _init_active_rules_from_url()
-    if "saved_rules" not in st.session_state:
-        st.session_state.saved_rules = _load_saved_rules()
-
-    saved = st.session_state.saved_rules
-
-    # --- 🌐 Market regime banner ---
-    regime = cached_market_regime()
-    if regime and regime.get("regime") != "unknown":
-        vix_str = (f"VIX <b>{regime['vix']:.1f}</b>"
-                   if regime.get("vix") is not None else "VIX —")
-        spy_str = ("above" if regime.get("spy_above_sma200") else "below")
-        adx_str = f"ADX <b>{regime.get('spy_adx', 0):.0f}</b>"
-        ret_str = (f"20d <b>{regime.get('spy_ret_20d', 0):+.1f}%</b>"
-                   if "spy_ret_20d" in regime else "")
-        suit_chips = "".join(
-            f"<span style='background:#16a34a; color:#fff; "
-            f"padding:2px 8px; border-radius:6px; font-size:0.72rem; "
-            f"font-weight:700; margin-right:4px;'>{p}</span>"
-            for p in regime.get("suitable", [])
-        )
-        st.markdown(
-            f"<div style='padding:10px 14px; border-radius:10px; "
-            f"background:rgba(96,165,250,0.06); "
-            f"border:1px solid #4a4b4e; margin-bottom:10px;'>"
-            f"<div style='font-size:0.95rem; color:#e5e7eb; "
-            f"font-weight:700; margin-bottom:4px;'>"
-            f"{regime['emoji']} Market regime: {regime['label']}</div>"
-            f"<div style='font-size:0.75rem; color:#9ca3af; "
-            f"margin-bottom:8px;'>"
-            f"SPY {spy_str} SMA200 · {ret_str} · {adx_str} · {vix_str}"
-            f"</div>"
-            f"<div style='font-size:0.72rem; color:#9ca3af; "
-            f"margin-bottom:4px;'>Presets that historically work in "
-            f"this regime:</div><div>{suit_chips}</div>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
-
-    # --- ⚡ Quick presets (always visible — easiest entry point) ---
-    st.markdown("**⚡ Quick presets** — one click loads ready-made rules")
-    preset_names = list(RULE_PRESETS.keys())
-    # Hover descriptions so the shortened button labels keep their meaning
-    preset_help = {
-        "🎯 Strong Buy":
-            "Multi-factor bullish: CONVICTION > 50 (oversold + uptrend + "
-            "volume + momentum all aligned).",
-        "🟢 Bounce buy":
-            "Reversal setup: RSI<35 + below BB lower + above SMA200 + MACD "
-            "starting to turn + CONVICTION>30. Oversold in uptrend.",
-        "🌊 Vol-swing buy":
-            "Volume-confirmed swing: MFI<25 + near BB lower + CMF>0 "
-            "(institutional accumulation) + above SMA200.",
-        "📰 News BUY":
-            "Technicals AND news agree: CONVICTION>30 + bullish news "
-            "(NEWS_SENT>0.55) + active coverage (NEWS_BUZZ>0.5).",
-        "📰 News warning":
-            "Technicals say buy but news has turned bearish — caution. "
-            "CONVICTION>20 + NEWS_SENT<0.4. Common pre-fundamentals leak.",
-        "⚠️ Wait (falling)":
-            "Looks tempting but momentum still down: below BB lower + "
-            "MACD<0 + below SMA50 + RSI>30. Don't catch the falling knife.",
-        "🚀 Momentum":
-            "Trend continuation: above SMA200 + above SMA50 + MACD>0 + "
-            "ADX>25 + RSI 50-70 (not overbought yet).",
-        "🔴 Strong Sell":
-            "Multi-factor bearish: CONVICTION < -30 (overbought + downtrend "
-            "+ distribution + bearish momentum aligned).",
-        "💥 Squeeze":
-            "Volatility squeeze: BB bandwidth < 5%. Coiled spring — big "
-            "move likely soon (direction unknown).",
-        "🔮 Vol incoming":
-            "High volume expected (earnings approaching or news buzz) + "
-            "bullish bias — possible breakout setup. VOL_OUTLOOK > 60 + "
-            "CONVICTION > 20.",
-        "💬 Retail bullish":
-            "Retail crowd on StockTwits is bullish AND active "
-            "(>65% bullish tags, 10+ messages/24h) AND technicals don't "
-            "disagree. Crowd alignment.",
-        "🆎 Retail vs technicals (contrarian)":
-            "Retail euphoric (>75% bullish) but RSI overbought (>70) — "
-            "classic contrarian fade signal. Retail tops happen.",
-        "📚 Connors-style":
-            "Larry Connors' RSI mean-reversion (RSI<15 on fast period + "
-            "above SMA200 + accumulation). Documented historical edge for "
-            "1-3 day mean reversion in uptrends.",
-        "📚 Strong bounce":
-            "Multi-factor volume-confirmed extreme oversold: MFI<20 + "
-            "BB%B<0.15 + CMF>0 + above SMA200. Combines selling "
-            "exhaustion + institutional buying + uptrend filter.",
-        "📚 News drift":
-            "Post-earnings drift proxy: high news buzz + bullish "
-            "sentiment + bullish technicals + volume incoming. "
-            "PEAD is the strongest documented finance anomaly.",
-        "📚 Connors deep OS":
-            "Strict Connors variant: RSI(5)<10 + 5%+ above SMA200 + "
-            "CMF>0.05 accumulation. Catches deep oversold setups in "
-            "strong uptrends — ~62-65% 1-3d win rate historically.",
-        "🕵️ Smart-money accumulation":
-            "'Something coming' signal: news activity 2× normal AND "
-            "above-average volume AND price barely moved (±1.5%). "
-            "Volume + buzz before the move = institutional positioning "
-            "before retail catches on. Validate edge before trusting.",
-    }
-    preset_cols = st.columns(len(preset_names))
-    for col, pname in zip(preset_cols, preset_names):
-        if col.button(pname, key=f"preset_{pname}",
-                      use_container_width=True,
-                      help=preset_help.get(pname, "")):
-            st.session_state.custom_rules = [
-                dict(r) for r in RULE_PRESETS[pname]
-            ]
-            for r in st.session_state.custom_rules:
-                r.pop("_keyspec", None)
-            st.rerun()
-
-    # --- 💾 Saved rule sets — collapsed by default ---
-    saved_count = len(saved)
-    saved_label = (f"💾 Saved rule sets ({saved_count})"
-                   if saved_count else "💾 Save / load rule sets")
-    with st.expander(saved_label, expanded=False):
-        if saved:
-            st.caption(
-                "🔔 Tag a rule set to receive **daily email alerts** when "
-                "it matches across the TSX + TSXV at market open."
-            )
-            for name in list(saved.keys()):
-                # Saved rule sets used to be plain lists; now support
-                # dict form {"rules": [...], "alert": bool}
-                entry = saved[name]
-                if isinstance(entry, list):
-                    rules_list = entry
-                    is_alert = False
-                else:
-                    rules_list = entry.get("rules", [])
-                    is_alert = bool(entry.get("alert", False))
-
-                sc1, sc2, sc3, sc4 = st.columns([4, 1.2, 1.2, 0.6])
-                sc1.markdown(
-                    f"**{name}** &nbsp;·&nbsp; "
-                    f"<span style='color:#9ca3af'>"
-                    f"{len(rules_list)} rule(s)</span>"
-                    + (" &nbsp;·&nbsp; <span style='color:#22c55e; "
-                       "font-size:0.78rem; font-weight:700;'>🔔 ALERT"
-                       "</span>" if is_alert else ""),
-                    unsafe_allow_html=True,
-                )
-                if sc2.button("📂 Load", key=f"saved_load_{name}",
-                              use_container_width=True):
-                    st.session_state.custom_rules = [
-                        dict(r) for r in rules_list
-                    ]
-                    for r in st.session_state.custom_rules:
-                        r.pop("_keyspec", None)
-                    st.rerun()
-                toggle_label = "🔕 Mute" if is_alert else "🔔 Alert"
-                if sc3.button(toggle_label, key=f"saved_alert_{name}",
-                              use_container_width=True,
-                              help=("Stop daily email alerts for this rule"
-                                    if is_alert else
-                                    "Get a daily email when this rule "
-                                    "matches in the TSX/TSXV scan")):
-                    saved[name] = {
-                        "rules": rules_list,
-                        "alert": not is_alert,
-                    }
-                    _persist_saved_rules(saved)
-                    st.rerun()
-                if sc4.button("🗑️", key=f"saved_del_{name}",
-                              help=f"Delete '{name}'"):
-                    del saved[name]
-                    _persist_saved_rules(saved)
-                    st.rerun()
-            st.divider()
-        save_c1, save_c2 = st.columns([4, 1.5])
-        new_name = save_c1.text_input(
-            "Save current rules as…",
-            key="saved_new_name",
-            placeholder="e.g. Oversold mean reversion",
-            label_visibility="collapsed",
-        )
-        if save_c2.button("💾 Save", key="saved_save_btn",
-                          use_container_width=True):
-            nm = (new_name or "").strip()
-            if not nm:
-                st.warning("Give the rule set a name first.")
-            elif not st.session_state.custom_rules:
-                st.warning("No rules to save.")
-            else:
-                # Preserve any existing alert flag when overwriting
-                existing_alert = False
-                existing = saved.get(nm)
-                if isinstance(existing, dict):
-                    existing_alert = bool(existing.get("alert", False))
-                saved[nm] = {
-                    "rules": [dict(r) for r in st.session_state.custom_rules],
-                    "alert": existing_alert,
-                }
-                _persist_saved_rules(saved)
-                st.success(f"Saved “{nm}”.")
-                st.rerun()
-
-    st.divider()
-
-    rules = st.session_state.custom_rules
-
-    # --- Rule editor (simplified) ---
-    st.markdown("**🛠️ Rules**")
-    st.caption(
-        "Indicator + comparison + value. Click 📅 to lock a rule to a "
-        "specific historical date instead of the latest bar."
-    )
-    today = datetime.now().date()
-    for i, rule in enumerate(rules):
-        # Layout: indicator | op | value (+ optional upper) | date | delete
-        is_between = rule["op"] == "between"
-        if is_between:
-            cols = st.columns([3, 1.4, 1.5, 1.5, 0.6, 0.6])
-            c_left, c_op, c_a, c_b, c_date, c_del = cols
-        else:
-            cols = st.columns([3, 1.4, 2, 0.6, 0.6])
-            c_left, c_op, c_a, c_date, c_del = cols
-            c_b = None
-
-        rule["left"] = c_left.selectbox(
-            "Indicator",
-            options=list(RULE_INDICATORS.keys()),
-            format_func=lambda k: RULE_INDICATORS[k],
-            index=list(RULE_INDICATORS.keys()).index(rule["left"]),
-            key=f"rule_left_{i}",
-            label_visibility="collapsed",
-        )
-        rule["op"] = c_op.selectbox(
-            "Op", options=RULE_OPS,
-            index=RULE_OPS.index(rule["op"]),
-            key=f"rule_op_{i}",
-            label_visibility="collapsed",
-        )
-
-        # Auto-default value when indicator/op changes
-        keyspec = f"{rule['left']}_{rule['op']}"
-        if rule.get("_keyspec") != keyspec:
-            rule["a"] = _rule_default_a(rule["left"], rule["op"])
-            if rule["op"] == "between":
-                rule["b"] = _rule_default_b(rule["left"])
-            rule["_keyspec"] = keyspec
-
-        rule["a"] = c_a.number_input(
-            "Value",
-            value=float(rule.get("a") or 0.0),
-            key=f"rule_a_{i}_{keyspec}",
-            label_visibility="collapsed",
-            format="%.4f",
-        )
-        if is_between and c_b is not None:
-            rule["b"] = c_b.number_input(
-                "Upper",
-                value=float(rule.get("b") or 0.0),
-                key=f"rule_b_{i}_{keyspec}",
-                label_visibility="collapsed",
-                format="%.4f",
-            )
-        elif not is_between:
-            rule["b"] = None
-
-        # Date as a popover — clean, compact, no checkbox needed
-        has_date = bool(rule.get("date"))
-        date_icon = "📅✓" if has_date else "📅"
-        with c_date.popover(date_icon,
-                            help="Evaluate this rule on a specific date "
-                                 "(defaults to latest bar)"):
-            existing_date = rule.get("date")
-            try:
-                init_date = (datetime.strptime(existing_date, "%Y-%m-%d").date()
-                             if existing_date else today)
-            except ValueError:
-                init_date = today
-            use_date = st.checkbox(
-                "Use specific date",
-                value=has_date,
-                key=f"rule_usedate_{i}",
-            )
-            if use_date:
-                picked = st.date_input(
-                    "Date",
-                    value=init_date,
-                    max_value=today,
-                    key=f"rule_date_{i}",
-                )
-                rule["date"] = picked.strftime("%Y-%m-%d")
-                st.caption(f"_Rule fires only on bar at/before {rule['date']}_")
-            else:
-                rule["date"] = None
-                st.caption("_Rule evaluates the latest bar_")
-
-        if c_del.button("🗑️", key=f"rule_del_{i}",
-                        help="Remove this rule"):
-            rules.pop(i)
-            st.rerun()
-
-    add_c, _ = st.columns([2, 8])
-    if add_c.button("➕ Add rule", key="rule_add"):
-        rules.append({"left": "Close", "op": ">", "a": 0.0,
-                      "b": None, "date": None})
-        st.rerun()
-
-    # Persist active rules to URL so the next browser visit restores them
-    _sync_active_rules_to_url()
-
-    st.divider()
-
-    # --- Run section ---
-    wl_tickers = [t.strip().upper() for t in
-                  st.session_state.get("watchlist_input", "").split(",")
-                  if t.strip()]
-    st.markdown("##### Run against")
-
-    universe_options = {
-        "watchlist": f"📋 Watchlist ({len(wl_tickers)} tickers)",
-        "popular_etfs": f"🧺 Popular ETFs ({len(ss.UNIVERSE_POPULAR_ETFS)})",
-        "sp100": f"🇺🇸 S&P 100 ({len(ss.UNIVERSE_SP100)})",
-        "sp500": "🇺🇸 S&P 500 (~500 — slower)",
-        "tsx60": f"🍁 TSX 60 ({len(ss.UNIVERSE_TSX60)})",
-        "tsx_full": "🍁 Full TSX (~1500 — much slower)",
-        "us_full": "🇺🇸 Full US (~10000 — very slow, no OTC)",
-        "crypto": f"₿ Crypto ({len(ss.UNIVERSE_CRYPTO)} major coins)",
-    }
-    uni_col, lim_col = st.columns([3, 1])
-    universe_key = uni_col.selectbox(
-        "Universe",
-        options=list(universe_options.keys()),
-        format_func=lambda k: universe_options[k],
-        index=0,
-        key="patterns_universe",
-        label_visibility="collapsed",
-    )
-    max_tickers = lim_col.number_input(
-        "Max tickers",
-        min_value=10, max_value=10000, value=10000, step=100,
-        key="patterns_max_tickers",
-        help="Cap how many tickers are scanned. Default = max (no cap). "
-             "Lower it to speed up scans on Full TSX / Full US.",
-        label_visibility="collapsed",
-    )
-
-    run_c, clear_c = st.columns([3, 1])
-    run_btn = run_c.button(
-        "🔍 Evaluate", key="rules_run", type="primary",
-        use_container_width=True,
-    )
-    if clear_c.button(
-        "🧹 Clear results", key="rules_clear",
-        use_container_width=True,
-        disabled=not st.session_state.get("patterns_last_results"),
-    ):
-        st.session_state.pop("patterns_last_results", None)
-        st.rerun()
-
-    if run_btn:
-        if not rules:
-            st.warning("Add at least one rule.")
-        else:
-            # Resolve the universe to a ticker list
-            with st.spinner("Loading universe…"):
-                if universe_key == "watchlist":
-                    target_tickers = wl_tickers
-                elif universe_key == "popular_etfs":
-                    target_tickers = ss.UNIVERSE_POPULAR_ETFS
-                elif universe_key == "sp100":
-                    target_tickers = ss.UNIVERSE_SP100
-                elif universe_key == "sp500":
-                    target_tickers = ss.get_sp500()
-                elif universe_key == "tsx60":
-                    target_tickers = ss.UNIVERSE_TSX60
-                elif universe_key == "tsx_full":
-                    target_tickers = ss.get_full_tsx_listing()
-                elif universe_key == "us_full":
-                    target_tickers = ss.get_full_us_listing()
-                elif universe_key == "crypto":
-                    target_tickers = list(ss.UNIVERSE_CRYPTO)
-                else:
-                    target_tickers = wl_tickers
-
-            target_tickers = (target_tickers or [])[:int(max_tickers)]
-            if not target_tickers:
-                st.warning("Universe is empty.")
-            else:
-                matches = []
-                details = []
-                hist_returns = []  # forward-return validation across history
-                fwd_days = 5  # 5 trading days = ~1 week
-                progress = st.progress(0.0)
-                status = st.empty()
-                for idx, t in enumerate(target_tickers):
-                    try:
-                        norm = ss.normalize_ticker(t)
-                    except SystemExit:
-                        continue
-                    try:
-                        df, _ = cached_single(
-                            norm, period, interval, strategy,
-                            adx_filter, stop_loss_pct,
-                        )
-                    except Exception:
-                        df = None
-                    if df is None:
-                        progress.progress((idx + 1) / len(target_tickers))
-                        continue
-                    row = {"Ticker": t}
-                    rule_results = [_eval_rule(df, r, ticker=t) for r in rules]
-                    row["Matches"] = (
-                        all(r is True for r in rule_results)
-                        if rule_results else False
-                    )
-                    for k in ["Close", "RSI", "MACD_HIST", "DAILY_CHG_PCT"]:
-                        v = _last_value(df, k)
-                        row[k] = round(v, 4) if v is not None else None
-                    details.append(row)
-                    if row["Matches"]:
-                        matches.append(t)
-                    # Historical validation: forward-return where rules
-                    # passed in this ticker's history
-                    try:
-                        h = _historical_match_returns(df, rules,
-                                                       fwd_days=fwd_days)
-                        for entry in h:
-                            entry["ticker"] = t
-                            hist_returns.append(entry)
-                    except Exception:
-                        pass
-                    progress.progress((idx + 1) / len(target_tickers))
-                    if (idx + 1) % 20 == 0 or idx == len(target_tickers) - 1:
-                        status.caption(
-                            f"Scanned {idx + 1}/{len(target_tickers)} · "
-                            f"{len(matches)} matches · "
-                            f"{len(hist_returns)} historical so far"
-                        )
-                progress.empty()
-                status.empty()
-
-                # Cache results so they survive popup-related reruns
-                st.session_state["patterns_last_results"] = {
-                    "matches": matches,
-                    "details": details,
-                    "scanned": len(target_tickers),
-                    "universe": universe_options.get(universe_key, ""),
-                    "hist_returns": hist_returns,
-                    "fwd_days": fwd_days,
-                }
-
-    # Render last results (if any) — survives popup open/close reruns
-    last = st.session_state.get("patterns_last_results")
-    if last:
-        matches = last["matches"]
-        details = last["details"]
-        scanned = last["scanned"]
+    with pt_sub1:
+        st.subheader("Custom Watchlist Screener")
         st.caption(
-            f"Last evaluation · scanned **{scanned}** tickers in "
-            f"**{last.get('universe', '')}**"
+            "Pick a preset, or build your own indicator rules. "
+            "Tickers matching **all** rules are returned."
         )
-        if matches:
-            st.success(
-                f"✅ {len(matches)} match{'es' if len(matches) > 1 else ''} "
-                f"out of {scanned} scanned"
+
+        _init_active_rules_from_url()
+        if "saved_rules" not in st.session_state:
+            st.session_state.saved_rules = _load_saved_rules()
+
+        saved = st.session_state.saved_rules
+
+        # --- 🌐 Market regime banner ---
+        regime = cached_market_regime()
+        if regime and regime.get("regime") != "unknown":
+            vix_str = (f"VIX <b>{regime['vix']:.1f}</b>"
+                       if regime.get("vix") is not None else "VIX —")
+            spy_str = ("above" if regime.get("spy_above_sma200") else "below")
+            adx_str = f"ADX <b>{regime.get('spy_adx', 0):.0f}</b>"
+            ret_str = (f"20d <b>{regime.get('spy_ret_20d', 0):+.1f}%</b>"
+                       if "spy_ret_20d" in regime else "")
+            suit_chips = "".join(
+                f"<span style='background:#16a34a; color:#fff; "
+                f"padding:2px 8px; border-radius:6px; font-size:0.72rem; "
+                f"font-weight:700; margin-right:4px;'>{p}</span>"
+                for p in regime.get("suitable", [])
             )
-            # Render all matched-ticker chips (no cap). For long lists, the
-            # chips wrap naturally and scroll vertically with a max-height.
-            MAX_CHIPS = 300
-            shown = matches[:MAX_CHIPS]
-            chips = []
-            for t in shown:
-                href = _chip_href(t, from_tab="Custom Patterns")
-                chips.append(
-                    f"<a href='{href}' target='_self' "
-                    "style='background:#16a34a; color:#fff; "
-                    "padding:3px 10px; border-radius:8px; "
-                    "font-size:0.85rem; font-weight:700; "
-                    "margin:3px; text-decoration:none; "
-                    "display:inline-block;' "
-                    f"title='Open {t} chart'>📊 {t}</a>"
-                )
-            extra = len(matches) - len(shown)
-            extra_html = (
-                f"<span style='color:#9ca3af; font-size:0.8rem; "
-                f"margin-left:6px;'>+{extra} more (see Details table)"
-                f"</span>" if extra > 0 else ""
-            )
-            # Cap container height so 100s of chips don't dominate the page
-            max_h = 200 if len(shown) > 30 else "auto"
             st.markdown(
-                f"<div style='max-height:{max_h}px; overflow-y:auto; "
-                f"padding:6px; border-radius:8px; "
-                f"background:rgba(34,197,94,0.04); "
-                f"border:1px solid rgba(34,197,94,0.2);'>"
-                "<b style='color:#9ca3af; margin-right:6px; "
-                "font-size:0.85rem;'>📊 Tickers (click to open chart):</b>"
-                + "".join(chips) + extra_html + "</div>"
-                if isinstance(max_h, int) else
-                "<div style='line-height:2.2;'>"
-                "<b style='color:#9ca3af; margin-right:6px;'>"
-                "📊 Tickers (click to open chart):</b>"
-                + "".join(chips) + "</div>",
-                unsafe_allow_html=True,
-            )
-        else:
-            st.info(f"No matches in {scanned} tickers scanned.")
-
-        if details:
-            st.markdown("##### Details")
-            st.dataframe(
-                pd.DataFrame(details),
-                use_container_width=True,
-                hide_index=True,
-            )
-
-        # === Historical edge: forward-return validation ===
-        hist_returns = last.get("hist_returns") or []
-        fwd_days = last.get("fwd_days", 5)
-        if hist_returns:
-            st.markdown(f"##### 📈 Historical edge (next {fwd_days}d returns)")
-            st.caption(
-                "Across this ticker history: every bar where ALL rules "
-                "would have passed, then look forward "
-                f"{fwd_days} trading days. **NOT a prediction** — "
-                "just empirical pattern measurement."
-            )
-            rets = pd.Series([h["ret_pct"] for h in hist_returns])
-            dds = pd.Series([h["max_dd_pct"] for h in hist_returns])
-            n = len(rets)
-            win_rate = (rets > 0).mean() * 100
-            avg_ret = rets.mean()
-
-            # Compute profit factor early so verdict can use it
-            wins = rets[rets > 0]
-            losses = rets[rets <= 0]
-            sum_wins = wins.sum() if len(wins) else 0.0
-            sum_losses = abs(losses.sum()) if len(losses) else 0.0
-            pf_early = (sum_wins / sum_losses
-                        if sum_losses > 0 else float("inf"))
-
-            # === Verdict box: explicit KEEP / REFINE / KILL ===
-            verdict_emoji = "❓"
-            verdict_color = "#9ca3af"
-            verdict_label = "INCONCLUSIVE"
-            verdict_reason = ""
-
-            if n < 30:
-                verdict_emoji = "📉"
-                verdict_color = "#9ca3af"
-                verdict_label = "INCONCLUSIVE — not enough data"
-                verdict_reason = (
-                    f"Only {n} historical matches. Stats are noisy below 30. "
-                    "Widen rules or scan a bigger universe (S&P 500, "
-                    "full TSX) to get a meaningful sample."
-                )
-            elif (win_rate >= 55 and pf_early >= 1.3
-                  and avg_ret > 0.5):
-                verdict_emoji = "✅"
-                verdict_color = "#22c55e"
-                verdict_label = "KEEP — passes 55% threshold"
-                verdict_reason = (
-                    f"Win rate {win_rate:.1f}% (≥55%), profit factor "
-                    f"{pf_early:.2f}, avg return {avg_ret:+.2f}%. "
-                    "Real edge in this sample. Still expect 30-50% "
-                    "degradation in live trading from costs/slippage."
-                )
-            elif win_rate < 50 or pf_early < 1.0:
-                verdict_emoji = "❌"
-                verdict_color = "#ef4444"
-                verdict_label = "KILL — no edge"
-                verdict_reason = (
-                    f"Win rate {win_rate:.1f}% and profit factor "
-                    f"{pf_early:.2f}. These rules didn't help "
-                    "historically — refine or scrap. Common fixes: add "
-                    "a trend filter (above SMA200), require volume "
-                    "confirmation (CMF>0), tighten thresholds."
-                )
-            elif pf_early >= 1.0 and avg_ret > 0:
-                verdict_emoji = "⚠️"
-                verdict_color = "#fbbf24"
-                verdict_label = "REFINE — marginal edge"
-                verdict_reason = (
-                    f"Win rate {win_rate:.1f}%, profit factor "
-                    f"{pf_early:.2f}, avg {avg_ret:+.2f}%. Better than "
-                    "random but probably won't survive transaction "
-                    "costs. Try combining with another factor "
-                    "(volume, news sentiment) or stricter thresholds."
-                )
-            else:
-                verdict_emoji = "❌"
-                verdict_color = "#ef4444"
-                verdict_label = "KILL — negative expectancy"
-                verdict_reason = (
-                    f"Win rate {win_rate:.1f}%, avg return {avg_ret:+.2f}%. "
-                    "Losing money historically. Scrap and rebuild."
-                )
-
-            st.markdown(
-                f"<div style='padding:14px 16px; border-radius:10px; "
-                f"margin:10px 0; "
-                f"background:rgba({_hex_to_rgb(verdict_color)}, 0.12); "
-                f"border-left:4px solid {verdict_color};'>"
-                f"<div style='font-size:1.05rem; "
-                f"color:{verdict_color}; font-weight:700; "
-                f"margin-bottom:4px;'>"
-                f"{verdict_emoji} {verdict_label}</div>"
-                f"<div style='font-size:0.85rem; color:#e5e7eb; "
-                f"line-height:1.5;'>{verdict_reason}</div>"
+                f"<div style='padding:10px 14px; border-radius:10px; "
+                f"background:rgba(96,165,250,0.06); "
+                f"border:1px solid #4a4b4e; margin-bottom:10px;'>"
+                f"<div style='font-size:0.95rem; color:#e5e7eb; "
+                f"font-weight:700; margin-bottom:4px;'>"
+                f"{regime['emoji']} Market regime: {regime['label']}</div>"
+                f"<div style='font-size:0.75rem; color:#9ca3af; "
+                f"margin-bottom:8px;'>"
+                f"SPY {spy_str} SMA200 · {ret_str} · {adx_str} · {vix_str}"
+                f"</div>"
+                f"<div style='font-size:0.72rem; color:#9ca3af; "
+                f"margin-bottom:4px;'>Presets that historically work in "
+                f"this regime:</div><div>{suit_chips}</div>"
                 f"</div>",
                 unsafe_allow_html=True,
             )
-            med_ret = rets.median()
-            avg_dd = dds.mean()
-            best = rets.max()
-            worst = rets.min()
-            std_ret = rets.std()
 
-            stats_cols = st.columns(6)
-            stats_cols[0].metric("Sample", f"{n}")
-            stats_cols[1].metric(
-                "Win rate", f"{win_rate:.1f}%",
-                delta=("edge" if win_rate > 55 else
-                       "weak" if win_rate > 50 else "no edge"),
-                delta_color=("normal" if win_rate > 55 else "off"
-                             if win_rate > 50 else "inverse"),
-            )
-            stats_cols[2].metric(
-                "Avg return", f"{avg_ret:+.2f}%",
-                delta_color="normal" if avg_ret > 0 else "inverse",
-            )
-            stats_cols[3].metric("Median", f"{med_ret:+.2f}%")
-            stats_cols[4].metric(
-                "Avg max DD", f"{avg_dd:.2f}%",
-                delta_color="off",
-            )
-            stats_cols[5].metric("σ", f"{std_ret:.2f}%")
+        # --- ⚡ Quick presets (always visible — easiest entry point) ---
+        st.markdown("**⚡ Quick presets** — one click loads ready-made rules")
+        preset_names = list(RULE_PRESETS.keys())
+        # Hover descriptions so the shortened button labels keep their meaning
+        preset_help = {
+            "🎯 Strong Buy":
+                "Multi-factor bullish: CONVICTION > 50 (oversold + uptrend + "
+                "volume + momentum all aligned).",
+            "🟢 Bounce buy":
+                "Reversal setup: RSI<35 + below BB lower + above SMA200 + MACD "
+                "starting to turn + CONVICTION>30. Oversold in uptrend.",
+            "🌊 Vol-swing buy":
+                "Volume-confirmed swing: MFI<25 + near BB lower + CMF>0 "
+                "(institutional accumulation) + above SMA200.",
+            "📰 News BUY":
+                "Technicals AND news agree: CONVICTION>30 + bullish news "
+                "(NEWS_SENT>0.55) + active coverage (NEWS_BUZZ>0.5).",
+            "📰 News warning":
+                "Technicals say buy but news has turned bearish — caution. "
+                "CONVICTION>20 + NEWS_SENT<0.4. Common pre-fundamentals leak.",
+            "⚠️ Wait (falling)":
+                "Looks tempting but momentum still down: below BB lower + "
+                "MACD<0 + below SMA50 + RSI>30. Don't catch the falling knife.",
+            "🚀 Momentum":
+                "Trend continuation: above SMA200 + above SMA50 + MACD>0 + "
+                "ADX>25 + RSI 50-70 (not overbought yet).",
+            "🔴 Strong Sell":
+                "Multi-factor bearish: CONVICTION < -30 (overbought + downtrend "
+                "+ distribution + bearish momentum aligned).",
+            "💥 Squeeze":
+                "Volatility squeeze: BB bandwidth < 5%. Coiled spring — big "
+                "move likely soon (direction unknown).",
+            "🔮 Vol incoming":
+                "High volume expected (earnings approaching or news buzz) + "
+                "bullish bias — possible breakout setup. VOL_OUTLOOK > 60 + "
+                "CONVICTION > 20.",
+            "💬 Retail bullish":
+                "Retail crowd on StockTwits is bullish AND active "
+                "(>65% bullish tags, 10+ messages/24h) AND technicals don't "
+                "disagree. Crowd alignment.",
+            "🆎 Retail vs technicals (contrarian)":
+                "Retail euphoric (>75% bullish) but RSI overbought (>70) — "
+                "classic contrarian fade signal. Retail tops happen.",
+            "📚 Connors-style":
+                "Larry Connors' RSI mean-reversion (RSI<15 on fast period + "
+                "above SMA200 + accumulation). Documented historical edge for "
+                "1-3 day mean reversion in uptrends.",
+            "📚 Strong bounce":
+                "Multi-factor volume-confirmed extreme oversold: MFI<20 + "
+                "BB%B<0.15 + CMF>0 + above SMA200. Combines selling "
+                "exhaustion + institutional buying + uptrend filter.",
+            "📚 News drift":
+                "Post-earnings drift proxy: high news buzz + bullish "
+                "sentiment + bullish technicals + volume incoming. "
+                "PEAD is the strongest documented finance anomaly.",
+            "📚 Connors deep OS":
+                "Strict Connors variant: RSI(5)<10 + 5%+ above SMA200 + "
+                "CMF>0.05 accumulation. Catches deep oversold setups in "
+                "strong uptrends — ~62-65% 1-3d win rate historically.",
+            "🕵️ Smart-money accumulation":
+                "'Something coming' signal: news activity 2× normal AND "
+                "above-average volume AND price barely moved (±1.5%). "
+                "Volume + buzz before the move = institutional positioning "
+                "before retail catches on. Validate edge before trusting.",
+        }
+        preset_cols = st.columns(len(preset_names))
+        for col, pname in zip(preset_cols, preset_names):
+            if col.button(pname, key=f"preset_{pname}",
+                          use_container_width=True,
+                          help=preset_help.get(pname, "")):
+                st.session_state.custom_rules = [
+                    dict(r) for r in RULE_PRESETS[pname]
+                ]
+                for r in st.session_state.custom_rules:
+                    r.pop("_keyspec", None)
+                st.rerun()
 
-            # Asymmetric-payoff metrics
-            wins = rets[rets > 0]
-            losses = rets[rets <= 0]
-            avg_win = wins.mean() if len(wins) else 0.0
-            avg_loss = losses.mean() if len(losses) else 0.0
-            sum_wins = wins.sum() if len(wins) else 0.0
-            sum_losses = abs(losses.sum()) if len(losses) else 0.0
-            profit_factor = (
-                sum_wins / sum_losses if sum_losses > 0 else float("inf")
-            )
-            rr = (avg_win / abs(avg_loss)
-                  if avg_loss < 0 else float("inf"))
-            extra_cols = st.columns(3)
-            extra_cols[0].metric(
-                "Avg win", f"{avg_win:+.2f}%",
-                delta=f"{len(wins)} bars", delta_color="off",
-            )
-            extra_cols[1].metric(
-                "Avg loss", f"{avg_loss:+.2f}%",
-                delta=f"{len(losses)} bars", delta_color="off",
-            )
-            extra_cols[2].metric(
-                "Profit factor",
-                f"{profit_factor:.2f}" if profit_factor != float("inf")
-                else "∞",
-                delta=f"R:R {rr:.2f}" if rr != float("inf") else "—",
-                delta_color=("normal" if profit_factor > 1.3
-                             else "off" if profit_factor > 1.0
-                             else "inverse"),
-            )
-
-            # Distribution histogram
-            try:
-                import plotly.graph_objects as go
-                fig_h = go.Figure()
-                fig_h.add_trace(go.Histogram(
-                    x=rets, nbinsx=40,
-                    marker_color="#60a5fa", opacity=0.85,
-                ))
-                fig_h.add_vline(x=0, line_color="#e5e7eb",
-                                line_width=1, opacity=0.6)
-                fig_h.add_vline(x=avg_ret, line_color="#22c55e",
-                                line_dash="dash", line_width=1.5,
-                                annotation_text=f"avg {avg_ret:+.1f}%",
-                                annotation_position="top right")
-                fig_h.update_layout(
-                    template="plotly_dark",
-                    paper_bgcolor="#4a4b4e",
-                    plot_bgcolor="#4a4b4e",
-                    height=260,
-                    margin=dict(l=40, r=20, t=20, b=40),
-                    xaxis_title=f"{fwd_days}-day forward return %",
-                    yaxis_title="count",
-                    showlegend=False,
+        # --- 💾 Saved rule sets — collapsed by default ---
+        saved_count = len(saved)
+        saved_label = (f"💾 Saved rule sets ({saved_count})"
+                       if saved_count else "💾 Save / load rule sets")
+        with st.expander(saved_label, expanded=False):
+            if saved:
+                st.caption(
+                    "🔔 Tag a rule set to receive **daily email alerts** when "
+                    "it matches across the TSX + TSXV at market open."
                 )
-                st.plotly_chart(fig_h, use_container_width=True)
-            except Exception:
-                pass
-
-            # Honest takeaway — based primarily on profit factor + avg return,
-            # not just win rate. Trend-following systems often have <50% win
-            # rate but positive expectancy from asymmetric R:R.
-            if n < 30:
-                st.warning(
-                    f"📉 **Sample too small** ({n} matches) — stats are "
-                    "noisy. Widen the rules or scan a bigger universe."
-                )
-            elif profit_factor >= 1.5 and avg_ret > 0.5:
-                st.success(
-                    f"✅ **Real edge**: profit factor "
-                    f"{profit_factor:.2f}, avg {avg_ret:+.2f}% over "
-                    f"{n} matches. Asymmetric payoff (R:R {rr:.2f}) — "
-                    f"{win_rate:.0f}% win rate is fine here."
-                    if win_rate < 55 else
-                    f"✅ **Real edge**: {win_rate:.0f}% win rate + "
-                    f"{avg_ret:+.2f}% avg over {n} matches "
-                    f"(profit factor {profit_factor:.2f})."
-                )
-            elif profit_factor >= 1.15 and avg_ret > 0:
-                st.info(
-                    f"⚠️ **Marginal edge**: profit factor "
-                    f"{profit_factor:.2f}, avg {avg_ret:+.2f}%, "
-                    f"win rate {win_rate:.0f}%. "
-                    "Real but small — might not survive transaction "
-                    "costs / slippage / taxes."
-                )
-            elif avg_ret > 0 and profit_factor >= 1.0:
-                st.info(
-                    f"💡 **Asymmetric profile**: {win_rate:.0f}% win rate "
-                    f"but {avg_ret:+.2f}% avg (avg win {avg_win:+.1f}% vs "
-                    f"avg loss {avg_loss:+.1f}%). Wins are bigger than "
-                    f"losses, but profit factor {profit_factor:.2f} is "
-                    "barely above 1 — fragile, easy to lose to costs."
-                )
-            else:
-                st.error(
-                    f"❌ **No edge**: {win_rate:.0f}% win rate, "
-                    f"{avg_ret:+.2f}% avg, profit factor "
-                    f"{profit_factor:.2f}. This rule set lost money "
-                    "historically — refine the rules."
-                )
-
-            # === Per-ticker breakdown — which tickers does this rule
-            #     actually work best on? ===
-            st.markdown("##### 🎯 Per-ticker win rate breakdown")
-            st.caption(
-                "Same rule set, grouped by ticker. Shows which specific "
-                "names respond best to your pattern. Even if the "
-                "aggregate win rate is mediocre, some tickers may have "
-                "real edge — others may have none."
-            )
-            per_ticker: dict[str, list[float]] = {}
-            for h in hist_returns:
-                tk = h.get("ticker")
-                if not tk:
-                    continue
-                per_ticker.setdefault(tk, []).append(h["ret_pct"])
-            # Build per-ticker stats with min sample size
-            min_sample = 3
-            per_ticker_rows = []
-            for tk, ret_list in per_ticker.items():
-                if len(ret_list) < min_sample:
-                    continue
-                s = pd.Series(ret_list)
-                wins_t = (s > 0).sum()
-                per_ticker_rows.append({
-                    "Ticker": tk,
-                    "Matches": int(len(ret_list)),
-                    "Win %": round(wins_t / len(ret_list) * 100, 1),
-                    "Avg Return %": round(float(s.mean()), 2),
-                    "Median %": round(float(s.median()), 2),
-                    "Best %": round(float(s.max()), 2),
-                    "Worst %": round(float(s.min()), 2),
-                })
-            if per_ticker_rows:
-                df_pt = pd.DataFrame(per_ticker_rows)
-                df_pt = df_pt.sort_values(
-                    "Win %", ascending=False, na_position="last"
-                ).reset_index(drop=True)
-                df_pt.insert(0, "Rank", range(1, len(df_pt) + 1))
-
-                # Top-N chips
-                top_chips = []
-                for _, r in df_pt.head(30).iterrows():
-                    tk = r["Ticker"]
-                    wr = r["Win %"]
-                    if wr >= 65:
-                        color = "#16a34a"
-                    elif wr >= 55:
-                        color = "#65a30d"
-                    elif wr >= 45:
-                        color = "#a16207"
+                for name in list(saved.keys()):
+                    # Saved rule sets used to be plain lists; now support
+                    # dict form {"rules": [...], "alert": bool}
+                    entry = saved[name]
+                    if isinstance(entry, list):
+                        rules_list = entry
+                        is_alert = False
                     else:
-                        color = "#9ca3af"
-                    href = _chip_href(tk, from_tab="Custom Patterns")
-                    top_chips.append(
-                        f"<a href='{href}' target='_self' style='"
-                        f"background:{color}; color:#fff; "
-                        f"padding:3px 9px; border-radius:8px; "
-                        f"font-size:0.78rem; font-weight:700; "
-                        f"margin:3px; text-decoration:none; "
-                        f"display:inline-block;' "
-                        f"title='{tk} · Win {wr}% · "
-                        f"{r['Matches']} historical matches'>"
-                        f"{tk} {wr:.0f}%</a>"
+                        rules_list = entry.get("rules", [])
+                        is_alert = bool(entry.get("alert", False))
+
+                    sc1, sc2, sc3, sc4 = st.columns([4, 1.2, 1.2, 0.6])
+                    sc1.markdown(
+                        f"**{name}** &nbsp;·&nbsp; "
+                        f"<span style='color:#9ca3af'>"
+                        f"{len(rules_list)} rule(s)</span>"
+                        + (" &nbsp;·&nbsp; <span style='color:#22c55e; "
+                           "font-size:0.78rem; font-weight:700;'>🔔 ALERT"
+                           "</span>" if is_alert else ""),
+                        unsafe_allow_html=True,
                     )
+                    if sc2.button("📂 Load", key=f"saved_load_{name}",
+                                  use_container_width=True):
+                        st.session_state.custom_rules = [
+                            dict(r) for r in rules_list
+                        ]
+                        for r in st.session_state.custom_rules:
+                            r.pop("_keyspec", None)
+                        st.rerun()
+                    toggle_label = "🔕 Mute" if is_alert else "🔔 Alert"
+                    if sc3.button(toggle_label, key=f"saved_alert_{name}",
+                                  use_container_width=True,
+                                  help=("Stop daily email alerts for this rule"
+                                        if is_alert else
+                                        "Get a daily email when this rule "
+                                        "matches in the TSX/TSXV scan")):
+                        saved[name] = {
+                            "rules": rules_list,
+                            "alert": not is_alert,
+                        }
+                        _persist_saved_rules(saved)
+                        st.rerun()
+                    if sc4.button("🗑️", key=f"saved_del_{name}",
+                                  help=f"Delete '{name}'"):
+                        del saved[name]
+                        _persist_saved_rules(saved)
+                        st.rerun()
+                st.divider()
+            save_c1, save_c2 = st.columns([4, 1.5])
+            new_name = save_c1.text_input(
+                "Save current rules as…",
+                key="saved_new_name",
+                placeholder="e.g. Oversold mean reversion",
+                label_visibility="collapsed",
+            )
+            if save_c2.button("💾 Save", key="saved_save_btn",
+                              use_container_width=True):
+                nm = (new_name or "").strip()
+                if not nm:
+                    st.warning("Give the rule set a name first.")
+                elif not st.session_state.custom_rules:
+                    st.warning("No rules to save.")
+                else:
+                    # Preserve any existing alert flag when overwriting
+                    existing_alert = False
+                    existing = saved.get(nm)
+                    if isinstance(existing, dict):
+                        existing_alert = bool(existing.get("alert", False))
+                    saved[nm] = {
+                        "rules": [dict(r) for r in st.session_state.custom_rules],
+                        "alert": existing_alert,
+                    }
+                    _persist_saved_rules(saved)
+                    st.success(f"Saved “{nm}”.")
+                    st.rerun()
+
+        st.divider()
+
+        rules = st.session_state.custom_rules
+
+        # --- Rule editor (simplified) ---
+        st.markdown("**🛠️ Rules**")
+        st.caption(
+            "Indicator + comparison + value. Click 📅 to lock a rule to a "
+            "specific historical date instead of the latest bar."
+        )
+        today = datetime.now().date()
+        for i, rule in enumerate(rules):
+            # Layout: indicator | op | value (+ optional upper) | date | delete
+            is_between = rule["op"] == "between"
+            if is_between:
+                cols = st.columns([3, 1.4, 1.5, 1.5, 0.6, 0.6])
+                c_left, c_op, c_a, c_b, c_date, c_del = cols
+            else:
+                cols = st.columns([3, 1.4, 2, 0.6, 0.6])
+                c_left, c_op, c_a, c_date, c_del = cols
+                c_b = None
+
+            rule["left"] = c_left.selectbox(
+                "Indicator",
+                options=list(RULE_INDICATORS.keys()),
+                format_func=lambda k: RULE_INDICATORS[k],
+                index=list(RULE_INDICATORS.keys()).index(rule["left"]),
+                key=f"rule_left_{i}",
+                label_visibility="collapsed",
+            )
+            rule["op"] = c_op.selectbox(
+                "Op", options=RULE_OPS,
+                index=RULE_OPS.index(rule["op"]),
+                key=f"rule_op_{i}",
+                label_visibility="collapsed",
+            )
+
+            # Auto-default value when indicator/op changes
+            keyspec = f"{rule['left']}_{rule['op']}"
+            if rule.get("_keyspec") != keyspec:
+                rule["a"] = _rule_default_a(rule["left"], rule["op"])
+                if rule["op"] == "between":
+                    rule["b"] = _rule_default_b(rule["left"])
+                rule["_keyspec"] = keyspec
+
+            rule["a"] = c_a.number_input(
+                "Value",
+                value=float(rule.get("a") or 0.0),
+                key=f"rule_a_{i}_{keyspec}",
+                label_visibility="collapsed",
+                format="%.4f",
+            )
+            if is_between and c_b is not None:
+                rule["b"] = c_b.number_input(
+                    "Upper",
+                    value=float(rule.get("b") or 0.0),
+                    key=f"rule_b_{i}_{keyspec}",
+                    label_visibility="collapsed",
+                    format="%.4f",
+                )
+            elif not is_between:
+                rule["b"] = None
+
+            # Date as a popover — clean, compact, no checkbox needed
+            has_date = bool(rule.get("date"))
+            date_icon = "📅✓" if has_date else "📅"
+            with c_date.popover(date_icon,
+                                help="Evaluate this rule on a specific date "
+                                     "(defaults to latest bar)"):
+                existing_date = rule.get("date")
+                try:
+                    init_date = (datetime.strptime(existing_date, "%Y-%m-%d").date()
+                                 if existing_date else today)
+                except ValueError:
+                    init_date = today
+                use_date = st.checkbox(
+                    "Use specific date",
+                    value=has_date,
+                    key=f"rule_usedate_{i}",
+                )
+                if use_date:
+                    picked = st.date_input(
+                        "Date",
+                        value=init_date,
+                        max_value=today,
+                        key=f"rule_date_{i}",
+                    )
+                    rule["date"] = picked.strftime("%Y-%m-%d")
+                    st.caption(f"_Rule fires only on bar at/before {rule['date']}_")
+                else:
+                    rule["date"] = None
+                    st.caption("_Rule evaluates the latest bar_")
+
+            if c_del.button("🗑️", key=f"rule_del_{i}",
+                            help="Remove this rule"):
+                rules.pop(i)
+                st.rerun()
+
+        add_c, _ = st.columns([2, 8])
+        if add_c.button("➕ Add rule", key="rule_add"):
+            rules.append({"left": "Close", "op": ">", "a": 0.0,
+                          "b": None, "date": None})
+            st.rerun()
+
+        # Persist active rules to URL so the next browser visit restores them
+        _sync_active_rules_to_url()
+
+        st.divider()
+
+        # --- Run section ---
+        wl_tickers = [t.strip().upper() for t in
+                      st.session_state.get("watchlist_input", "").split(",")
+                      if t.strip()]
+        st.markdown("##### Run against")
+
+        universe_options = {
+            "watchlist": f"📋 Watchlist ({len(wl_tickers)} tickers)",
+            "popular_etfs": f"🧺 Popular ETFs ({len(ss.UNIVERSE_POPULAR_ETFS)})",
+            "sp100": f"🇺🇸 S&P 100 ({len(ss.UNIVERSE_SP100)})",
+            "sp500": "🇺🇸 S&P 500 (~500 — slower)",
+            "tsx60": f"🍁 TSX 60 ({len(ss.UNIVERSE_TSX60)})",
+            "tsx_full": "🍁 Full TSX (~1500 — much slower)",
+            "us_full": "🇺🇸 Full US (~10000 — very slow, no OTC)",
+            "crypto": f"₿ Crypto ({len(ss.UNIVERSE_CRYPTO)} major coins)",
+        }
+        uni_col, lim_col = st.columns([3, 1])
+        universe_key = uni_col.selectbox(
+            "Universe",
+            options=list(universe_options.keys()),
+            format_func=lambda k: universe_options[k],
+            index=0,
+            key="patterns_universe",
+            label_visibility="collapsed",
+        )
+        max_tickers = lim_col.number_input(
+            "Max tickers",
+            min_value=10, max_value=10000, value=10000, step=100,
+            key="patterns_max_tickers",
+            help="Cap how many tickers are scanned. Default = max (no cap). "
+                 "Lower it to speed up scans on Full TSX / Full US.",
+            label_visibility="collapsed",
+        )
+
+        run_c, clear_c = st.columns([3, 1])
+        run_btn = run_c.button(
+            "🔍 Evaluate", key="rules_run", type="primary",
+            use_container_width=True,
+        )
+        if clear_c.button(
+            "🧹 Clear results", key="rules_clear",
+            use_container_width=True,
+            disabled=not st.session_state.get("patterns_last_results"),
+        ):
+            st.session_state.pop("patterns_last_results", None)
+            st.rerun()
+
+        if run_btn:
+            if not rules:
+                st.warning("Add at least one rule.")
+            else:
+                # Resolve the universe to a ticker list
+                with st.spinner("Loading universe…"):
+                    if universe_key == "watchlist":
+                        target_tickers = wl_tickers
+                    elif universe_key == "popular_etfs":
+                        target_tickers = ss.UNIVERSE_POPULAR_ETFS
+                    elif universe_key == "sp100":
+                        target_tickers = ss.UNIVERSE_SP100
+                    elif universe_key == "sp500":
+                        target_tickers = ss.get_sp500()
+                    elif universe_key == "tsx60":
+                        target_tickers = ss.UNIVERSE_TSX60
+                    elif universe_key == "tsx_full":
+                        target_tickers = ss.get_full_tsx_listing()
+                    elif universe_key == "us_full":
+                        target_tickers = ss.get_full_us_listing()
+                    elif universe_key == "crypto":
+                        target_tickers = list(ss.UNIVERSE_CRYPTO)
+                    else:
+                        target_tickers = wl_tickers
+
+                target_tickers = (target_tickers or [])[:int(max_tickers)]
+                if not target_tickers:
+                    st.warning("Universe is empty.")
+                else:
+                    matches = []
+                    details = []
+                    hist_returns = []  # forward-return validation across history
+                    fwd_days = 5  # 5 trading days = ~1 week
+                    progress = st.progress(0.0)
+                    status = st.empty()
+                    for idx, t in enumerate(target_tickers):
+                        try:
+                            norm = ss.normalize_ticker(t)
+                        except SystemExit:
+                            continue
+                        try:
+                            df, _ = cached_single(
+                                norm, period, interval, strategy,
+                                adx_filter, stop_loss_pct,
+                            )
+                        except Exception:
+                            df = None
+                        if df is None:
+                            progress.progress((idx + 1) / len(target_tickers))
+                            continue
+                        row = {"Ticker": t}
+                        rule_results = [_eval_rule(df, r, ticker=t) for r in rules]
+                        row["Matches"] = (
+                            all(r is True for r in rule_results)
+                            if rule_results else False
+                        )
+                        for k in ["Close", "RSI", "MACD_HIST", "DAILY_CHG_PCT"]:
+                            v = _last_value(df, k)
+                            row[k] = round(v, 4) if v is not None else None
+                        details.append(row)
+                        if row["Matches"]:
+                            matches.append(t)
+                        # Historical validation: forward-return where rules
+                        # passed in this ticker's history
+                        try:
+                            h = _historical_match_returns(df, rules,
+                                                           fwd_days=fwd_days)
+                            for entry in h:
+                                entry["ticker"] = t
+                                hist_returns.append(entry)
+                        except Exception:
+                            pass
+                        progress.progress((idx + 1) / len(target_tickers))
+                        if (idx + 1) % 20 == 0 or idx == len(target_tickers) - 1:
+                            status.caption(
+                                f"Scanned {idx + 1}/{len(target_tickers)} · "
+                                f"{len(matches)} matches · "
+                                f"{len(hist_returns)} historical so far"
+                            )
+                    progress.empty()
+                    status.empty()
+
+                    # Cache results so they survive popup-related reruns
+                    st.session_state["patterns_last_results"] = {
+                        "matches": matches,
+                        "details": details,
+                        "scanned": len(target_tickers),
+                        "universe": universe_options.get(universe_key, ""),
+                        "hist_returns": hist_returns,
+                        "fwd_days": fwd_days,
+                    }
+
+        # Render last results (if any) — survives popup open/close reruns
+        last = st.session_state.get("patterns_last_results")
+        if last:
+            matches = last["matches"]
+            details = last["details"]
+            scanned = last["scanned"]
+            st.caption(
+                f"Last evaluation · scanned **{scanned}** tickers in "
+                f"**{last.get('universe', '')}**"
+            )
+            if matches:
+                st.success(
+                    f"✅ {len(matches)} match{'es' if len(matches) > 1 else ''} "
+                    f"out of {scanned} scanned"
+                )
+                # Render all matched-ticker chips (no cap). For long lists, the
+                # chips wrap naturally and scroll vertically with a max-height.
+                MAX_CHIPS = 300
+                shown = matches[:MAX_CHIPS]
+                chips = []
+                for t in shown:
+                    href = _chip_href(t, from_tab="Custom Patterns")
+                    chips.append(
+                        f"<a href='{href}' target='_self' "
+                        "style='background:#16a34a; color:#fff; "
+                        "padding:3px 10px; border-radius:8px; "
+                        "font-size:0.85rem; font-weight:700; "
+                        "margin:3px; text-decoration:none; "
+                        "display:inline-block;' "
+                        f"title='Open {t} chart'>📊 {t}</a>"
+                    )
+                extra = len(matches) - len(shown)
+                extra_html = (
+                    f"<span style='color:#9ca3af; font-size:0.8rem; "
+                    f"margin-left:6px;'>+{extra} more (see Details table)"
+                    f"</span>" if extra > 0 else ""
+                )
+                # Cap container height so 100s of chips don't dominate the page
+                max_h = 200 if len(shown) > 30 else "auto"
                 st.markdown(
-                    "<div style='padding:6px; margin-bottom:10px; "
-                    "border-radius:8px; "
-                    "background:rgba(34,197,94,0.03); "
-                    "border:1px solid rgba(34,197,94,0.2);'>"
+                    f"<div style='max-height:{max_h}px; overflow-y:auto; "
+                    f"padding:6px; border-radius:8px; "
+                    f"background:rgba(34,197,94,0.04); "
+                    f"border:1px solid rgba(34,197,94,0.2);'>"
                     "<b style='color:#9ca3af; margin-right:6px; "
-                    "font-size:0.85rem;'>Top 30 tickers (click for "
-                    "chart):</b>"
-                    + "".join(top_chips) + "</div>",
+                    "font-size:0.85rem;'>📊 Tickers (click to open chart):</b>"
+                    + "".join(chips) + extra_html + "</div>"
+                    if isinstance(max_h, int) else
+                    "<div style='line-height:2.2;'>"
+                    "<b style='color:#9ca3af; margin-right:6px;'>"
+                    "📊 Tickers (click to open chart):</b>"
+                    + "".join(chips) + "</div>",
                     unsafe_allow_html=True,
                 )
-                st.dataframe(
-                    df_pt, use_container_width=True, hide_index=True,
-                    column_config={
-                        "Win %": st.column_config.NumberColumn(
-                            format="%.1f%%"
-                        ),
-                        "Avg Return %": st.column_config.NumberColumn(
-                            format="%+.2f%%"
-                        ),
-                        "Median %": st.column_config.NumberColumn(
-                            format="%+.2f%%"
-                        ),
-                        "Best %": st.column_config.NumberColumn(
-                            format="%+.2f%%"
-                        ),
-                        "Worst %": st.column_config.NumberColumn(
-                            format="%+.2f%%"
-                        ),
-                    },
-                )
-                # Quick takeaway based on top result
-                top = df_pt.iloc[0]
-                if top["Win %"] >= 70 and top["Matches"] >= 5:
-                    st.success(
-                        f"🏆 **{top['Ticker']}** is a strong fit: "
-                        f"{top['Win %']}% win rate over "
-                        f"{top['Matches']} matches, "
-                        f"{top['Avg Return %']:+.2f}% avg return. "
-                        "Consider focusing this rule on this ticker."
-                    )
-                elif top["Win %"] >= 60:
-                    st.info(
-                        f"**{top['Ticker']}** is the best fit "
-                        f"({top['Win %']}%, n={top['Matches']}), but "
-                        "no ticker is a clear standout."
-                    )
             else:
-                st.caption(
-                    f"_No ticker had ≥{min_sample} historical matches. "
-                    "Try a bigger universe or looser rules to get "
-                    "per-ticker stats._"
+                st.info(f"No matches in {scanned} tickers scanned.")
+
+            if details:
+                st.markdown("##### Details")
+                st.dataframe(
+                    pd.DataFrame(details),
+                    use_container_width=True,
+                    hide_index=True,
                 )
-        elif last.get("matches") is not None:
-            # We ran an evaluation but got 0 historical matches
-            # (e.g., all rules date-anchored or NEWS_*-only)
-            note = ""
-            if any(r.get("date") for r in rules):
-                note = (
-                    " (rules with specific dates can't be validated "
-                    "historically — drop the date pin to enable validation)."
-                )
-            elif any(r.get("left") in ("NEWS_SENT", "NEWS_BUZZ")
-                     for r in rules):
-                note = (
-                    " (news-sentiment indicators only have current values, "
-                    "not historical — they're skipped in validation)."
-                )
-            st.caption(
-                "📈 Historical edge: 0 matches across history" + note
+
+
+    with pt_sub2:
+        last = st.session_state.get("patterns_last_results")
+        if not last:
+            st.info(
+                "📭 Run an evaluation in **🛠️ Build & Run** "
+                "first to see historical edge analysis here."
             )
+        else:
+            rules = st.session_state.get("custom_rules", [])
+            # === Historical edge: forward-return validation ===
+            hist_returns = last.get("hist_returns") or []
+            fwd_days = last.get("fwd_days", 5)
+            if hist_returns:
+                st.markdown(f"##### 📈 Historical edge (next {fwd_days}d returns)")
+                st.caption(
+                    "Across this ticker history: every bar where ALL rules "
+                    "would have passed, then look forward "
+                    f"{fwd_days} trading days. **NOT a prediction** — "
+                    "just empirical pattern measurement."
+                )
+                rets = pd.Series([h["ret_pct"] for h in hist_returns])
+                dds = pd.Series([h["max_dd_pct"] for h in hist_returns])
+                n = len(rets)
+                win_rate = (rets > 0).mean() * 100
+                avg_ret = rets.mean()
+
+                # Compute profit factor early so verdict can use it
+                wins = rets[rets > 0]
+                losses = rets[rets <= 0]
+                sum_wins = wins.sum() if len(wins) else 0.0
+                sum_losses = abs(losses.sum()) if len(losses) else 0.0
+                pf_early = (sum_wins / sum_losses
+                            if sum_losses > 0 else float("inf"))
+
+                # === Verdict box: explicit KEEP / REFINE / KILL ===
+                verdict_emoji = "❓"
+                verdict_color = "#9ca3af"
+                verdict_label = "INCONCLUSIVE"
+                verdict_reason = ""
+
+                if n < 30:
+                    verdict_emoji = "📉"
+                    verdict_color = "#9ca3af"
+                    verdict_label = "INCONCLUSIVE — not enough data"
+                    verdict_reason = (
+                        f"Only {n} historical matches. Stats are noisy below 30. "
+                        "Widen rules or scan a bigger universe (S&P 500, "
+                        "full TSX) to get a meaningful sample."
+                    )
+                elif (win_rate >= 55 and pf_early >= 1.3
+                      and avg_ret > 0.5):
+                    verdict_emoji = "✅"
+                    verdict_color = "#22c55e"
+                    verdict_label = "KEEP — passes 55% threshold"
+                    verdict_reason = (
+                        f"Win rate {win_rate:.1f}% (≥55%), profit factor "
+                        f"{pf_early:.2f}, avg return {avg_ret:+.2f}%. "
+                        "Real edge in this sample. Still expect 30-50% "
+                        "degradation in live trading from costs/slippage."
+                    )
+                elif win_rate < 50 or pf_early < 1.0:
+                    verdict_emoji = "❌"
+                    verdict_color = "#ef4444"
+                    verdict_label = "KILL — no edge"
+                    verdict_reason = (
+                        f"Win rate {win_rate:.1f}% and profit factor "
+                        f"{pf_early:.2f}. These rules didn't help "
+                        "historically — refine or scrap. Common fixes: add "
+                        "a trend filter (above SMA200), require volume "
+                        "confirmation (CMF>0), tighten thresholds."
+                    )
+                elif pf_early >= 1.0 and avg_ret > 0:
+                    verdict_emoji = "⚠️"
+                    verdict_color = "#fbbf24"
+                    verdict_label = "REFINE — marginal edge"
+                    verdict_reason = (
+                        f"Win rate {win_rate:.1f}%, profit factor "
+                        f"{pf_early:.2f}, avg {avg_ret:+.2f}%. Better than "
+                        "random but probably won't survive transaction "
+                        "costs. Try combining with another factor "
+                        "(volume, news sentiment) or stricter thresholds."
+                    )
+                else:
+                    verdict_emoji = "❌"
+                    verdict_color = "#ef4444"
+                    verdict_label = "KILL — negative expectancy"
+                    verdict_reason = (
+                        f"Win rate {win_rate:.1f}%, avg return {avg_ret:+.2f}%. "
+                        "Losing money historically. Scrap and rebuild."
+                    )
+
+                st.markdown(
+                    f"<div style='padding:14px 16px; border-radius:10px; "
+                    f"margin:10px 0; "
+                    f"background:rgba({_hex_to_rgb(verdict_color)}, 0.12); "
+                    f"border-left:4px solid {verdict_color};'>"
+                    f"<div style='font-size:1.05rem; "
+                    f"color:{verdict_color}; font-weight:700; "
+                    f"margin-bottom:4px;'>"
+                    f"{verdict_emoji} {verdict_label}</div>"
+                    f"<div style='font-size:0.85rem; color:#e5e7eb; "
+                    f"line-height:1.5;'>{verdict_reason}</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+                med_ret = rets.median()
+                avg_dd = dds.mean()
+                best = rets.max()
+                worst = rets.min()
+                std_ret = rets.std()
+
+                stats_cols = st.columns(6)
+                stats_cols[0].metric("Sample", f"{n}")
+                stats_cols[1].metric(
+                    "Win rate", f"{win_rate:.1f}%",
+                    delta=("edge" if win_rate > 55 else
+                           "weak" if win_rate > 50 else "no edge"),
+                    delta_color=("normal" if win_rate > 55 else "off"
+                                 if win_rate > 50 else "inverse"),
+                )
+                stats_cols[2].metric(
+                    "Avg return", f"{avg_ret:+.2f}%",
+                    delta_color="normal" if avg_ret > 0 else "inverse",
+                )
+                stats_cols[3].metric("Median", f"{med_ret:+.2f}%")
+                stats_cols[4].metric(
+                    "Avg max DD", f"{avg_dd:.2f}%",
+                    delta_color="off",
+                )
+                stats_cols[5].metric("σ", f"{std_ret:.2f}%")
+
+                # Asymmetric-payoff metrics
+                wins = rets[rets > 0]
+                losses = rets[rets <= 0]
+                avg_win = wins.mean() if len(wins) else 0.0
+                avg_loss = losses.mean() if len(losses) else 0.0
+                sum_wins = wins.sum() if len(wins) else 0.0
+                sum_losses = abs(losses.sum()) if len(losses) else 0.0
+                profit_factor = (
+                    sum_wins / sum_losses if sum_losses > 0 else float("inf")
+                )
+                rr = (avg_win / abs(avg_loss)
+                      if avg_loss < 0 else float("inf"))
+                extra_cols = st.columns(3)
+                extra_cols[0].metric(
+                    "Avg win", f"{avg_win:+.2f}%",
+                    delta=f"{len(wins)} bars", delta_color="off",
+                )
+                extra_cols[1].metric(
+                    "Avg loss", f"{avg_loss:+.2f}%",
+                    delta=f"{len(losses)} bars", delta_color="off",
+                )
+                extra_cols[2].metric(
+                    "Profit factor",
+                    f"{profit_factor:.2f}" if profit_factor != float("inf")
+                    else "∞",
+                    delta=f"R:R {rr:.2f}" if rr != float("inf") else "—",
+                    delta_color=("normal" if profit_factor > 1.3
+                                 else "off" if profit_factor > 1.0
+                                 else "inverse"),
+                )
+
+                # Distribution histogram
+                try:
+                    import plotly.graph_objects as go
+                    fig_h = go.Figure()
+                    fig_h.add_trace(go.Histogram(
+                        x=rets, nbinsx=40,
+                        marker_color="#60a5fa", opacity=0.85,
+                    ))
+                    fig_h.add_vline(x=0, line_color="#e5e7eb",
+                                    line_width=1, opacity=0.6)
+                    fig_h.add_vline(x=avg_ret, line_color="#22c55e",
+                                    line_dash="dash", line_width=1.5,
+                                    annotation_text=f"avg {avg_ret:+.1f}%",
+                                    annotation_position="top right")
+                    fig_h.update_layout(
+                        template="plotly_dark",
+                        paper_bgcolor="#4a4b4e",
+                        plot_bgcolor="#4a4b4e",
+                        height=260,
+                        margin=dict(l=40, r=20, t=20, b=40),
+                        xaxis_title=f"{fwd_days}-day forward return %",
+                        yaxis_title="count",
+                        showlegend=False,
+                    )
+                    st.plotly_chart(fig_h, use_container_width=True)
+                except Exception:
+                    pass
+
+                # Honest takeaway — based primarily on profit factor + avg return,
+                # not just win rate. Trend-following systems often have <50% win
+                # rate but positive expectancy from asymmetric R:R.
+                if n < 30:
+                    st.warning(
+                        f"📉 **Sample too small** ({n} matches) — stats are "
+                        "noisy. Widen the rules or scan a bigger universe."
+                    )
+                elif profit_factor >= 1.5 and avg_ret > 0.5:
+                    st.success(
+                        f"✅ **Real edge**: profit factor "
+                        f"{profit_factor:.2f}, avg {avg_ret:+.2f}% over "
+                        f"{n} matches. Asymmetric payoff (R:R {rr:.2f}) — "
+                        f"{win_rate:.0f}% win rate is fine here."
+                        if win_rate < 55 else
+                        f"✅ **Real edge**: {win_rate:.0f}% win rate + "
+                        f"{avg_ret:+.2f}% avg over {n} matches "
+                        f"(profit factor {profit_factor:.2f})."
+                    )
+                elif profit_factor >= 1.15 and avg_ret > 0:
+                    st.info(
+                        f"⚠️ **Marginal edge**: profit factor "
+                        f"{profit_factor:.2f}, avg {avg_ret:+.2f}%, "
+                        f"win rate {win_rate:.0f}%. "
+                        "Real but small — might not survive transaction "
+                        "costs / slippage / taxes."
+                    )
+                elif avg_ret > 0 and profit_factor >= 1.0:
+                    st.info(
+                        f"💡 **Asymmetric profile**: {win_rate:.0f}% win rate "
+                        f"but {avg_ret:+.2f}% avg (avg win {avg_win:+.1f}% vs "
+                        f"avg loss {avg_loss:+.1f}%). Wins are bigger than "
+                        f"losses, but profit factor {profit_factor:.2f} is "
+                        "barely above 1 — fragile, easy to lose to costs."
+                    )
+                else:
+                    st.error(
+                        f"❌ **No edge**: {win_rate:.0f}% win rate, "
+                        f"{avg_ret:+.2f}% avg, profit factor "
+                        f"{profit_factor:.2f}. This rule set lost money "
+                        "historically — refine the rules."
+                    )
+
+                # === Per-ticker breakdown — which tickers does this rule
+                #     actually work best on? ===
+                st.markdown("##### 🎯 Per-ticker win rate breakdown")
+                st.caption(
+                    "Same rule set, grouped by ticker. Shows which specific "
+                    "names respond best to your pattern. Even if the "
+                    "aggregate win rate is mediocre, some tickers may have "
+                    "real edge — others may have none."
+                )
+                per_ticker: dict[str, list[float]] = {}
+                for h in hist_returns:
+                    tk = h.get("ticker")
+                    if not tk:
+                        continue
+                    per_ticker.setdefault(tk, []).append(h["ret_pct"])
+                # Build per-ticker stats with min sample size
+                min_sample = 3
+                per_ticker_rows = []
+                for tk, ret_list in per_ticker.items():
+                    if len(ret_list) < min_sample:
+                        continue
+                    s = pd.Series(ret_list)
+                    wins_t = (s > 0).sum()
+                    per_ticker_rows.append({
+                        "Ticker": tk,
+                        "Matches": int(len(ret_list)),
+                        "Win %": round(wins_t / len(ret_list) * 100, 1),
+                        "Avg Return %": round(float(s.mean()), 2),
+                        "Median %": round(float(s.median()), 2),
+                        "Best %": round(float(s.max()), 2),
+                        "Worst %": round(float(s.min()), 2),
+                    })
+                if per_ticker_rows:
+                    df_pt = pd.DataFrame(per_ticker_rows)
+                    df_pt = df_pt.sort_values(
+                        "Win %", ascending=False, na_position="last"
+                    ).reset_index(drop=True)
+                    df_pt.insert(0, "Rank", range(1, len(df_pt) + 1))
+
+                    # Top-N chips
+                    top_chips = []
+                    for _, r in df_pt.head(30).iterrows():
+                        tk = r["Ticker"]
+                        wr = r["Win %"]
+                        if wr >= 65:
+                            color = "#16a34a"
+                        elif wr >= 55:
+                            color = "#65a30d"
+                        elif wr >= 45:
+                            color = "#a16207"
+                        else:
+                            color = "#9ca3af"
+                        href = _chip_href(tk, from_tab="Custom Patterns")
+                        top_chips.append(
+                            f"<a href='{href}' target='_self' style='"
+                            f"background:{color}; color:#fff; "
+                            f"padding:3px 9px; border-radius:8px; "
+                            f"font-size:0.78rem; font-weight:700; "
+                            f"margin:3px; text-decoration:none; "
+                            f"display:inline-block;' "
+                            f"title='{tk} · Win {wr}% · "
+                            f"{r['Matches']} historical matches'>"
+                            f"{tk} {wr:.0f}%</a>"
+                        )
+                    st.markdown(
+                        "<div style='padding:6px; margin-bottom:10px; "
+                        "border-radius:8px; "
+                        "background:rgba(34,197,94,0.03); "
+                        "border:1px solid rgba(34,197,94,0.2);'>"
+                        "<b style='color:#9ca3af; margin-right:6px; "
+                        "font-size:0.85rem;'>Top 30 tickers (click for "
+                        "chart):</b>"
+                        + "".join(top_chips) + "</div>",
+                        unsafe_allow_html=True,
+                    )
+                    st.dataframe(
+                        df_pt, use_container_width=True, hide_index=True,
+                        column_config={
+                            "Win %": st.column_config.NumberColumn(
+                                format="%.1f%%"
+                            ),
+                            "Avg Return %": st.column_config.NumberColumn(
+                                format="%+.2f%%"
+                            ),
+                            "Median %": st.column_config.NumberColumn(
+                                format="%+.2f%%"
+                            ),
+                            "Best %": st.column_config.NumberColumn(
+                                format="%+.2f%%"
+                            ),
+                            "Worst %": st.column_config.NumberColumn(
+                                format="%+.2f%%"
+                            ),
+                        },
+                    )
+                    # Quick takeaway based on top result
+                    top = df_pt.iloc[0]
+                    if top["Win %"] >= 70 and top["Matches"] >= 5:
+                        st.success(
+                            f"🏆 **{top['Ticker']}** is a strong fit: "
+                            f"{top['Win %']}% win rate over "
+                            f"{top['Matches']} matches, "
+                            f"{top['Avg Return %']:+.2f}% avg return. "
+                            "Consider focusing this rule on this ticker."
+                        )
+                    elif top["Win %"] >= 60:
+                        st.info(
+                            f"**{top['Ticker']}** is the best fit "
+                            f"({top['Win %']}%, n={top['Matches']}), but "
+                            "no ticker is a clear standout."
+                        )
+                else:
+                    st.caption(
+                        f"_No ticker had ≥{min_sample} historical matches. "
+                        "Try a bigger universe or looser rules to get "
+                        "per-ticker stats._"
+                    )
+            elif last.get("matches") is not None:
+                # We ran an evaluation but got 0 historical matches
+                # (e.g., all rules date-anchored or NEWS_*-only)
+                note = ""
+                if any(r.get("date") for r in rules):
+                    note = (
+                        " (rules with specific dates can't be validated "
+                        "historically — drop the date pin to enable validation)."
+                    )
+                elif any(r.get("left") in ("NEWS_SENT", "NEWS_BUZZ")
+                         for r in rules):
+                    note = (
+                        " (news-sentiment indicators only have current values, "
+                        "not historical — they're skipped in validation)."
+                    )
+                st.caption(
+                    "📈 Historical edge: 0 matches across history" + note
+                )
 
 
 
