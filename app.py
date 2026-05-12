@@ -2312,6 +2312,143 @@ _inject_tab_persistence()
 
 # === Scan tab ===
 with tab_scan:
+    # === 📅 Last Session Movers — quick daily-glance section ===
+    with st.expander(
+        "📅 Last Session's Top Movers (TSX & more) — click to expand",
+        expanded=False,
+    ):
+        st.caption(
+            "Biggest gainers and losers from the most recent completed "
+            "trading day. Updated every 15 min. Click any ticker to open "
+            "the chart popup."
+        )
+        lsm_col1, lsm_col2 = st.columns([3, 1])
+        lsm_universe_label = lsm_col1.selectbox(
+            "Universe",
+            options=[
+                "TSX Composite (~250) — fast",
+                "TSX 60 (~60) — fastest",
+                "Entire TSX (~1500) — slower",
+                "Entire TSX Venture (~1500) — slower",
+                "S&P 100 (~100)",
+                "S&P 500 (~500)",
+                "Popular ETFs (~80)",
+                "My watchlist",
+            ],
+            index=0,
+            key="lsm_universe_label",
+            label_visibility="collapsed",
+        )
+        lsm_run = lsm_col2.button(
+            "🔍 Find movers", key="lsm_run",
+            use_container_width=True, type="primary",
+        )
+
+        if lsm_run:
+            universe_map = {
+                "TSX Composite (~250) — fast": ("tsx_composite",
+                                                ss.get_tsx_composite),
+                "TSX 60 (~60) — fastest": ("tsx60",
+                                            lambda: list(ss.UNIVERSE_TSX60)),
+                "Entire TSX (~1500) — slower": ("tsx_full",
+                                                lambda: ss.get_full_tsx_listing("tsx")),
+                "Entire TSX Venture (~1500) — slower": ("tsxv",
+                                                          lambda: ss.get_full_tsx_listing("tsxv")),
+                "S&P 100 (~100)": ("sp100",
+                                    lambda: list(ss.UNIVERSE_SP100)),
+                "S&P 500 (~500)": ("sp500", ss.get_sp500),
+                "Popular ETFs (~80)": ("etfs",
+                                        lambda: list(ss.UNIVERSE_POPULAR_ETFS)),
+                "My watchlist": ("wl",
+                                  lambda: [
+                                      t.strip().upper() for t in
+                                      st.session_state.get(
+                                          "watchlist_input", ""
+                                      ).split(",") if t.strip()
+                                  ]),
+            }
+            _, fetch_fn = universe_map.get(
+                lsm_universe_label,
+                ("tsx_composite", ss.get_tsx_composite),
+            )
+            with st.spinner(f"Loading universe…"):
+                try:
+                    tickers = fetch_fn()
+                except Exception:
+                    tickers = []
+            if not tickers:
+                st.warning("Universe is empty.")
+            else:
+                with st.spinner(
+                    f"Scanning {len(tickers)} tickers for "
+                    "last-session moves…"
+                ):
+                    rows = cached_top_movers(tuple(tickers), 1)
+                st.session_state["lsm_results"] = {
+                    "rows": rows,
+                    "universe": lsm_universe_label,
+                    "scanned": len(tickers),
+                }
+
+        lsm_res = st.session_state.get("lsm_results")
+        if lsm_res and lsm_res["rows"]:
+            df_lsm = pd.DataFrame(lsm_res["rows"])
+            up = df_lsm.sort_values("Return %", ascending=False).head(10)
+            down = df_lsm.sort_values("Return %").head(10)
+            st.caption(
+                f"📊 Scanned **{lsm_res['scanned']}** tickers in **"
+                f"{lsm_res['universe']}** · "
+                f"{len(lsm_res['rows'])} had valid data · "
+                f"showing top 10 each direction"
+            )
+
+            def _quick_chips(d, color):
+                chips = []
+                for _, r in d.iterrows():
+                    t = r["Ticker"]
+                    ret = r["Return %"]
+                    href = _chip_href(t, from_tab="Watchlist")
+                    chips.append(
+                        f"<a href='{href}' target='_self' "
+                        f"style='background:{color}; color:#fff; "
+                        "padding:4px 10px; border-radius:8px; "
+                        "font-size:0.8rem; font-weight:700; "
+                        "margin:3px; text-decoration:none; "
+                        "display:inline-block;' "
+                        f"title='Open {t}'>"
+                        f"{t} {ret:+.1f}%</a>"
+                    )
+                st.markdown(
+                    "<div style='padding:8px; border-radius:8px; "
+                    f"background:rgba({_hex_to_rgb(color)},0.05); "
+                    f"border:1px solid rgba({_hex_to_rgb(color)},0.25); "
+                    "margin-bottom:8px;'>"
+                    + "".join(chips) + "</div>",
+                    unsafe_allow_html=True,
+                )
+
+            up_col, down_col = st.columns(2)
+            with up_col:
+                st.markdown(
+                    "<b style='color:#22c55e;'>📈 Top 10 Gainers</b>",
+                    unsafe_allow_html=True,
+                )
+                _quick_chips(up, "#16a34a")
+            with down_col:
+                st.markdown(
+                    "<b style='color:#ef4444;'>📉 Top 10 Decliners</b>",
+                    unsafe_allow_html=True,
+                )
+                _quick_chips(down, "#dc2626")
+
+            st.caption(
+                "💡 For longer windows (5d / 20d) + news context for "
+                "each mover, see the full **Top Movers** section in "
+                "the **Screener** tab."
+            )
+        elif lsm_res and not lsm_res["rows"]:
+            st.info("No data returned — try a smaller universe.")
+
     st.subheader("Watchlist Scan")
 
     default_str = ", ".join(ss.DEFAULT_WATCHLIST)
