@@ -5147,6 +5147,124 @@ with tab_patterns:
                     f"{profit_factor:.2f}. This rule set lost money "
                     "historically — refine the rules."
                 )
+
+            # === Per-ticker breakdown — which tickers does this rule
+            #     actually work best on? ===
+            st.markdown("##### 🎯 Per-ticker win rate breakdown")
+            st.caption(
+                "Same rule set, grouped by ticker. Shows which specific "
+                "names respond best to your pattern. Even if the "
+                "aggregate win rate is mediocre, some tickers may have "
+                "real edge — others may have none."
+            )
+            per_ticker: dict[str, list[float]] = {}
+            for h in hist_returns:
+                tk = h.get("ticker")
+                if not tk:
+                    continue
+                per_ticker.setdefault(tk, []).append(h["ret_pct"])
+            # Build per-ticker stats with min sample size
+            min_sample = 3
+            per_ticker_rows = []
+            for tk, ret_list in per_ticker.items():
+                if len(ret_list) < min_sample:
+                    continue
+                s = pd.Series(ret_list)
+                wins_t = (s > 0).sum()
+                per_ticker_rows.append({
+                    "Ticker": tk,
+                    "Matches": int(len(ret_list)),
+                    "Win %": round(wins_t / len(ret_list) * 100, 1),
+                    "Avg Return %": round(float(s.mean()), 2),
+                    "Median %": round(float(s.median()), 2),
+                    "Best %": round(float(s.max()), 2),
+                    "Worst %": round(float(s.min()), 2),
+                })
+            if per_ticker_rows:
+                df_pt = pd.DataFrame(per_ticker_rows)
+                df_pt = df_pt.sort_values(
+                    "Win %", ascending=False, na_position="last"
+                ).reset_index(drop=True)
+                df_pt.insert(0, "Rank", range(1, len(df_pt) + 1))
+
+                # Top-N chips
+                top_chips = []
+                for _, r in df_pt.head(30).iterrows():
+                    tk = r["Ticker"]
+                    wr = r["Win %"]
+                    if wr >= 65:
+                        color = "#16a34a"
+                    elif wr >= 55:
+                        color = "#65a30d"
+                    elif wr >= 45:
+                        color = "#a16207"
+                    else:
+                        color = "#9ca3af"
+                    href = _chip_href(tk, from_tab="Custom Patterns")
+                    top_chips.append(
+                        f"<a href='{href}' target='_self' style='"
+                        f"background:{color}; color:#fff; "
+                        f"padding:3px 9px; border-radius:8px; "
+                        f"font-size:0.78rem; font-weight:700; "
+                        f"margin:3px; text-decoration:none; "
+                        f"display:inline-block;' "
+                        f"title='{tk} · Win {wr}% · "
+                        f"{r['Matches']} historical matches'>"
+                        f"{tk} {wr:.0f}%</a>"
+                    )
+                st.markdown(
+                    "<div style='padding:6px; margin-bottom:10px; "
+                    "border-radius:8px; "
+                    "background:rgba(34,197,94,0.03); "
+                    "border:1px solid rgba(34,197,94,0.2);'>"
+                    "<b style='color:#9ca3af; margin-right:6px; "
+                    "font-size:0.85rem;'>Top 30 tickers (click for "
+                    "chart):</b>"
+                    + "".join(top_chips) + "</div>",
+                    unsafe_allow_html=True,
+                )
+                st.dataframe(
+                    df_pt, use_container_width=True, hide_index=True,
+                    column_config={
+                        "Win %": st.column_config.NumberColumn(
+                            format="%.1f%%"
+                        ),
+                        "Avg Return %": st.column_config.NumberColumn(
+                            format="%+.2f%%"
+                        ),
+                        "Median %": st.column_config.NumberColumn(
+                            format="%+.2f%%"
+                        ),
+                        "Best %": st.column_config.NumberColumn(
+                            format="%+.2f%%"
+                        ),
+                        "Worst %": st.column_config.NumberColumn(
+                            format="%+.2f%%"
+                        ),
+                    },
+                )
+                # Quick takeaway based on top result
+                top = df_pt.iloc[0]
+                if top["Win %"] >= 70 and top["Matches"] >= 5:
+                    st.success(
+                        f"🏆 **{top['Ticker']}** is a strong fit: "
+                        f"{top['Win %']}% win rate over "
+                        f"{top['Matches']} matches, "
+                        f"{top['Avg Return %']:+.2f}% avg return. "
+                        "Consider focusing this rule on this ticker."
+                    )
+                elif top["Win %"] >= 60:
+                    st.info(
+                        f"**{top['Ticker']}** is the best fit "
+                        f"({top['Win %']}%, n={top['Matches']}), but "
+                        "no ticker is a clear standout."
+                    )
+            else:
+                st.caption(
+                    f"_No ticker had ≥{min_sample} historical matches. "
+                    "Try a bigger universe or looser rules to get "
+                    "per-ticker stats._"
+                )
         elif last.get("matches") is not None:
             # We ran an evaluation but got 0 historical matches
             # (e.g., all rules date-anchored or NEWS_*-only)
