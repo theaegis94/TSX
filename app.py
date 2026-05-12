@@ -2882,6 +2882,51 @@ with tab_screener:
         ):
             st.caption("💡 **Click any ticker** to open the chart in a popup.")
 
+            # Sort controls
+            SORT_KEYS = {
+                "Ticker (A→Z)":     ("ticker", False),
+                "Ticker (Z→A)":     ("ticker", True),
+                "Price ↑":          ("price", False),
+                "Price ↓":          ("price", True),
+                "RSI ↑ (oversold first)":  ("rsi", False),
+                "RSI ↓":            ("rsi", True),
+                "vs BB Lower ↑ (deepest below first)":
+                    ("bb_distance_pct", False),
+                "vs BB Lower ↓":    ("bb_distance_pct", True),
+                "BB BUY Date — newest first": ("bb_buy_age", False),
+                "BB BUY Date — oldest first": ("bb_buy_age", True),
+                "Dip% ↑ (worst dip first)": ("dip_pct", False),
+                "Dip% ↓":           ("dip_pct", True),
+                "RSI OS — yes first":  ("rsi_oversold", True),
+                "RSI OS — no first":   ("rsi_oversold", False),
+            }
+            sort_col_l, sort_col_r = st.columns([2, 5])
+            sort_choice = sort_col_l.selectbox(
+                "Sort",
+                options=list(SORT_KEYS.keys()),
+                index=8,  # default: BB BUY Date — newest first
+                key="screener_sort",
+                label_visibility="collapsed",
+            )
+            sort_field, sort_desc = SORT_KEYS[sort_choice]
+            sort_col_r.caption(
+                f"Sorted by **{sort_choice}** · {len(matches)} rows"
+            )
+
+            def _sort_key(m: dict):
+                v = m.get(sort_field)
+                # None values sort last regardless of direction
+                if v is None:
+                    return (1, 0)
+                # For string fields (ticker), use lowercase for stable sort
+                if isinstance(v, str):
+                    return (0, v.lower())
+                return (0, v)
+
+            matches_sorted = sorted(
+                matches, key=_sort_key, reverse=sort_desc
+            )
+
             # Header row — added Dip% column
             col_widths = [1.2, 1.0, 0.7, 1.2, 1.4, 1.0, 0.8, 0.8]
             h = st.columns(col_widths)
@@ -2889,7 +2934,7 @@ with tab_screener:
                                       "BB BUY Date", "Age", "Dip%", "RSI OS"]):
                 col.markdown(f"**{label}**")
 
-            for m in matches:
+            for m in matches_sorted:
                 cols = st.columns(col_widths)
                 if cols[0].button(m["ticker"], key=f"sc_view_{m['ticker']}",
                                   use_container_width=True):
