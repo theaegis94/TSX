@@ -3983,6 +3983,48 @@ RULE_DEFAULTS: dict[str, tuple[float, float]] = {
 }
 
 
+# Short value-meaning hints per indicator, shown above the value input in
+# the rule editor to help users pick sensible thresholds.
+RULE_VALUE_HINTS: dict[str, str] = {
+    "Close":           "price in $ — depends on stock",
+    "Volume":          "shares traded — depends on stock",
+    "RSI":             "0-100 · < 30 oversold · > 70 overbought",
+    "RSI7":            "0-100 · < 25 oversold · > 75 overbought (faster)",
+    "RSI5":            "0-100 · < 20 oversold · > 80 overbought (fastest)",
+    "MACD":            "raw value · positive bullish · negative bearish",
+    "MACD_SIGNAL":     "raw value · MACD smoothed",
+    "MACD_HIST":       "positive = bullish momentum · negative = bearish",
+    "SMA5":            "$ value of 5-day moving average",
+    "SMA20":           "$ value of 20-day moving average",
+    "SMA50":           "$ value of 50-day moving average",
+    "SMA200":          "$ value of 200-day moving average",
+    "BB_LOWER":        "$ value of Bollinger lower band",
+    "BB_MID":          "$ value of Bollinger middle band",
+    "BB_UPPER":        "$ value of Bollinger upper band",
+    "ADX":             "0-100 · < 20 weak trend · > 25 strong trend",
+    "DAILY_CHG_PCT":   "% change today · ±2% = average · ±5% = big move",
+    "DIST_SMA5_PCT":   "% above/below SMA5 · 0 = on the line",
+    "DIST_SMA20_PCT":  "% above/below SMA20 · 0 = on the line",
+    "DIST_SMA50_PCT":  "% above/below SMA50 · 0 = on the line",
+    "DIST_SMA200_PCT": "% above/below SMA200 · > 0 = uptrend, < 0 = downtrend",
+    "BB_PCT_B":        "0 = at lower band · 1 = at upper · < 0 below · > 1 above",
+    "BB_DIST_LOWER_PCT": "% from BB lower · negative = below band",
+    "BB_DIST_UPPER_PCT": "% from BB upper · negative = above band",
+    "BB_BANDWIDTH_PCT":  "BB width as % of middle · < 5 = squeeze",
+    "ANOMALY_SCORE":     "-0.5 to 0 · more negative = more anomalous",
+    "ANOMALY_PCTILE":    "0-100 · < 10 = anomalous (bottom 10% of history)",
+    "CONVICTION":        "-100 to +100 · > 50 strong bull · < -30 bear",
+    "MFI":               "0-100 · < 20 oversold · > 80 overbought (vol-weighted)",
+    "CMF":               "-1 to +1 · > 0.05 accumulation · < -0.05 distribution",
+    "NEWS_SENT":         "0-1 · < 0.4 bearish · > 0.6 bullish news",
+    "NEWS_BUZZ":         "0+ · 1 = average · > 2 = 2× normal coverage",
+    "VOL_OUTLOOK":       "0-100 · > 60 elevated volume expected today",
+    "VOL_RATIO":         "today vol ÷ 20d avg · > 1.5 above avg · > 3 spike",
+    "ST_BULLISH":        "0-1 · > 0.65 retail bullish · < 0.4 retail bearish",
+    "ST_BUZZ":           "msgs/24h · > 10 active · > 30 loud",
+}
+
+
 # Pre-built presets removed — Quick Presets row is now populated from any
 # saved rule set the user has tagged "📌 Pinned" (see the Saved rule sets
 # section). The dict below stays as the empty default for backward compat.
@@ -4687,6 +4729,19 @@ with tab_patterns:
         )
         today = datetime.now().date()
         for i, rule in enumerate(rules):
+            # Inline hint showing what the value means for the chosen
+            # indicator. Helps pick sensible thresholds without trial+error.
+            hint = RULE_VALUE_HINTS.get(rule["left"], "")
+            if hint:
+                # Stretch a small caption across the value column area
+                # (indicator + op + value = 3+1.4+2 weights). Use HTML so
+                # we can right-align it under the value box.
+                st.markdown(
+                    f"<div style='font-size:0.7rem; color:#9ca3af; "
+                    f"margin:0 0 -4px 0; padding-left:53%;'>"
+                    f"💡 {hint}</div>",
+                    unsafe_allow_html=True,
+                )
             # Layout: indicator | op | value (+ optional upper) | date | delete
             is_between = rule["op"] == "between"
             if is_between:
