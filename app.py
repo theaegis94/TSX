@@ -3175,15 +3175,19 @@ with tab_screener:
         )
 
         lb_col1, lb_col2 = st.columns([2, 1])
+        lb_options = [
+            "Custom watchlist",
+            "TSX 60 (~60)",
+            "Popular ETFs (~80)",
+            "S&P 100 (~100)",
+            "S&P 500 (~500 — slow)",
+        ] + [
+            f"{lbl} ({len(tk)})"
+            for lbl, tk in ss.INDUSTRY_UNIVERSES.items()
+        ]
         lb_universe = lb_col1.selectbox(
             "Universe (smaller = faster)",
-            options=[
-                "Custom watchlist",
-                "TSX 60 (~60)",
-                "Popular ETFs (~80)",
-                "S&P 100 (~100)",
-                "S&P 500 (~500 — slow)",
-            ],
+            options=lb_options,
             index=0,
             key="lb_universe",
         )
@@ -3211,7 +3215,12 @@ with tab_screener:
                 elif lb_universe == "S&P 500 (~500 — slow)":
                     tickers = ss.get_sp500()
                 else:
+                    # Try industry universes
                     tickers = []
+                    for lbl, tk in ss.INDUSTRY_UNIVERSES.items():
+                        if lb_universe.startswith(lbl):
+                            tickers = list(tk)
+                            break
 
             if not tickers:
                 st.warning("Universe is empty.")
@@ -3383,18 +3392,22 @@ with tab_screener:
             ),
             key="wt_strat",
         )
+        wt_options = [
+            "TSX Composite (~250)",
+            "TSX 60 (~60)",
+            "Entire TSX (~1500) — slow",
+            "Entire TSX Venture (~1500) — slow",
+            "S&P 100 (~100)",
+            "S&P 500 (~500) — slow",
+            "Popular ETFs (~80)",
+            "My watchlist",
+        ] + [
+            f"{lbl} ({len(tk)})"
+            for lbl, tk in ss.INDUSTRY_UNIVERSES.items()
+        ]
         wt_universe = wt_col2.selectbox(
             "Universe",
-            options=[
-                "TSX Composite (~250)",
-                "TSX 60 (~60)",
-                "Entire TSX (~1500) — slow",
-                "Entire TSX Venture (~1500) — slow",
-                "S&P 100 (~100)",
-                "S&P 500 (~500) — slow",
-                "Popular ETFs (~80)",
-                "My watchlist",
-            ],
+            options=wt_options,
             index=0,
             key="wt_universe",
         )
@@ -3440,7 +3453,12 @@ with tab_screener:
                 elif wt_universe == "Popular ETFs (~80)":
                     tickers = list(ss.UNIVERSE_POPULAR_ETFS)
                 else:
+                    # Try industry universes
                     tickers = []
+                    for lbl, tk in ss.INDUSTRY_UNIVERSES.items():
+                        if wt_universe.startswith(lbl):
+                            tickers = list(tk)
+                            break
 
             if not tickers:
                 st.warning("Universe is empty.")
@@ -3621,19 +3639,23 @@ with tab_screener:
         )
 
         tm_col1, tm_col2, tm_col3 = st.columns([2, 1, 1])
+        tm_options = [
+            "Entire TSX (~1500)",
+            "TSX Composite (~250)",
+            "TSX 60 (~60)",
+            "Entire TSX Venture (~1500)",
+            "S&P 100 (~100)",
+            "S&P 500 (~500 — slow)",
+            "Entire US (~7000, very slow)",
+            "Popular ETFs (~80)",
+            "Custom watchlist",
+        ] + [
+            f"{lbl} ({len(tk)})"
+            for lbl, tk in ss.INDUSTRY_UNIVERSES.items()
+        ]
         tm_universe = tm_col1.selectbox(
             "Universe",
-            options=[
-                "Entire TSX (~1500)",
-                "TSX Composite (~250)",
-                "TSX 60 (~60)",
-                "Entire TSX Venture (~1500)",
-                "S&P 100 (~100)",
-                "S&P 500 (~500 — slow)",
-                "Entire US (~7000, very slow)",
-                "Popular ETFs (~80)",
-                "Custom watchlist",
-            ],
+            options=tm_options,
             index=0,
             key="tm_universe",
         )
@@ -3674,7 +3696,12 @@ with tab_screener:
                 elif tm_universe == "Popular ETFs (~80)":
                     tickers = list(ss.UNIVERSE_POPULAR_ETFS)
                 else:
+                    # Try industry universes
                     tickers = []
+                    for lbl, tk in ss.INDUSTRY_UNIVERSES.items():
+                        if tm_universe.startswith(lbl):
+                            tickers = list(tk)
+                            break
 
             if not tickers:
                 st.warning("Universe is empty.")
@@ -5033,6 +5060,11 @@ with tab_patterns:
             "us_full": "🇺🇸 Full US (~10000 — very slow, no OTC)",
             "crypto": f"₿ Crypto ({len(ss.UNIVERSE_CRYPTO)} major coins)",
         }
+        # Industry filters — add curated sector lists
+        for ind_label, ind_tickers in ss.INDUSTRY_UNIVERSES.items():
+            universe_options[f"industry:{ind_label}"] = (
+                f"{ind_label} ({len(ind_tickers)})"
+            )
         uni_col, lim_col = st.columns([3, 1])
         universe_key = uni_col.selectbox(
             "Universe",
@@ -5086,6 +5118,11 @@ with tab_patterns:
                         target_tickers = ss.get_full_us_listing()
                     elif universe_key == "crypto":
                         target_tickers = list(ss.UNIVERSE_CRYPTO)
+                    elif universe_key.startswith("industry:"):
+                        ind_label = universe_key.removeprefix("industry:")
+                        target_tickers = list(
+                            ss.INDUSTRY_UNIVERSES.get(ind_label, [])
+                        )
                     else:
                         target_tickers = wl_tickers
 

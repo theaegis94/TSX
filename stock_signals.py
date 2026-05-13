@@ -708,6 +708,78 @@ def stocktwits_sentiment(ticker: str) -> dict | None:
     }
 
 
+MINING_CATALYSTS: dict[str, list[str]] = {
+    "🪨 Drill results": [
+        "drill", "drilling", "intersect", "intercept", "g/t", "gpt",
+        "grams per tonne", "grams per ton", "mineralization",
+        "drill hole", "drill program", "drill results", "drill update",
+        "assay results", "% cu", "% zn", " cu ", " au ", " ag ",
+    ],
+    "📊 Resource estimate": [
+        "resource estimate", "mineral resource", "ni 43-101",
+        "ni-43-101", "indicated resource", "inferred resource",
+        "measured resource", "updated resource", "resource update",
+        "maiden resource",
+    ],
+    "🤝 M&A / takeover": [
+        "to acquire", "acquires", "acquisition", "merger",
+        "to merge", "takeover", "definitive agreement",
+        "agreement to purchase", "buyout", "tender offer",
+        "letter of intent", "arrangement agreement",
+    ],
+    "📜 Permit / approval": [
+        "permit granted", "permit issued", "permit received",
+        "permitting", "environmental approval",
+        "environmental assessment", "regulatory approval",
+        "construction permit", "mining license", "mining permit",
+    ],
+    "📑 Feasibility / PEA": [
+        "feasibility study", "preliminary economic assessment",
+        "PEA", "DFS", "PFS", "definitive feasibility",
+        "pre-feasibility", "economic study", "scoping study",
+        "technical report",
+    ],
+    "⛏️ Production": [
+        "first pour", "first production", "commercial production",
+        "commenced production", "concentrate shipped",
+        "production update", "ramp-up", "ramp up", "mill commissioning",
+    ],
+    "💰 Financing": [
+        "private placement", "bought deal", "financing closed",
+        "subscription receipt", "warrant exercise",
+        "flow-through shares", "offering closes",
+        "non-brokered private placement",
+    ],
+    "🤵 Insider buying": [
+        "insider purchase", "insider buying", "director purchases",
+        "officer purchases", "ceo purchases", "form 4",
+    ],
+    "🏆 New discovery": [
+        "new discovery", "discovery hole", "new zone",
+        "extends mineralization", "high-grade discovery",
+        "major discovery",
+    ],
+}
+
+
+def classify_mining_news(article: dict) -> str | None:
+    """Tag an article with a mining catalyst category, or None if generic.
+
+    Searches both headline and summary. Returns the FIRST matching
+    category (categories are ordered by impact/specificity above).
+    """
+    if not article:
+        return None
+    head = (article.get("headline") or "").lower()
+    summary = (article.get("summary") or "").lower()
+    text = f"{head} {summary}"
+    for category, keywords in MINING_CATALYSTS.items():
+        for kw in keywords:
+            if kw.lower() in text:
+                return category
+    return None
+
+
 def yf_news(ticker: str) -> list[dict]:
     """Fetch recent news from yfinance and normalize to the same schema
     Finnhub returns. Free, no API key, often has better TSX coverage than
@@ -2866,6 +2938,181 @@ UNIVERSE_TSX60 = [
     "QSR.TO", "GIL.TO",  # consumer cyc
     "REI-UN.TO", "CAR-UN.TO", "SRU-UN.TO",  # REITs
 ]
+
+
+# ===========================================================================
+# Industry-specific universes — curated tickers grouped by sector.
+# Used in screener "Run against" dropdowns so users can filter scans
+# to a single industry (AI, biotech, mining, etc.).
+# ===========================================================================
+
+UNIVERSE_AI_TECH = [
+    # US megacap tech + pure-play AI
+    "NVDA", "MSFT", "GOOGL", "META", "AMZN", "AAPL", "TSLA",
+    "AMD", "AVGO", "ORCL", "CRM", "ADBE", "NOW", "PANW",
+    "CRWD", "NET", "DDOG", "SNOW", "MDB", "PLTR", "SMCI",
+    "ARM", "MU", "INTC", "QCOM", "TXN", "MRVL",
+    "AI", "BBAI", "SOUN", "PATH",  # smaller AI pure-plays
+    # TSX tech
+    "SHOP.TO", "CSU.TO", "OTEX.TO", "CGI.TO", "DSG.TO",
+    "KXS.TO", "DCBO.TO", "LSPD.TO",
+]
+
+UNIVERSE_BIOTECH = [
+    # US large-cap pharma
+    "PFE", "JNJ", "MRK", "LLY", "ABBV", "BMY", "AMGN",
+    "GILD", "REGN", "VRTX", "BIIB",
+    # mRNA / biotech
+    "MRNA", "BNTX", "NVAX", "ARCT",
+    # Mid/large biotech
+    "ALNY", "INCY", "BMRN", "EXAS", "ILMN", "TMO", "DHR",
+    "ABT", "MDT", "BSX", "ISRG", "SYK", "ZTS",
+    # Smaller biotech
+    "EXEL", "HALO", "RARE", "RYTM", "SRPT",
+]
+
+UNIVERSE_MINING = [
+    # US/Global majors
+    "FCX", "NEM", "GOLD", "BHP", "RIO", "VALE", "SCCO",
+    # TSX gold/silver
+    "ABX.TO", "K.TO", "AEM.TO", "PAAS.TO", "FNV.TO", "WPM.TO",
+    "AGI.TO", "BTO.TO", "EQX.TO", "OR.TO", "ELD.TO", "IMG.TO",
+    "NGT.TO", "OGC.TO", "ARG.TO", "DPM.TO", "LUG.TO",
+    # TSX base metals / diversified
+    "TECK-B.TO", "FM.TO", "HBM.TO", "LUN.TO", "CS.TO",
+    "TKO.TO", "ERO.TO", "CCO.TO",  # CCO = uranium (Cameco)
+    # Critical minerals / lithium
+    "LAC.TO", "PMET.V",
+]
+
+UNIVERSE_GOLD_MINING = [
+    "NEM", "GOLD", "AEM", "FNV", "WPM", "AGI", "PAAS",
+    "ABX.TO", "K.TO", "AEM.TO", "FNV.TO", "WPM.TO",
+    "AGI.TO", "BTO.TO", "EQX.TO", "OR.TO", "ELD.TO",
+    "IMG.TO", "NGT.TO", "OGC.TO", "ARG.TO", "DPM.TO",
+    "LUG.TO", "TXG.TO", "AAUC.TO",
+]
+
+UNIVERSE_OIL_GAS_FULL = [
+    # US oil majors / E&P
+    "XOM", "CVX", "COP", "OXY", "EOG", "PXD", "FANG",
+    "DVN", "HES", "MRO", "PSX", "MPC", "VLO", "SLB",
+    "BKR", "HAL", "APA", "CTRA", "OVV", "MUR",
+    # US natural gas / pipelines
+    "WMB", "KMI", "OKE", "LNG", "EQT", "CHK",
+    # Canadian oil/gas
+    "SU.TO", "CNQ.TO", "ENB.TO", "TRP.TO", "IMO.TO",
+    "CVE.TO", "ARX.TO", "TOU.TO", "MEG.TO", "PEY.TO",
+    "TPZ.TO", "WCP.TO", "OBE.TO", "BIR.TO", "VET.TO",
+    "BTE.TO", "PPL.TO",
+]
+
+UNIVERSE_BANKS_CA = [
+    "RY.TO", "TD.TO", "BNS.TO", "BMO.TO", "CM.TO", "NA.TO",
+    "EQB.TO", "LB.TO", "CWB.TO",
+]
+
+UNIVERSE_BANKS_US = [
+    "JPM", "BAC", "WFC", "C", "GS", "MS", "USB", "TFC",
+    "PNC", "SCHW", "BLK", "AXP", "COF", "BK",
+]
+
+UNIVERSE_EV = [
+    "TSLA", "RIVN", "LCID", "F", "GM", "NIO", "LI", "XPEV",
+    "BYDDY", "CHPT", "EVGO", "WBX", "BLNK", "PLUG", "FCEL",
+    "QS", "FSR", "VFS",
+]
+
+UNIVERSE_CANNABIS = [
+    "TLRY", "CGC", "CRON", "SNDL", "ACB",
+    "ACB.TO", "WEED.TO", "CL.TO", "OGI.TO", "HEXO.TO",
+    "VFF.TO", "VIVO.TO", "FAF.TO",
+    # US plant-touching (OTC)
+    "CURLF", "TCNNF", "VRNOF", "GTBIF",
+]
+
+UNIVERSE_CONSTRUCTION = [
+    "CAT", "DE", "MLM", "VMC", "EXP", "PWR", "FLR",
+    "FIX", "NX", "AECOM", "PRIM", "MTZ",
+    # CA construction / engineering
+    "STN.TO", "WSP.TO", "ARE.TO", "BDT.TO", "AAV.TO",
+    # Building products
+    "BLDR", "TOL", "DHI", "LEN", "NVR", "PHM",
+]
+
+UNIVERSE_RETAIL = [
+    "WMT", "COST", "TGT", "HD", "LOW", "DG", "DLTR",
+    "BBY", "TJX", "ROST", "ULTA", "AMZN", "EBAY", "ETSY",
+    "CHWY", "W", "MELI",
+    # CA retail
+    "L.TO", "ATD.TO", "MRU.TO", "WN.TO", "DOL.TO",
+    "EMP-A.TO",
+]
+
+UNIVERSE_HEALTHCARE = [
+    "UNH", "CVS", "ELV", "CI", "HUM", "CNC", "MOH",
+    "HCA", "THC", "DGX",
+    "JNJ", "PFE", "ABBV", "MRK", "LLY", "TMO",
+    "DHR", "ABT", "MDT", "BSX", "ISRG", "SYK", "ZTS",
+    "DXCM", "EW", "IDXX",
+]
+
+UNIVERSE_REIT = [
+    "PLD", "AMT", "EQIX", "PSA", "SPG", "O", "WELL",
+    "AVB", "EQR", "CCI", "DLR", "EXR", "VTR", "BXP",
+    "INVH", "MAA", "UDR",
+    # CA REITs
+    "REI-UN.TO", "HOM-UN.TO", "AP-UN.TO", "CAR-UN.TO",
+    "SRU-UN.TO", "FCR-UN.TO", "GRT-UN.TO", "DIR-UN.TO",
+    "CHP-UN.TO", "BEI-UN.TO",
+]
+
+UNIVERSE_SEMI = [
+    "NVDA", "AVGO", "AMD", "INTC", "QCOM", "TXN", "MU",
+    "ASML", "ON", "MRVL", "ARM", "SMCI", "TSM", "ADI",
+    "MCHP", "NXPI", "LRCX", "AMAT", "KLAC", "TER",
+]
+
+UNIVERSE_UTILITIES = [
+    "NEE", "DUK", "SO", "AEP", "D", "EXC", "XEL",
+    "SRE", "ED", "WEC", "ES", "ETR", "DTE",
+    # CA utilities
+    "FTS.TO", "EMA.TO", "ALA.TO", "H.TO", "AQN.TO",
+    "BEP-UN.TO", "BIP-UN.TO", "BLX.TO",
+]
+
+UNIVERSE_AEROSPACE_DEFENSE = [
+    "LMT", "RTX", "NOC", "GD", "BA", "TDG", "TXT",
+    "LHX", "HEI", "HII", "KTOS", "AVAV",
+]
+
+UNIVERSE_URANIUM = [
+    "CCJ", "DNN", "UEC", "UUUU", "URG", "NXE",
+    "CCO.TO", "NXE.TO", "DML.TO", "FCU.TO", "UEX.TO",
+    "ISO.TO", "PALAF",
+]
+
+# Master dict: emoji + label → ticker list
+# Used by universe selectors so a user can pick "Industry: AI / Tech"
+INDUSTRY_UNIVERSES = {
+    "🤖 AI / Tech": UNIVERSE_AI_TECH,
+    "🧬 Biotech / Pharma": UNIVERSE_BIOTECH,
+    "💾 Semiconductors": UNIVERSE_SEMI,
+    "⛏️ Mining (all metals)": UNIVERSE_MINING,
+    "🥇 Gold Mining": UNIVERSE_GOLD_MINING,
+    "☢️ Uranium": UNIVERSE_URANIUM,
+    "🛢️ Oil & Gas": UNIVERSE_OIL_GAS_FULL,
+    "⚡ Utilities": UNIVERSE_UTILITIES,
+    "🏦 Banks (CA)": UNIVERSE_BANKS_CA,
+    "🏦 Banks (US)": UNIVERSE_BANKS_US,
+    "⚡ EV / Clean Energy": UNIVERSE_EV,
+    "🌿 Cannabis": UNIVERSE_CANNABIS,
+    "🏗️ Construction": UNIVERSE_CONSTRUCTION,
+    "🛒 Retail": UNIVERSE_RETAIL,
+    "🏥 Healthcare": UNIVERSE_HEALTHCARE,
+    "🏘️ REITs": UNIVERSE_REIT,
+    "🛡️ Aerospace & Defense": UNIVERSE_AEROSPACE_DEFENSE,
+}
 
 
 # Major cryptocurrencies — yfinance format is SYMBOL-USD.
