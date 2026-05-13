@@ -350,35 +350,109 @@ st.markdown(
 #  - You can bookmark a URL with your specific tickers
 #  - Sharing the URL shares the watchlist (handy for phone)
 
+# --- Multi-list watchlist support ---
+# All saved lists live in watchlists.json: {name: [tickers]}. One list is
+# "active" at any time — its tickers populate `watchlist_input`, which all
+# downstream features (snapshot, tile bar, Custom Patterns, alerts) read.
+WATCHLISTS_PATH = pathlib.Path("watchlists.json")
+
+
+def _load_watchlists() -> dict:
+    """Load all saved watchlists. Returns {name: [tickers]} dict."""
+    if not WATCHLISTS_PATH.exists():
+        return {"Default": list(ss.DEFAULT_WATCHLIST)}
+    try:
+        data = json.loads(WATCHLISTS_PATH.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and data:
+            # Normalize: ensure each value is a list of strings
+            return {
+                k: [str(t).strip().upper() for t in v if str(t).strip()]
+                for k, v in data.items()
+                if isinstance(v, list)
+            }
+    except Exception:
+        pass
+    return {"Default": list(ss.DEFAULT_WATCHLIST)}
+
+
+def _save_watchlists(d: dict) -> None:
+    try:
+        WATCHLISTS_PATH.write_text(
+            json.dumps(d, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+
+
+def _set_active_watchlist(name: str) -> None:
+    """Switch active list. Updates session state + URL."""
+    all_lists = st.session_state.get("_all_watchlists", {})
+    if name not in all_lists:
+        return
+    st.session_state["_active_watchlist"] = name
+    st.session_state["watchlist_input"] = ", ".join(all_lists[name])
+    st.session_state["_wl_from_url"] = True
+    st.query_params["list"] = name
+    _sync_watchlist_to_url()
+
+
 def _init_watchlist_from_url():
     if "watchlist_input" not in st.session_state:
+        # Load all named watchlists from disk
+        all_lists = _load_watchlists()
+        st.session_state["_all_watchlists"] = all_lists
+
+        # Pick active list: URL ?list= first, then first list, then "Default"
+        names = list(all_lists.keys())
+        requested = st.query_params.get("list", "")
+        active_name = (
+            requested if requested in all_lists
+            else (names[0] if names else "Default")
+        )
+        st.session_state["_active_watchlist"] = active_name
+
+        # Tickers for the active list: prefer URL ?wl= over saved tickers
+        # (handy when sharing — pasted URL should override saved state)
         wl = st.query_params.get("wl")
         if wl:
-            # Normalize: strip spaces, uppercase
             parts = [p.strip().upper() for p in wl.split(",") if p.strip()]
-            st.session_state.watchlist_input = ", ".join(parts)
+            st.session_state["watchlist_input"] = ", ".join(parts)
             st.session_state["_wl_from_url"] = True
+            # Persist URL tickers into the active list
+            all_lists[active_name] = parts
+            _save_watchlists(all_lists)
         else:
-            st.session_state.watchlist_input = ", ".join(ss.DEFAULT_WATCHLIST)
-            # Default fallback — don't claim ownership; localStorage may
-            # restore the user's actual saved watchlist on the next render.
-            st.session_state["_wl_from_url"] = False
+            st.session_state["watchlist_input"] = ", ".join(
+                all_lists.get(active_name, ss.DEFAULT_WATCHLIST)
+            )
+            st.session_state["_wl_from_url"] = bool(
+                all_lists.get(active_name)
+            )
 
 
 def _sync_watchlist_to_url():
-    """Write the watchlist to URL ?wl= only if it's user-owned (not the
-    default fallback). This prevents the JS localStorage mirror from
-    overwriting the user's saved watchlist with default tickers on bare-URL
-    visits.
+    """Write the watchlist to URL ?wl=, ?list=NAME, and also persist to
+    watchlists.json under the active list's name.
     """
     current = st.session_state.get("watchlist_input", "")
     parts = [p.strip().upper() for p in current.split(",") if p.strip()]
     is_user_owned = st.session_state.get("_wl_from_url", False)
     if parts and is_user_owned:
-        # URL-compact form: comma-separated, no spaces
         st.query_params["wl"] = ",".join(parts)
     elif "wl" in st.query_params and not parts:
         del st.query_params["wl"]
+
+    # Sync active list name to URL
+    active = st.session_state.get("_active_watchlist", "Default")
+    st.query_params["list"] = active
+
+    # Persist active list's tickers back into watchlists.json
+    all_lists = st.session_state.get("_all_watchlists")
+    if all_lists is not None and is_user_owned:
+        all_lists[active] = parts
+        _save_watchlists(all_lists)
+        st.session_state["_all_watchlists"] = all_lists
 
 
 def _on_bulk_edit_watchlist():
@@ -2173,6 +2247,110 @@ with st.sidebar:
 
 with st.sidebar:
     st.header("Watchlist")
+
+    # --- Active list selector (categories) ---
+    _all_lists = st.session_state.get("_all_watchlists", {})
+    if not _all_lists:
+        _all_lists = _load_watchlists()
+        st.session_state["_all_watchlists"] = _all_lists
+    _list_names = list(_all_lists.keys()) or ["Default"]
+    _active_name = st.session_state.get("_active_watchlist", _list_names[0])
+    if _active_name not in _list_names:
+        _active_name = _list_names[0]
+        st.session_state["_active_watchlist"] = _active_name
+
+    sel_idx = _list_names.index(_active_name)
+    picked = st.selectbox(
+        "Active list",
+        options=_list_names,
+        index=sel_idx,
+        key="_watchlist_selector",
+        format_func=lambda n: f"📋 {n}  ({len(_all_lists.get(n, []))})",
+        help="Switch which list of tickers is currently active. "
+             "All app features (snapshot, charts, screeners) use this list.",
+    )
+    if picked != _active_name:
+        _set_active_watchlist(picked)
+        st.rerun()
+
+    # --- Manage lists (rename, create, delete, duplicate) ---
+    with st.expander("⚙️ Manage lists", expanded=False):
+        # Create new list
+        new_list_name = st.text_input(
+            "New list name",
+            placeholder="e.g. Crypto, Holdings, Penny Stocks",
+            key="_new_list_input",
+        )
+        mc1, mc2 = st.columns(2)
+        if mc1.button("➕ Create empty", key="_create_list_btn",
+                      use_container_width=True,
+                      disabled=not new_list_name.strip()):
+            n = new_list_name.strip()
+            if n in _all_lists:
+                st.warning(f"'{n}' already exists.")
+            else:
+                _all_lists[n] = []
+                _save_watchlists(_all_lists)
+                st.session_state["_all_watchlists"] = _all_lists
+                _set_active_watchlist(n)
+                st.rerun()
+        if mc2.button("📋 Duplicate active", key="_dup_list_btn",
+                      use_container_width=True,
+                      disabled=not new_list_name.strip()):
+            n = new_list_name.strip()
+            if n in _all_lists:
+                st.warning(f"'{n}' already exists.")
+            else:
+                _all_lists[n] = list(_all_lists.get(_active_name, []))
+                _save_watchlists(_all_lists)
+                st.session_state["_all_watchlists"] = _all_lists
+                _set_active_watchlist(n)
+                st.rerun()
+
+        st.divider()
+
+        # Rename active
+        rn_name = st.text_input(
+            f"Rename '{_active_name}' to:",
+            value=_active_name,
+            key="_rename_list_input",
+        )
+        if st.button("✏️ Rename", key="_rename_list_btn",
+                     use_container_width=True,
+                     disabled=(rn_name.strip() == _active_name
+                               or not rn_name.strip())):
+            new_n = rn_name.strip()
+            if new_n in _all_lists:
+                st.warning(f"'{new_n}' already exists.")
+            else:
+                _all_lists[new_n] = _all_lists.pop(_active_name)
+                _save_watchlists(_all_lists)
+                st.session_state["_all_watchlists"] = _all_lists
+                _set_active_watchlist(new_n)
+                st.rerun()
+
+        st.divider()
+
+        # Delete active (only if more than 1 list)
+        if len(_all_lists) > 1:
+            if st.button(f"🗑️ Delete '{_active_name}'",
+                         key="_delete_list_btn",
+                         use_container_width=True,
+                         type="secondary",
+                         help="Permanently deletes this list. Cannot undo."):
+                del _all_lists[_active_name]
+                _save_watchlists(_all_lists)
+                st.session_state["_all_watchlists"] = _all_lists
+                # Switch to first remaining list
+                next_name = list(_all_lists.keys())[0]
+                _set_active_watchlist(next_name)
+                st.rerun()
+        else:
+            st.caption(
+                "_Need at least one list — create another before deleting._"
+            )
+
+    st.divider()
 
     add_col1, add_col2 = st.columns([3, 1])
     add_col1.text_input(
