@@ -3983,8 +3983,14 @@ RULE_DEFAULTS: dict[str, tuple[float, float]] = {
 }
 
 
-# Multi-factor preset rule sets — combine indicators for higher conviction
-RULE_PRESETS: dict[str, list[dict]] = {
+# Pre-built presets removed — Quick Presets row is now populated from any
+# saved rule set the user has tagged "📌 Pinned" (see the Saved rule sets
+# section). The dict below stays as the empty default for backward compat.
+RULE_PRESETS: dict[str, list[dict]] = {}
+
+
+# Hardcoded presets archive (kept as code for reference / future revival)
+_RULE_PRESETS_ARCHIVE: dict[str, list[dict]] = {
     "🎯 Strong Buy": [
         {"left": "CONVICTION", "op": ">", "a": 50.0, "b": None,
          "date": None},
@@ -4124,6 +4130,18 @@ RULE_PRESETS: dict[str, list[dict]] = {
         {"left": "VOL_RATIO", "op": ">", "a": 1.5, "b": None,
          "date": None},
         {"left": "DAILY_CHG_PCT", "op": "between", "a": -1.5, "b": 1.5,
+         "date": None},
+    ],
+    "🔋 Oversold + Vol Surge": [
+        # Low-price reversal candidate: oversold RSI + volume surge +
+        # accumulation (CMF>0) + in long-term uptrend (filters falling
+        # knives). The "stock dropped to a low and smart money is
+        # picking it up" pattern.
+        {"left": "RSI", "op": "<", "a": 30.0, "b": None, "date": None},
+        {"left": "VOL_RATIO", "op": ">", "a": 1.5, "b": None,
+         "date": None},
+        {"left": "CMF", "op": ">", "a": 0.0, "b": None, "date": None},
+        {"left": "DIST_SMA200_PCT", "op": ">", "a": 0.0, "b": None,
          "date": None},
     ],
 }
@@ -4510,82 +4528,34 @@ with tab_patterns:
                 unsafe_allow_html=True,
             )
 
-        # --- ⚡ Quick presets (always visible — easiest entry point) ---
-        st.markdown("**⚡ Quick presets** — one click loads ready-made rules")
-        preset_names = list(RULE_PRESETS.keys())
-        # Hover descriptions so the shortened button labels keep their meaning
-        preset_help = {
-            "🎯 Strong Buy":
-                "Multi-factor bullish: CONVICTION > 50 (oversold + uptrend + "
-                "volume + momentum all aligned).",
-            "🟢 Bounce buy":
-                "Reversal setup: RSI<35 + below BB lower + above SMA200 + MACD "
-                "starting to turn + CONVICTION>30. Oversold in uptrend.",
-            "🌊 Vol-swing buy":
-                "Volume-confirmed swing: MFI<25 + near BB lower + CMF>0 "
-                "(institutional accumulation) + above SMA200.",
-            "📰 News BUY":
-                "Technicals AND news agree: CONVICTION>30 + bullish news "
-                "(NEWS_SENT>0.55) + active coverage (NEWS_BUZZ>0.5).",
-            "📰 News warning":
-                "Technicals say buy but news has turned bearish — caution. "
-                "CONVICTION>20 + NEWS_SENT<0.4. Common pre-fundamentals leak.",
-            "⚠️ Wait (falling)":
-                "Looks tempting but momentum still down: below BB lower + "
-                "MACD<0 + below SMA50 + RSI>30. Don't catch the falling knife.",
-            "🚀 Momentum":
-                "Trend continuation: above SMA200 + above SMA50 + MACD>0 + "
-                "ADX>25 + RSI 50-70 (not overbought yet).",
-            "🔴 Strong Sell":
-                "Multi-factor bearish: CONVICTION < -30 (overbought + downtrend "
-                "+ distribution + bearish momentum aligned).",
-            "💥 Squeeze":
-                "Volatility squeeze: BB bandwidth < 5%. Coiled spring — big "
-                "move likely soon (direction unknown).",
-            "🔮 Vol incoming":
-                "High volume expected (earnings approaching or news buzz) + "
-                "bullish bias — possible breakout setup. VOL_OUTLOOK > 60 + "
-                "CONVICTION > 20.",
-            "💬 Retail bullish":
-                "Retail crowd on StockTwits is bullish AND active "
-                "(>65% bullish tags, 10+ messages/24h) AND technicals don't "
-                "disagree. Crowd alignment.",
-            "🆎 Retail vs technicals (contrarian)":
-                "Retail euphoric (>75% bullish) but RSI overbought (>70) — "
-                "classic contrarian fade signal. Retail tops happen.",
-            "📚 Connors-style":
-                "Larry Connors' RSI mean-reversion (RSI<15 on fast period + "
-                "above SMA200 + accumulation). Documented historical edge for "
-                "1-3 day mean reversion in uptrends.",
-            "📚 Strong bounce":
-                "Multi-factor volume-confirmed extreme oversold: MFI<20 + "
-                "BB%B<0.15 + CMF>0 + above SMA200. Combines selling "
-                "exhaustion + institutional buying + uptrend filter.",
-            "📚 News drift":
-                "Post-earnings drift proxy: high news buzz + bullish "
-                "sentiment + bullish technicals + volume incoming. "
-                "PEAD is the strongest documented finance anomaly.",
-            "📚 Connors deep OS":
-                "Strict Connors variant: RSI(5)<10 + 5%+ above SMA200 + "
-                "CMF>0.05 accumulation. Catches deep oversold setups in "
-                "strong uptrends — ~62-65% 1-3d win rate historically.",
-            "🕵️ Smart-money accumulation":
-                "'Something coming' signal: news activity 2× normal AND "
-                "above-average volume AND price barely moved (±1.5%). "
-                "Volume + buzz before the move = institutional positioning "
-                "before retail catches on. Validate edge before trusting.",
-        }
-        preset_cols = st.columns(len(preset_names))
-        for col, pname in zip(preset_cols, preset_names):
-            if col.button(pname, key=f"preset_{pname}",
-                          use_container_width=True,
-                          help=preset_help.get(pname, "")):
-                st.session_state.custom_rules = [
-                    dict(r) for r in RULE_PRESETS[pname]
-                ]
-                for r in st.session_state.custom_rules:
-                    r.pop("_keyspec", None)
-                st.rerun()
+        # --- ⚡ Quick presets — your own pinned saved rule sets ---
+        st.markdown(
+            "**⚡ Quick presets** — your pinned saved rules. "
+            "📌 a saved rule below to add it here."
+        )
+        # Collect pinned saved rules
+        pinned = []
+        for name, entry in saved.items():
+            if isinstance(entry, dict) and entry.get("pinned"):
+                pinned.append((name, entry.get("rules", [])))
+        if pinned:
+            preset_cols = st.columns(len(pinned))
+            for col, (pname, prules) in zip(preset_cols, pinned):
+                if col.button(pname, key=f"preset_{pname}",
+                              use_container_width=True,
+                              help=(f"Click to load {pname} "
+                                    f"({len(prules)} rules)")):
+                    st.session_state.custom_rules = [
+                        dict(r) for r in prules
+                    ]
+                    for r in st.session_state.custom_rules:
+                        r.pop("_keyspec", None)
+                    st.rerun()
+        else:
+            st.caption(
+                "_No pinned rules yet. Build a rule set below, save it, "
+                "then click 📌 to pin it here for one-click access._"
+            )
 
         # --- 💾 Saved rule sets — collapsed by default ---
         saved_count = len(saved)
@@ -4604,18 +4574,32 @@ with tab_patterns:
                     if isinstance(entry, list):
                         rules_list = entry
                         is_alert = False
+                        is_pinned = False
                     else:
                         rules_list = entry.get("rules", [])
                         is_alert = bool(entry.get("alert", False))
+                        is_pinned = bool(entry.get("pinned", False))
 
-                    sc1, sc2, sc3, sc4 = st.columns([4, 1.2, 1.2, 0.6])
+                    sc1, sc2, sc3, sc4, sc5 = st.columns(
+                        [3.5, 1.0, 1.0, 1.0, 0.5]
+                    )
+                    badges = ""
+                    if is_pinned:
+                        badges += (
+                            " &nbsp;·&nbsp; <span style='color:#fbbf24; "
+                            "font-size:0.78rem; font-weight:700;'>📌 PINNED"
+                            "</span>"
+                        )
+                    if is_alert:
+                        badges += (
+                            " &nbsp;·&nbsp; <span style='color:#22c55e; "
+                            "font-size:0.78rem; font-weight:700;'>🔔 ALERT"
+                            "</span>"
+                        )
                     sc1.markdown(
                         f"**{name}** &nbsp;·&nbsp; "
                         f"<span style='color:#9ca3af'>"
-                        f"{len(rules_list)} rule(s)</span>"
-                        + (" &nbsp;·&nbsp; <span style='color:#22c55e; "
-                           "font-size:0.78rem; font-weight:700;'>🔔 ALERT"
-                           "</span>" if is_alert else ""),
+                        f"{len(rules_list)} rule(s)</span>" + badges,
                         unsafe_allow_html=True,
                     )
                     if sc2.button("📂 Load", key=f"saved_load_{name}",
@@ -4626,8 +4610,22 @@ with tab_patterns:
                         for r in st.session_state.custom_rules:
                             r.pop("_keyspec", None)
                         st.rerun()
+                    pin_label = "📍 Unpin" if is_pinned else "📌 Pin"
+                    if sc3.button(pin_label, key=f"saved_pin_{name}",
+                                  use_container_width=True,
+                                  help=("Remove from Quick Presets bar"
+                                        if is_pinned else
+                                        "Add to Quick Presets bar for "
+                                        "one-click access")):
+                        saved[name] = {
+                            "rules": rules_list,
+                            "alert": is_alert,
+                            "pinned": not is_pinned,
+                        }
+                        _persist_saved_rules(saved)
+                        st.rerun()
                     toggle_label = "🔕 Mute" if is_alert else "🔔 Alert"
-                    if sc3.button(toggle_label, key=f"saved_alert_{name}",
+                    if sc4.button(toggle_label, key=f"saved_alert_{name}",
                                   use_container_width=True,
                                   help=("Stop daily email alerts for this rule"
                                         if is_alert else
@@ -4636,10 +4634,11 @@ with tab_patterns:
                         saved[name] = {
                             "rules": rules_list,
                             "alert": not is_alert,
+                            "pinned": is_pinned,
                         }
                         _persist_saved_rules(saved)
                         st.rerun()
-                    if sc4.button("🗑️", key=f"saved_del_{name}",
+                    if sc5.button("🗑️", key=f"saved_del_{name}",
                                   help=f"Delete '{name}'"):
                         del saved[name]
                         _persist_saved_rules(saved)
@@ -4660,14 +4659,17 @@ with tab_patterns:
                 elif not st.session_state.custom_rules:
                     st.warning("No rules to save.")
                 else:
-                    # Preserve any existing alert flag when overwriting
+                    # Preserve existing alert + pinned flags when overwriting
                     existing_alert = False
+                    existing_pinned = False
                     existing = saved.get(nm)
                     if isinstance(existing, dict):
                         existing_alert = bool(existing.get("alert", False))
+                        existing_pinned = bool(existing.get("pinned", False))
                     saved[nm] = {
                         "rules": [dict(r) for r in st.session_state.custom_rules],
                         "alert": existing_alert,
+                        "pinned": existing_pinned,
                     }
                     _persist_saved_rules(saved)
                     st.success(f"Saved “{nm}”.")
