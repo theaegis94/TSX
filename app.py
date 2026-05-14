@@ -1276,12 +1276,23 @@ def render_watchlist_bar(tickers: tuple) -> None:
         "    margin-top: 0 !important;"
         "    gap: 4px !important;"
         "}"
-        # Tighten the divider <hr> between rows — was 8px+4px=12px tall,
-        # now compact.
+        # Tighten the divider <hr> between rows AND its wrapper container.
+        # Streamlit wraps every element in stElementContainer + stMarkdown
+        # which add their own margins — those margins were the big gap the
+        # user saw highlighted between rows. Zero them out so only the thin
+        # 1px line shows.
         ".wl-row-divider {"
-        "    margin: 2px 0 !important;"
+        "    margin: 0 !important;"
         "    border: 0;"
         "    border-top: 1px solid #4a4b4e;"
+        "}"
+        "div[data-testid='stElementContainer']:has(.wl-row-divider) {"
+        "    margin: 0 !important;"
+        "    padding: 0 !important;"
+        "}"
+        "div[data-testid='stElementContainer']:has(.wl-row-divider) "
+        "  div[data-testid='stMarkdownContainer'] {"
+        "    margin: 0 !important;"
         "}"
         "</style>",
         unsafe_allow_html=True,
