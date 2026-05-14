@@ -2195,17 +2195,30 @@ def _render_save_url_banner():
 _render_save_url_banner()
 render_quick_analysis()
 
-# Top-right "data refreshed at" chip — small, right-aligned, sits above the
-# macro row so the user always knows how fresh the prices on screen are.
+# Top-right "data refreshed at" chip — shows the current page-render time so
+# it ticks forward every time the user refreshes. A small "(fetched Xs ago)"
+# suffix shows how long since the cache was actually cleared, so the user can
+# tell whether the displayed numbers are freshly pulled or served from cache.
+_now = datetime.now()
+_now_str = _now.strftime("%H:%M:%S")
+_now_date = _now.strftime("%b %d")
 _cleared = st.session_state.get("_cache_cleared_at")
-_cleared_str = _cleared.strftime("%H:%M:%S") if _cleared else "—"
-_cleared_date = _cleared.strftime("%b %d") if _cleared else ""
+_age_str = ""
+if _cleared:
+    _age_seconds = int((_now - _cleared).total_seconds())
+    if _age_seconds < 60:
+        _age_str = f"(data {_age_seconds}s old)"
+    elif _age_seconds < 3600:
+        _age_str = f"(data {_age_seconds // 60}m old)"
+    else:
+        _age_str = f"(data {_age_seconds // 3600}h old)"
 st.markdown(
     f'<div style="text-align:right; font-size:0.78rem; color:#9ca3af; '
     f'margin-top:-4px; margin-bottom:4px;">'
     f'🕒 Tickers refreshed: '
-    f'<b style="color:#e5e7eb;">{_cleared_str}</b>'
-    f'<span style="color:#6b7280;"> &nbsp;·&nbsp; {_cleared_date}</span>'
+    f'<b style="color:#e5e7eb;">{_now_str}</b>'
+    f'<span style="color:#6b7280;"> &nbsp;·&nbsp; {_now_date}</span>'
+    f'<span style="color:#6b7280;"> &nbsp;{_age_str}</span>'
     f'</div>',
     unsafe_allow_html=True,
 )
