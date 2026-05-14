@@ -1391,12 +1391,30 @@ def render_watchlist_bar(tickers: tuple) -> None:
                         fmt = "{:.2f}"
                     else:
                         fmt = "{:.1f}"
-                    # Each item is (day_label, price, direction) — direction
-                    # is pre-computed against the true prior bar (we fetch 6
-                    # bars to make this possible for the first displayed
-                    # day too, no more grey first-bar).
+                    # Each item is (day_label, price, direction) for new
+                    # cache entries, or (day_label, price) for old ones
+                    # still living in st.cache_data from before this commit
+                    # (cache TTL=120s, so they'll roll off shortly). Handle
+                    # both shapes; for legacy 2-tuples we recompute direction
+                    # inline against the prior item.
                     cells = []
-                    for day_lbl, px, direction in history:
+                    prev_px = None
+                    for item in history:
+                        if len(item) == 3:
+                            day_lbl, px, direction = item
+                        elif len(item) == 2:
+                            day_lbl, px = item
+                            if prev_px is None:
+                                direction = "flat"
+                            elif px > prev_px:
+                                direction = "up"
+                            elif px < prev_px:
+                                direction = "down"
+                            else:
+                                direction = "flat"
+                        else:
+                            continue
+                        prev_px = px
                         cell_color = {
                             "up": "#16a34a",
                             "down": "#dc2626",
