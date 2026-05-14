@@ -2930,6 +2930,17 @@ with tab_screener:
             index=0,
             key="screener_universe",
         )
+        # Industry filter — overrides universe if picked
+        industry_filter = sc_col1.selectbox(
+            "🏷️ Industry filter (optional, overrides universe)",
+            options=["(none — use universe above)"]
+                    + [f"{lbl} ({len(tk)})"
+                       for lbl, tk in ss.INDUSTRY_UNIVERSES.items()],
+            index=0,
+            key="screener_industry",
+            help="Pick an industry to scan only those tickers. Overrides "
+                 "the universe selection above.",
+        )
         lookback_days = sc_col2.select_slider(
             "Bollinger BUY lookback window",
             options=[5, 10, 22, 45, 66],
@@ -2985,29 +2996,39 @@ with tab_screener:
         def _cached_full_us() -> list:
             return ss.get_full_us_listing()
 
-        if universe_choice.startswith("S&P 100"):
-            universe = ss.UNIVERSE_SP100
-        elif universe_choice.startswith("S&P 500"):
-            universe = _cached_sp500()
-        elif universe_choice.startswith("Entire US"):
-            universe = _cached_full_us()
-        elif universe_choice.startswith("TSX 60"):
-            universe = ss.UNIVERSE_TSX60
-        elif universe_choice.startswith("TSX Composite"):
-            universe = _cached_tsx_composite()
-        elif universe_choice.startswith("Entire TSX Venture"):
-            universe = _cached_full_tsx("tsxv")
-        elif universe_choice.startswith("Entire TSX"):
-            universe = _cached_full_tsx("tsx")
-        elif universe_choice.startswith("Popular ETFs"):
-            universe = ss.UNIVERSE_POPULAR_ETFS
-        elif universe_choice.startswith("All US"):
-            universe = list(dict.fromkeys(
-                list(_cached_sp500()) + list(_cached_tsx_composite())
-                + list(ss.UNIVERSE_POPULAR_ETFS)
-            ))
-        else:
-            universe = list(tickers)
+        # Industry filter takes priority over universe radio
+        industry_chosen = None
+        if industry_filter and not industry_filter.startswith("(none"):
+            for ind_lbl, ind_tk in ss.INDUSTRY_UNIVERSES.items():
+                if industry_filter.startswith(ind_lbl):
+                    industry_chosen = ind_lbl
+                    universe = list(ind_tk)
+                    break
+
+        if industry_chosen is None:
+            if universe_choice.startswith("S&P 100"):
+                universe = ss.UNIVERSE_SP100
+            elif universe_choice.startswith("S&P 500"):
+                universe = _cached_sp500()
+            elif universe_choice.startswith("Entire US"):
+                universe = _cached_full_us()
+            elif universe_choice.startswith("TSX 60"):
+                universe = ss.UNIVERSE_TSX60
+            elif universe_choice.startswith("TSX Composite"):
+                universe = _cached_tsx_composite()
+            elif universe_choice.startswith("Entire TSX Venture"):
+                universe = _cached_full_tsx("tsxv")
+            elif universe_choice.startswith("Entire TSX"):
+                universe = _cached_full_tsx("tsx")
+            elif universe_choice.startswith("Popular ETFs"):
+                universe = ss.UNIVERSE_POPULAR_ETFS
+            elif universe_choice.startswith("All US"):
+                universe = list(dict.fromkeys(
+                    list(_cached_sp500()) + list(_cached_tsx_composite())
+                    + list(ss.UNIVERSE_POPULAR_ETFS)
+                ))
+            else:
+                universe = list(tickers)
 
         n_batches = (len(universe) + 99) // 100
         eta_seconds = n_batches * 5
