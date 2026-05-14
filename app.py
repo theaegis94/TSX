@@ -1380,6 +1380,17 @@ def render_watchlist_bar(tickers: tuple) -> None:
                 q = quotes.get(t)
                 if q and q.get("closes_5d"):
                     history = q["closes_5d"]
+                    # Pick a price-format string that fits the magnitude:
+                    #   penny stocks → 3 decimals
+                    #   single-dollar → 2 decimals
+                    #   above $100 → 1 decimal (saves horizontal space)
+                    max_px = max(p for _, p in history)
+                    if max_px < 1:
+                        fmt = "{:.3f}"
+                    elif max_px < 100:
+                        fmt = "{:.2f}"
+                    else:
+                        fmt = "{:.1f}"
                     cells = []
                     for idx, (day_lbl, px) in enumerate(history):
                         if idx == 0:
@@ -1396,17 +1407,17 @@ def render_watchlist_bar(tickers: tuple) -> None:
                                 cell_color = "#9ca3af"
                         cells.append(
                             f'<div style="flex:1; text-align:center; '
-                            f'line-height:1.0;">'
-                            f'<div style="font-size:0.55rem; '
-                            f'color:#6b7280;">{day_lbl}</div>'
+                            f'line-height:1.15; padding:1px 0;">'
                             f'<div style="font-size:0.65rem; '
-                            f'color:{cell_color}; font-weight:600;">'
-                            f'{px:.2f}</div>'
+                            f'color:#9ca3af; font-weight:500;">{day_lbl}</div>'
+                            f'<div style="font-size:0.78rem; '
+                            f'color:{cell_color}; font-weight:700;">'
+                            f'{fmt.format(px)}</div>'
                             f'</div>'
                         )
                     st.markdown(
-                        '<div style="display:flex; gap:1px; '
-                        'margin-top:3px; padding:2px 0; '
+                        '<div style="display:flex; gap:2px; '
+                        'margin-top:6px; padding:4px 2px; '
                         'border-top:1px dashed #4a4b4e;">'
                         + "".join(cells) + "</div>",
                         unsafe_allow_html=True,
