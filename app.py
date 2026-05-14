@@ -1182,6 +1182,23 @@ def render_watchlist_bar(tickers: tuple) -> None:
     # CSS to make tile buttons more compact + look like cards
     st.markdown(
         "<style>"
+        # Card border around every watchlist tile column. Scoped via the
+        # `.wl-tile-anchor` marker we inject inside each tile so this rule
+        # affects ONLY the watchlist bar (not the quick-analysis popup or
+        # other column-based layouts in the app).
+        "div[data-testid='stHorizontalBlock'] > div:has(.wl-tile-anchor) {"
+        "    border: 1px solid #5a5b5e !important;"
+        "    border-radius: 10px !important;"
+        "    padding: 6px 4px !important;"
+        "    background: #2a2b2e !important;"
+        "    box-shadow: 0 1px 3px rgba(0,0,0,0.25);"
+        "    margin: 0 2px !important;"
+        "}"
+        "div[data-testid='stHorizontalBlock'] > div:has(.wl-tile-anchor):hover {"
+        "    border-color: #7a7b7e !important;"
+        "    background: #323336 !important;"
+        "}"
+        ".wl-tile-anchor { display: none; }"
         "div[data-testid='stHorizontalBlock'] div[data-testid='stVerticalBlock'] "
         "  div.stButton > button {"
         "    width: 100%;"
@@ -1237,6 +1254,12 @@ def render_watchlist_bar(tickers: tuple) -> None:
         cols = st.columns(cols_per_row)
         for i, t in enumerate(row_tickers):
             with cols[i]:
+                # Hidden anchor — CSS uses :has(.wl-tile-anchor) to scope the
+                # card-border styling to watchlist tiles only.
+                st.markdown(
+                    '<div class="wl-tile-anchor"></div>',
+                    unsafe_allow_html=True,
+                )
                 # 1. Ticker button (top)
                 cols[i].button(
                     t, key=f"tile_btn_{t}",
