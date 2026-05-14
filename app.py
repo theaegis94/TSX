@@ -2188,6 +2188,167 @@ def cached_inception_trend(tickers: tuple) -> list:
     return rows
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def cached_rally_scan(tickers: tuple) -> list:
+    """Scan for tickers in a 'rally setup' — oversold-but-turning,
+    volume building, momentum curling up. Composite Rally Score (0–100)
+    combines six signals:
+
+      1. RSI in the sweet spot (30–55) and rising
+      2. MACD histogram positive or curling up from negative
+      3. Volume expansion (recent 5d avg vs prior 30d avg)
+      4. Price above 200-SMA (long-term uptrend intact)
+      5. Price below 20-SMA but inside Bollinger band (room to run up)
+      6. Bollinger Band squeeze (low volatility = potential breakout)
+
+    Each component scored 0–100 then averaged for the final score.
+    """
+    import numpy as np
+    if not tickers:
+        return []
+    # Need ~1 year of bars for 200-SMA + 30d volume baseline + BB-width MA
+    batches = [tickers[i:i + 100] for i in range(0, len(tickers), 100)]
+    rows: list[dict] = []
+    for batch in batches:
+        try:
+            df = yf.download(
+                " ".join(batch), period="1y", interval="1d",
+                auto_adjust=True, progress=False, group_by="ticker",
+                threads=True,
+            )
+        except Exception:
+            continue
+        if df is None or df.empty:
+            continue
+        for t in batch:
+            try:
+                if isinstance(df.columns, pd.MultiIndex):
+                    if t not in df.columns.get_level_values(0):
+                        continue
+                    sub = df[t].dropna(subset=["Close"])
+                else:
+                    sub = df.dropna(subset=["Close"])
+                if len(sub) < 60:
+                    continue
+                closes = sub["Close"]
+                volumes = sub.get("Volume", pd.Series(dtype=float))
+                price = float(closes.iloc[-1])
+                if price <= 0:
+                    continue
+
+                # --- RSI signal ---
+                rsi_series = ss.rsi(closes, 14)
+                rsi_now = float(rsi_series.iloc[-1])
+                rsi_5_ago = float(rsi_series.iloc[-6]) if len(
+                    rsi_series) >= 6 else rsi_now
+                rsi_change = rsi_now - rsi_5_ago
+                # Sweet spot 30-55 + rising. Score peaks at RSI 40 rising +5
+                if 30 <= rsi_now <= 55:
+                    rsi_score = 100 - abs(rsi_now - 42) * 3
+                elif rsi_now < 30:
+                    # Deep oversold — could rally hard, but riskier
+                    rsi_score = 60 + (30 - rsi_now) * 1.5
+                else:
+                    # Above 55 — already running, less "setup" potential
+                    rsi_score = max(0, 100 - (rsi_now - 55) * 4)
+                # Boost for rising RSI (momentum confirmation)
+                rsi_score += min(15, max(-15, rsi_change * 2))
+                rsi_score = max(0, min(100, rsi_score))
+
+                # --- MACD signal ---
+                macd_line, signal_line, hist = ss.macd(closes)
+                macd_hist_now = float(hist.iloc[-1])
+                macd_hist_prev = float(hist.iloc[-6]) if len(
+                    hist) >= 6 else macd_hist_now
+                hist_change = macd_hist_now - macd_hist_prev
+                # Score: histogram positive AND rising is ideal
+                if macd_hist_now > 0 and hist_change > 0:
+                    macd_score = 80 + min(20, hist_change * 100)
+                elif macd_hist_now < 0 and hist_change > 0:
+                    # Turning up from negative — early-stage reversal
+                    macd_score = 50 + min(30, hist_change * 100)
+                elif macd_hist_now > 0 and hist_change < 0:
+                    # Positive but rolling over
+                    macd_score = 30
+                else:
+                    # Negative and falling
+                    macd_score = max(0, 20 + hist_change * 100)
+                macd_score = max(0, min(100, macd_score))
+
+                # --- Volume signal ---
+                if len(volumes) >= 35 and volumes.tail(35).sum() > 0:
+                    recent_vol = float(volumes.tail(5).mean())
+                    baseline_vol = float(volumes.iloc[-35:-5].mean())
+                    if baseline_vol > 0:
+                        vol_ratio = recent_vol / baseline_vol
+                    else:
+                        vol_ratio = 1.0
+                else:
+                    vol_ratio = 1.0
+                # Score: 1.0 = neutral (50), 2.0+ = strong accumulation (100)
+                vol_score = max(0, min(100, (vol_ratio - 0.5) * 60))
+
+                # --- SMA trend signals ---
+                sma20 = float(closes.rolling(20).mean().iloc[-1])
+                sma200 = (float(closes.rolling(200).mean().iloc[-1])
+                          if len(closes) >= 200 else None)
+                above_200 = (sma200 is not None and price > sma200)
+                # Score: in uptrend (above 200) AND pulled back near 20-SMA
+                if sma200 is None:
+                    sma_score = 50  # Not enough history — neutral
+                elif above_200:
+                    # In uptrend; reward pullbacks (price ≤ 20-SMA gets full)
+                    if price <= sma20:
+                        sma_score = 100
+                    else:
+                        # Already above 20-SMA — still OK, fading
+                        sma_score = max(40, 100 - (price / sma20 - 1) * 500)
+                else:
+                    # Below 200 = not in confirmed uptrend
+                    sma_score = 20
+
+                # --- Bollinger Band squeeze signal ---
+                bb_mid, bb_up, bb_lo = ss.bollinger(closes, 20, 2.0)
+                bb_width = (bb_up - bb_lo) / bb_mid
+                bb_width_now = float(bb_width.iloc[-1])
+                bb_width_avg = float(bb_width.tail(60).mean()) if len(
+                    bb_width) >= 60 else bb_width_now
+                if bb_width_avg > 0:
+                    squeeze_ratio = bb_width_now / bb_width_avg
+                else:
+                    squeeze_ratio = 1.0
+                # Tight bands (low ratio) = squeeze = high score
+                squeeze_score = max(0, min(100, (1.5 - squeeze_ratio) * 100))
+
+                # --- Composite Rally Score ---
+                rally_score = (
+                    rsi_score * 0.25 +
+                    macd_score * 0.20 +
+                    vol_score * 0.15 +
+                    sma_score * 0.20 +
+                    squeeze_score * 0.20
+                )
+
+                rows.append({
+                    "Ticker": t,
+                    "Price": round(price, 2),
+                    "Rally Score": round(rally_score, 1),
+                    "RSI": round(rsi_now, 1),
+                    "RSI Δ5d": round(rsi_change, 1),
+                    "MACD Hist": round(macd_hist_now, 3),
+                    "Vol Ratio": round(vol_ratio, 2),
+                    "vs 20-SMA %": round((price / sma20 - 1) * 100, 1),
+                    "vs 200-SMA %": (
+                        round((price / sma200 - 1) * 100, 1)
+                        if sma200 else None),
+                    "BB Squeeze": round(squeeze_ratio, 2),
+                    "Above 200": bool(above_200),
+                })
+            except Exception:
+                continue
+    return rows
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def cached_single(ticker: str, period: str, interval: str,
                   strategy: str, adx_filter: bool,
@@ -3274,13 +3435,14 @@ with tab_single:
 # === Screener tab ===
 with tab_screener:
     (sc_tab1, sc_tab2, sc_tab3, sc_tab4, sc_tab5,
-     sc_tab6) = st.tabs([
+     sc_tab6, sc_tab7) = st.tabs([
         "🎯 BUY Screener",
         "📊 Strategy Leaderboard",
         "🎯 Winning Tickers",
         "🏆 Top Movers",
         "🪨 TSXV Mining Catalysts",
         "📈 Forever Uptrend",
+        "🚀 Rally Setup",
     ])
 
     with sc_tab1:
@@ -4731,6 +4893,248 @@ with tab_screener:
                         "the entire history — context for whether "
                         "you could have held through it. *Score* "
                         "combines all three."
+                    )
+
+    with sc_tab7:
+        st.divider()
+        st.subheader("🚀 Rally Setup")
+        st.caption(
+            "Find tickers in a **rally setup** — oversold-but-turning, "
+            "volume building, momentum curling up. Composite Rally Score "
+            "combines RSI position + slope, MACD histogram trend, volume "
+            "expansion, position vs 20/200 SMA, and Bollinger Band squeeze."
+        )
+
+        rs_col1, rs_col2 = st.columns([2, 1])
+        rs_options = [
+            "S&P 100 (~100)",
+            "S&P 500 (~500 — slow)",
+            "TSX 60 (~60)",
+            "TSX Composite (~250)",
+            "Entire TSX (~1500, slow)",
+            "Entire TSX Venture (~1500, slow)",
+            "Popular ETFs (~80)",
+            "Custom watchlist",
+        ] + [
+            f"{lbl} ({len(tk)})"
+            for lbl, tk in ss.INDUSTRY_UNIVERSES.items()
+        ]
+        rs_universe = rs_col1.selectbox(
+            "Universe",
+            options=rs_options,
+            index=0,
+            key="rs_universe",
+        )
+        rs_topn = rs_col2.number_input(
+            "Show top N",
+            min_value=10, max_value=200, value=30, step=10,
+            key="rs_topn",
+        )
+
+        # Filter sliders
+        rs_col3, rs_col4 = st.columns([1, 1])
+        rs_min_score = rs_col3.slider(
+            "Min Rally Score",
+            min_value=0, max_value=100, value=60, step=5,
+            key="rs_min_score",
+            help="Composite 0–100 score. 60+ is a meaningful setup; "
+                 "75+ is a strong confluence.",
+        )
+        rs_rsi_range = rs_col4.slider(
+            "RSI(14) range",
+            min_value=0, max_value=100, value=(25, 60), step=1,
+            key="rs_rsi_range",
+            help="Rally setups typically have RSI 30–55 — oversold but "
+                 "not in free-fall. Drag to widen or tighten.",
+        )
+
+        rs_col5, rs_col6, rs_col7 = st.columns([1, 1, 1])
+        rs_min_vol = rs_col5.slider(
+            "Min volume ratio",
+            min_value=0.5, max_value=3.0, value=1.0, step=0.1,
+            key="rs_min_vol",
+            help="Recent 5-day avg volume vs prior 30-day avg. "
+                 ">1.0 = volume building (institutional accumulation).",
+        )
+        rs_above_200 = rs_col6.checkbox(
+            "Require above 200-SMA",
+            value=True,
+            key="rs_above_200",
+            help="Only show tickers still in their long-term uptrend.",
+        )
+        rs_squeeze = rs_col7.checkbox(
+            "Require BB squeeze",
+            value=False,
+            key="rs_squeeze",
+            help="Only show tickers with Bollinger Band width below "
+                 "average (compressed volatility = potential breakout).",
+        )
+
+        if st.button("🚀 Find rally setups",
+                     key="rs_run", type="primary"):
+            with st.spinner("Loading universe…"):
+                if rs_universe == "Custom watchlist":
+                    tickers = [t.strip().upper() for t in
+                               st.session_state.get("watchlist_input", "")
+                                    .split(",") if t.strip()]
+                elif rs_universe == "TSX 60 (~60)":
+                    tickers = list(ss.UNIVERSE_TSX60)
+                elif rs_universe == "TSX Composite (~250)":
+                    tickers = ss.get_tsx_composite()
+                elif rs_universe == "Entire TSX (~1500, slow)":
+                    tickers = ss.get_full_tsx_listing("tsx")
+                elif rs_universe == "Entire TSX Venture (~1500, slow)":
+                    tickers = ss.get_full_tsx_listing("tsxv")
+                elif rs_universe == "S&P 100 (~100)":
+                    tickers = list(ss.UNIVERSE_SP100)
+                elif rs_universe == "S&P 500 (~500 — slow)":
+                    tickers = ss.get_sp500()
+                elif rs_universe == "Popular ETFs (~80)":
+                    tickers = list(ss.UNIVERSE_POPULAR_ETFS)
+                else:
+                    tickers = []
+                    for lbl, tk in ss.INDUSTRY_UNIVERSES.items():
+                        if rs_universe.startswith(lbl):
+                            tickers = list(tk)
+                            break
+
+            if not tickers:
+                st.warning("Universe is empty.")
+            else:
+                with st.spinner(
+                    f"Computing rally signals for {len(tickers)} "
+                    "tickers…"
+                ):
+                    rows = cached_rally_scan(tuple(tickers))
+                st.session_state["rs_results"] = {
+                    "rows": rows,
+                    "universe": rs_universe,
+                    "scanned": len(tickers),
+                }
+
+        # Render results
+        rs_res = st.session_state.get("rs_results")
+        if rs_res:
+            rows = rs_res["rows"]
+            if not rows:
+                st.info("No tickers returned valid data.")
+            else:
+                rsi_lo, rsi_hi = rs_rsi_range
+                filtered = []
+                for r in rows:
+                    if r["Rally Score"] < rs_min_score:
+                        continue
+                    if not (rsi_lo <= r["RSI"] <= rsi_hi):
+                        continue
+                    if r["Vol Ratio"] < rs_min_vol:
+                        continue
+                    if rs_above_200 and not r["Above 200"]:
+                        continue
+                    if rs_squeeze and r["BB Squeeze"] >= 1.0:
+                        continue
+                    filtered.append(r)
+
+                filtered.sort(key=lambda r: r["Rally Score"], reverse=True)
+                filtered = filtered[:int(rs_topn)]
+
+                st.caption(
+                    f"Scanned **{rs_res['scanned']} tickers** in "
+                    f"**{rs_res['universe']}**. "
+                    f"{len(rows)} returned data, "
+                    f"**{len(filtered)} passed** the rally filter."
+                )
+
+                if not filtered:
+                    st.warning(
+                        "No setups found. Try lowering Min Rally Score "
+                        "or widening the RSI range."
+                    )
+                else:
+                    # Rally chip cloud — color intensity scales with score
+                    chips = []
+                    for r in filtered[:30]:
+                        t = r["Ticker"]
+                        sc = r["Rally Score"]
+                        rsi_v = r["RSI"]
+                        href = _chip_href(t, from_tab="Screener")
+                        # Score 60-100 → green intensity 30-100%
+                        intensity = max(0.3, min(1.0, (sc - 50) / 50))
+                        chips.append(
+                            f"<a href='{href}' target='_self' "
+                            f"style='background:rgba(34,197,94,{intensity}); "
+                            "color:#fff; padding:3px 9px; "
+                            "border-radius:8px; font-size:0.78rem; "
+                            "font-weight:700; margin:3px; "
+                            "text-decoration:none; display:inline-block;' "
+                            f"title='Rally Score {sc:.0f} · RSI {rsi_v:.0f}'>"
+                            f"{t} ({sc:.0f})</a>"
+                        )
+                    st.markdown(
+                        "<div style='padding:8px; border-radius:8px; "
+                        "background:rgba(34,197,94,0.06); "
+                        "border:1px solid rgba(34,197,94,0.25); "
+                        "margin-bottom:10px;'>"
+                        + "".join(chips) + "</div>",
+                        unsafe_allow_html=True,
+                    )
+
+                    df_rs = pd.DataFrame(filtered)
+                    st.dataframe(
+                        df_rs,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Price": st.column_config.NumberColumn(
+                                format="$%.2f"),
+                            "Rally Score": st.column_config.NumberColumn(
+                                format="%.1f",
+                                help="0–100 composite score. Higher = "
+                                     "stronger rally setup.",
+                            ),
+                            "RSI": st.column_config.NumberColumn(
+                                format="%.1f"),
+                            "RSI Δ5d": st.column_config.NumberColumn(
+                                format="%+.1f",
+                                help="RSI change over the last 5 bars. "
+                                     "Positive = momentum building.",
+                            ),
+                            "MACD Hist": st.column_config.NumberColumn(
+                                format="%+.3f",
+                                help="MACD histogram value. Positive + "
+                                     "rising = bullish momentum.",
+                            ),
+                            "Vol Ratio": st.column_config.NumberColumn(
+                                format="%.2fx",
+                                help=">1.0 = recent volume above 30-day "
+                                     "baseline (accumulation).",
+                            ),
+                            "vs 20-SMA %": st.column_config.NumberColumn(
+                                format="%+.1f%%",
+                                help="Price vs 20-day moving average. "
+                                     "Negative = pulled back below MA.",
+                            ),
+                            "vs 200-SMA %": st.column_config.NumberColumn(
+                                format="%+.1f%%",
+                                help="Price vs 200-day MA. Positive = "
+                                     "long-term uptrend intact.",
+                            ),
+                            "BB Squeeze": st.column_config.NumberColumn(
+                                format="%.2f",
+                                help="BB width / 60-day avg width. "
+                                     "<1.0 = compressed = potential "
+                                     "breakout.",
+                            ),
+                            "Above 200": st.column_config.CheckboxColumn(),
+                        },
+                    )
+                    st.caption(
+                        "**How to read this:** A high *Rally Score* "
+                        "means several signals align. Look for RSI "
+                        "30–50 with positive Δ5d (turning up), MACD "
+                        "histogram positive or curling up, Vol Ratio "
+                        ">1.2 (volume building), Above 200 = ✓, and "
+                        "BB Squeeze <1.0 (coiled). The strongest "
+                        "setups have ALL of these together."
                     )
 
 
