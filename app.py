@@ -1232,7 +1232,10 @@ def render_watchlist_bar(tickers: tuple) -> None:
     )
 
     cols_per_row = 8
-    for row_start in range(0, len(tickers), cols_per_row):
+    total_rows = (len(tickers) + cols_per_row - 1) // cols_per_row
+    for row_idx, row_start in enumerate(
+        range(0, len(tickers), cols_per_row)
+    ):
         row_tickers = tickers[row_start:row_start + cols_per_row]
         cols = st.columns(cols_per_row)
         for i, t in enumerate(row_tickers):
@@ -1289,6 +1292,14 @@ def render_watchlist_bar(tickers: tuple) -> None:
                             f'</div>',
                             unsafe_allow_html=True,
                         )
+
+        # Horizontal divider between rows (skip after the last row).
+        if row_idx < total_rows - 1:
+            st.markdown(
+                '<hr style="margin: 8px 0 4px 0; border: 0; '
+                'border-top: 1px solid #4a4b4e;">',
+                unsafe_allow_html=True,
+            )
 
 
 def _open_dialog_for(ticker: str):
