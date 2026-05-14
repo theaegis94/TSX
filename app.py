@@ -2168,17 +2168,28 @@ def _render_save_url_banner():
 _render_save_url_banner()
 render_quick_analysis()
 
-# Top-right "data refreshed at" chip — shows the current page-render time so
-# it ticks forward every time the user refreshes. A small "(fetched Xs ago)"
-# suffix shows how long since the cache was actually cleared, so the user can
-# tell whether the displayed numbers are freshly pulled or served from cache.
-_now = datetime.now()
-_now_str = _now.strftime("%H:%M:%S")
-_now_date = _now.strftime("%b %d")
+# Top-right "data refreshed at" chip — shows the current page-render time in
+# Eastern Time (TSX / NYSE / NASDAQ clock) so it matches the market clock the
+# user is watching, not the Streamlit Cloud server's UTC clock. A small
+# "(data Xm old)" suffix shows how long since the cache was actually cleared,
+# so the user can tell whether the prices shown are freshly pulled or cached.
+try:
+    from zoneinfo import ZoneInfo
+    _et_now = datetime.now(ZoneInfo("America/New_York"))
+except Exception:
+    # zoneinfo not available — fall back to fixed UTC-4 (EDT). Will drift by
+    # 1 hr during EST (Nov–Mar) but better than showing UTC.
+    from datetime import timezone, timedelta
+    _et_now = datetime.now(timezone(timedelta(hours=-4)))
+_now_str = _et_now.strftime("%H:%M:%S")
+_now_date = _et_now.strftime("%b %d")
+_now_tz = _et_now.strftime("%Z") or "ET"
 _cleared = st.session_state.get("_cache_cleared_at")
 _age_str = ""
 if _cleared:
-    _age_seconds = int((_now - _cleared).total_seconds())
+    # _cleared is timezone-naive (from datetime.now() on server). Compute age
+    # using server-local time on both sides to avoid tz-mixing errors.
+    _age_seconds = int((datetime.now() - _cleared).total_seconds())
     if _age_seconds < 60:
         _age_str = f"(data {_age_seconds}s old)"
     elif _age_seconds < 3600:
@@ -2189,7 +2200,7 @@ st.markdown(
     f'<div style="text-align:right; font-size:0.78rem; color:#9ca3af; '
     f'margin-top:-4px; margin-bottom:4px;">'
     f'🕒 Tickers refreshed: '
-    f'<b style="color:#e5e7eb;">{_now_str}</b>'
+    f'<b style="color:#e5e7eb;">{_now_str} {_now_tz}</b>'
     f'<span style="color:#6b7280;"> &nbsp;·&nbsp; {_now_date}</span>'
     f'<span style="color:#6b7280;"> &nbsp;{_age_str}</span>'
     f'</div>',
