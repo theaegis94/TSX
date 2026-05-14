@@ -1269,12 +1269,13 @@ def render_watchlist_bar(tickers: tuple) -> None:
         "  div[data-testid='stElementContainer'] {"
         "    margin-bottom: 0 !important;"
         "}"
-        # Tighten the horizontal row containing tiles — kills the big gap
-        # that Streamlit adds between consecutive rows of columns.
+        # Tighten the horizontal row containing tiles (no top/bottom margin)
+        # but give a generous `gap` between columns so tiles aren't packed
+        # shoulder-to-shoulder.
         "div[data-testid='stHorizontalBlock']:has(.wl-tile-anchor) {"
         "    margin-bottom: 0 !important;"
         "    margin-top: 0 !important;"
-        "    gap: 4px !important;"
+        "    gap: 16px !important;"
         "}"
         # Tighten the divider <hr> between rows AND its wrapper container.
         # Streamlit wraps every element in stElementContainer + stMarkdown
