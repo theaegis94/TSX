@@ -1200,19 +1200,32 @@ def render_watchlist_bar(tickers: tuple) -> None:
         "}"
         # Compact number-input for the target-price box — shrink padding,
         # hide the +/- spinner buttons, smaller font so it fits in the tile.
+        # Transparent background so it blends with the page (no navy box).
         "div[data-testid='stHorizontalBlock'] div[data-testid='stVerticalBlock'] "
         "  div[data-testid='stNumberInput'] input {"
         "    font-size: 0.72rem !important;"
         "    padding: 2px 4px !important;"
-        "    height: 24px !important;"
+        "    height: 22px !important;"
         "    text-align: center;"
-        "    background: #111827 !important;"
+        "    background: transparent !important;"
         "    color: #e5e7eb !important;"
-        "    border: 1px solid #374151 !important;"
+        "    border: 1px solid #5a5b5e !important;"
+        "    border-radius: 6px !important;"
+        "}"
+        "div[data-testid='stHorizontalBlock'] div[data-testid='stVerticalBlock'] "
+        "  div[data-testid='stNumberInput'] input:focus {"
+        "    border-color: #9ca3af !important;"
         "}"
         "div[data-testid='stHorizontalBlock'] div[data-testid='stVerticalBlock'] "
         "  div[data-testid='stNumberInput'] button {"
         "    display: none !important;"
+        "}"
+        # Tight vertical spacing around the target input so it doesn't push
+        # the price down too far.
+        "div[data-testid='stHorizontalBlock'] div[data-testid='stVerticalBlock'] "
+        "  div[data-testid='stNumberInput'] {"
+        "    margin-top: 2px !important;"
+        "    margin-bottom: 2px !important;"
         "}"
         "</style>",
         unsafe_allow_html=True,
@@ -1224,11 +1237,32 @@ def render_watchlist_bar(tickers: tuple) -> None:
         cols = st.columns(cols_per_row)
         for i, t in enumerate(row_tickers):
             with cols[i]:
+                # 1. Ticker button (top)
                 cols[i].button(
                     t, key=f"tile_btn_{t}",
                     on_click=_on_tile_click, args=(t,),
                     use_container_width=True,
                 )
+
+                # 2. Target-price input (between ticker and price).
+                # Empty input = no target set.
+                t_upper = t.upper()
+                cur_tgt = targets.get(t_upper)
+                new_tgt = st.number_input(
+                    f"Target for {t}",
+                    min_value=0.0,
+                    value=float(cur_tgt) if cur_tgt else None,
+                    step=0.01,
+                    format="%.2f",
+                    key=f"tgt_{t}",
+                    label_visibility="collapsed",
+                    placeholder="🎯 Target $",
+                )
+                # Persist on change
+                if (new_tgt or 0) != (cur_tgt or 0):
+                    _set_target_price(t, new_tgt)
+
+                # 3. Price + change (below target).
                 q = quotes.get(t)
                 if not q:
                     st.markdown(
@@ -1251,24 +1285,7 @@ def render_watchlist_bar(tickers: tuple) -> None:
                     unsafe_allow_html=True,
                 )
 
-                # Manual target-price entry. Empty = no target.
-                t_upper = t.upper()
-                cur_tgt = targets.get(t_upper)
-                new_tgt = st.number_input(
-                    f"Target for {t}",
-                    min_value=0.0,
-                    value=float(cur_tgt) if cur_tgt else None,
-                    step=0.01,
-                    format="%.2f",
-                    key=f"tgt_{t}",
-                    label_visibility="collapsed",
-                    placeholder="🎯 Target $",
-                )
-                # Persist on change
-                if (new_tgt or 0) != (cur_tgt or 0):
-                    _set_target_price(t, new_tgt)
-
-                # Distance to target indicator
+                # 4. Distance-to-target indicator (bottom, only if target set).
                 if new_tgt and new_tgt > 0:
                     diff_pct = (q["price"] - new_tgt) / new_tgt * 100
                     if diff_pct >= 0:
@@ -1282,12 +1299,6 @@ def render_watchlist_bar(tickers: tuple) -> None:
                         f'color:{tgt_color}; font-weight:600; '
                         f'margin-top:-2px; line-height:1.1;">'
                         f'{tgt_label}</div>',
-                        unsafe_allow_html=True,
-                    )
-                else:
-                    # Spacer so tiles with/without targets line up vertically
-                    st.markdown(
-                        '<div style="height:14px;"></div>',
                         unsafe_allow_html=True,
                     )
 
