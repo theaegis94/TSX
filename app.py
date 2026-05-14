@@ -1173,6 +1173,25 @@ def _on_tile_click(ticker: str):
 def render_watchlist_bar(tickers: tuple) -> None:
     if not tickers:
         return
+
+    # Manual refresh row — small button on the right that clears just the
+    # watchlist's quote cache (not all caches) and reruns. Useful when the
+    # user wants to force a fresh price pull without touching the bigger
+    # screener/scan caches.
+    _bar_l, _bar_r = st.columns([5, 1])
+    with _bar_r:
+        if st.button("🔄 Refresh prices",
+                     key="wl_refresh_btn",
+                     use_container_width=True,
+                     help="Force a fresh fetch of all watchlist prices"):
+            try:
+                cached_quotes.clear()
+            except Exception:
+                # Fallback: nuke everything if the targeted clear fails
+                st.cache_data.clear()
+            st.session_state["_cache_cleared_at"] = datetime.now()
+            st.rerun()
+
     quotes = cached_quotes(tickers)
     # Hydrate target-price map into session_state once per run
     targets = st.session_state.setdefault(
