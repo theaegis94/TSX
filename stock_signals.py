@@ -2947,64 +2947,120 @@ UNIVERSE_TSX60 = [
 # ===========================================================================
 
 UNIVERSE_AI_TECH = [
-    # US megacap tech + pure-play AI
-    "NVDA", "MSFT", "GOOGL", "META", "AMZN", "AAPL", "TSLA",
-    "AMD", "AVGO", "ORCL", "CRM", "ADBE", "NOW", "PANW",
-    "CRWD", "NET", "DDOG", "SNOW", "MDB", "PLTR", "SMCI",
-    "ARM", "MU", "INTC", "QCOM", "TXN", "MRVL",
-    "AI", "BBAI", "SOUN", "PATH",  # smaller AI pure-plays
-    # TSX tech
+    # US megacap tech
+    "NVDA", "MSFT", "GOOGL", "GOOG", "META", "AMZN", "AAPL",
+    "TSLA", "AMD", "AVGO", "ORCL", "CRM", "ADBE", "INTC",
+    "QCOM", "TXN", "MRVL", "ARM", "MU", "ASML", "TSM",
+    "NOW", "PANW", "CRWD", "NET", "DDOG", "SNOW", "MDB",
+    "PLTR", "SMCI", "ANET", "CSCO",
+    # Cloud / data / dev tools
+    "FTNT", "ZS", "OKTA", "VEEV", "WDAY", "HUBS", "TEAM",
+    "ESTC", "GTLB", "S", "DBX", "BOX", "ZM", "DOCN",
+    "TWLO", "FROG", "AYX", "PAGS", "GLOB", "EPAM",
+    # AI pure-plays / smaller
+    "AI", "BBAI", "SOUN", "PATH", "TEM", "MTEM", "VERX",
+    "INOD", "MEGL", "VRT", "DELL", "HPE", "WDC", "STX",
+    # Adjacent: ad-tech, e-commerce tech
+    "APP", "TTD", "ROKU", "SPOT", "PINS", "SNAP",
+    # TSX / Canadian tech
     "SHOP.TO", "CSU.TO", "OTEX.TO", "CGI.TO", "DSG.TO",
-    "KXS.TO", "DCBO.TO", "LSPD.TO",
+    "KXS.TO", "DCBO.TO", "LSPD.TO", "TIXT.TO", "TVK.TO",
+    "ENGH.TO", "FTG.TO", "BB.TO", "REAL.TO",
 ]
 
 UNIVERSE_BIOTECH = [
-    # US large-cap pharma
-    "PFE", "JNJ", "MRK", "LLY", "ABBV", "BMY", "AMGN",
-    "GILD", "REGN", "VRTX", "BIIB",
-    # mRNA / biotech
-    "MRNA", "BNTX", "NVAX", "ARCT",
+    # Mega-cap pharma
+    "LLY", "JNJ", "ABBV", "MRK", "PFE", "BMY", "AMGN",
+    "GILD", "NVS", "AZN", "GSK", "SNY", "TAK",
     # Mid/large biotech
-    "ALNY", "INCY", "BMRN", "EXAS", "ILMN", "TMO", "DHR",
-    "ABT", "MDT", "BSX", "ISRG", "SYK", "ZTS",
-    # Smaller biotech
-    "EXEL", "HALO", "RARE", "RYTM", "SRPT",
+    "VRTX", "REGN", "BIIB", "ALNY", "INCY", "BMRN",
+    "MRNA", "BNTX", "NVAX", "ARCT", "BNGO",
+    "EXAS", "EXEL", "HALO", "RARE", "RYTM", "SRPT",
+    "BNTX", "IONS", "ARGX", "JAZZ", "NBIX", "UTHR",
+    "TECH", "ACAD", "BCRX", "CRSP", "EDIT", "NTLA",
+    "BEAM", "VERV", "INSM", "KRYS", "PCVX", "VKTX",
+    "MDGL", "TGTX", "SAVA", "ATAI", "CRNX",
+    # Diagnostics / tools
+    "ILMN", "TMO", "DHR", "WAT", "MTD", "BIO", "A",
+    "IDXX", "MRTX", "TWST", "PACB",
+    # Medical devices
+    "ABT", "MDT", "BSX", "ISRG", "SYK", "ZTS", "EW",
+    "DXCM", "ALGN", "PODD", "STE", "BAX", "BDX",
+    "ZBH", "GMED", "TFX",
+    # CA pharma / biotech
+    "BHC.TO", "CPH.TO", "AUP.TO", "TLRY",
 ]
 
 UNIVERSE_MINING = [
-    # US/Global majors
-    "FCX", "NEM", "GOLD", "BHP", "RIO", "VALE", "SCCO",
+    # Global diversified majors
+    "BHP", "RIO", "VALE", "GLNCY", "FCX", "SCCO",
+    # Gold majors (US-listed)
+    "NEM", "GOLD", "AEM", "FNV", "WPM", "AGI", "PAAS",
+    "HMY", "AU", "GFI", "EGO", "KGC", "BVN", "OR",
     # TSX gold/silver
     "ABX.TO", "K.TO", "AEM.TO", "PAAS.TO", "FNV.TO", "WPM.TO",
     "AGI.TO", "BTO.TO", "EQX.TO", "OR.TO", "ELD.TO", "IMG.TO",
     "NGT.TO", "OGC.TO", "ARG.TO", "DPM.TO", "LUG.TO",
+    "TXG.TO", "AAUC.TO", "WDO.TO", "CG.TO", "EDV.TO",
+    "PRU.TO", "SSL.TO", "OSK.TO", "MOZ.TO", "VGCX.TO",
+    "OLA.TO", "ASR.TO", "AYA.TO", "GAU.TO",
     # TSX base metals / diversified
     "TECK-B.TO", "FM.TO", "HBM.TO", "LUN.TO", "CS.TO",
-    "TKO.TO", "ERO.TO", "CCO.TO",  # CCO = uranium (Cameco)
-    # Critical minerals / lithium
-    "LAC.TO", "PMET.V",
+    "TKO.TO", "ERO.TO", "CCO.TO", "NEXA.TO", "TGZ.TO",
+    "CMMC.TO", "TGB.TO", "WRN.TO", "FCO.TO",
+    # Critical minerals / lithium / battery materials
+    "LAC.TO", "PMET.V", "FL.TO", "NMX.V", "FRC.V",
+    "AVL.TO", "NEO.TO", "DML.TO", "FCU.TO", "EFR.TO",
+    # Silver focused
+    "AG", "MAG.TO", "FSM", "FVI.TO", "FSM.TO",
+    "SVM.TO", "GSV.TO", "SIL.TO", "ASM.TO",
+    # Iron / steel
+    "X", "CLF", "NUE", "STLD", "MT", "RS", "ZEUS",
+    "LRMR.TO", "CCB.TO",
 ]
 
 UNIVERSE_GOLD_MINING = [
+    # Senior producers (US-listed)
     "NEM", "GOLD", "AEM", "FNV", "WPM", "AGI", "PAAS",
+    "HMY", "AU", "GFI", "EGO", "KGC", "BVN", "OR",
+    "RGLD",
+    # TSX seniors / mid-tiers
     "ABX.TO", "K.TO", "AEM.TO", "FNV.TO", "WPM.TO",
     "AGI.TO", "BTO.TO", "EQX.TO", "OR.TO", "ELD.TO",
     "IMG.TO", "NGT.TO", "OGC.TO", "ARG.TO", "DPM.TO",
-    "LUG.TO", "TXG.TO", "AAUC.TO",
+    "LUG.TO", "TXG.TO", "AAUC.TO", "WDO.TO", "EDV.TO",
+    # TSX juniors
+    "PRU.TO", "SSL.TO", "OSK.TO", "MOZ.TO", "VGCX.TO",
+    "OLA.TO", "ASR.TO", "AYA.TO", "GAU.TO", "DSV.TO",
+    "RSG.TO", "CG.TO", "AOT.TO", "CMOC.TO",
+    # TSXV juniors (high beta to gold)
+    "AAG.V", "AOT.V", "GRZ.V", "OGN.V", "VZLA.V",
 ]
 
 UNIVERSE_OIL_GAS_FULL = [
-    # US oil majors / E&P
+    # US oil majors
     "XOM", "CVX", "COP", "OXY", "EOG", "PXD", "FANG",
-    "DVN", "HES", "MRO", "PSX", "MPC", "VLO", "SLB",
-    "BKR", "HAL", "APA", "CTRA", "OVV", "MUR",
-    # US natural gas / pipelines
-    "WMB", "KMI", "OKE", "LNG", "EQT", "CHK",
-    # Canadian oil/gas
+    "DVN", "HES", "MRO", "PSX", "MPC", "VLO",
+    # E&P mid-cap
+    "APA", "CTRA", "OVV", "MUR", "MTDR", "PR", "SM",
+    "CIVI", "PDCE", "CPE", "MGY", "VTLE", "AROC",
+    # Oilfield services
+    "SLB", "BKR", "HAL", "WFRD", "TS", "FTI", "NOV",
+    "CHX", "LBRT", "RES", "NINE", "CLB",
+    # Natural gas / pipelines / midstream
+    "WMB", "KMI", "OKE", "LNG", "EQT", "CHK", "AR",
+    "EPD", "ET", "MPLX", "ENLC", "AM", "TRGP",
+    # Canadian seniors
     "SU.TO", "CNQ.TO", "ENB.TO", "TRP.TO", "IMO.TO",
-    "CVE.TO", "ARX.TO", "TOU.TO", "MEG.TO", "PEY.TO",
-    "TPZ.TO", "WCP.TO", "OBE.TO", "BIR.TO", "VET.TO",
-    "BTE.TO", "PPL.TO",
+    "CVE.TO", "PPL.TO", "ARX.TO", "TOU.TO", "MEG.TO",
+    "PEY.TO", "TPZ.TO",
+    # Canadian mid-cap E&P
+    "WCP.TO", "OBE.TO", "BIR.TO", "VET.TO", "BTE.TO",
+    "PXT.TO", "ATH.TO", "CR.TO", "TVE.TO", "NVA.TO",
+    "ERF.TO", "FRU.TO", "POU.TO", "AAV.TO", "PIPE.TO",
+    "PSK.TO", "GTE.TO", "PEY.TO", "SDE.TO", "JOY.TO",
+    # Refining / marketing
+    "PKI.TO", "PEY.TO",
 ]
 
 UNIVERSE_BANKS_CA = [
@@ -3013,14 +3069,33 @@ UNIVERSE_BANKS_CA = [
 ]
 
 UNIVERSE_BANKS_US = [
+    # Megabanks
     "JPM", "BAC", "WFC", "C", "GS", "MS", "USB", "TFC",
-    "PNC", "SCHW", "BLK", "AXP", "COF", "BK",
+    "PNC", "SCHW", "AXP", "COF", "BK", "BLK",
+    # Regional banks
+    "MTB", "FITB", "HBAN", "CFG", "KEY", "RF", "ZION",
+    "FCNCA", "WAL", "PB", "CMA", "BOKF", "PNFP", "EWBC",
+    "WBS", "FHN", "SNV", "CADE", "ASB", "NTRS", "STT",
+    # Investment / trust banks
+    "GS", "MS", "EVR", "LAZ", "HLI", "MC", "PIPR",
+    "RJF", "AMP", "AB", "BEN",
 ]
 
 UNIVERSE_EV = [
-    "TSLA", "RIVN", "LCID", "F", "GM", "NIO", "LI", "XPEV",
-    "BYDDY", "CHPT", "EVGO", "WBX", "BLNK", "PLUG", "FCEL",
-    "QS", "FSR", "VFS",
+    # OEMs
+    "TSLA", "RIVN", "LCID", "F", "GM", "STLA", "TM",
+    "HMC", "VWAGY", "MBGYY", "BMWYY", "POAHY",
+    # Chinese EVs (US-listed)
+    "NIO", "LI", "XPEV", "BYDDY", "ZK", "LOT",
+    # Charging infrastructure
+    "CHPT", "EVGO", "WBX", "BLNK", "ABEV",
+    # Hydrogen / fuel cell
+    "PLUG", "FCEL", "BE", "BLDP.TO", "BLDP",
+    # Battery tech / startups
+    "QS", "FSR", "VFS", "GOEV", "MULN", "NKLA",
+    "WKHS", "RIDE", "AYRO", "ARVL", "LCID",
+    # EV components / charging chips
+    "WOLF", "MTCN.TO",
 ]
 
 UNIVERSE_CANNABIS = [
@@ -3041,12 +3116,24 @@ UNIVERSE_CONSTRUCTION = [
 ]
 
 UNIVERSE_RETAIL = [
-    "WMT", "COST", "TGT", "HD", "LOW", "DG", "DLTR",
-    "BBY", "TJX", "ROST", "ULTA", "AMZN", "EBAY", "ETSY",
-    "CHWY", "W", "MELI",
+    # Mega-cap
+    "WMT", "COST", "AMZN", "HD", "LOW", "TGT",
+    # Discount / off-price
+    "DG", "DLTR", "TJX", "ROST", "BIG", "FIVE", "OLLI",
+    "BURL", "PSMT",
+    # Specialty
+    "BBY", "ULTA", "DKS", "AAP", "AZO", "ORLY",
+    "TSCO", "WSM", "RH", "FL", "GME", "BBWI",
+    # E-commerce / marketplaces
+    "EBAY", "ETSY", "CHWY", "W", "MELI", "JD",
+    "PDD", "BABA", "VIPS", "REAL", "FTCH",
+    # Department / off-mall
+    "M", "JWN", "KSS", "DDS", "NORD",
+    # Pet / niche
+    "PETS", "PETC", "WOOF",
     # CA retail
     "L.TO", "ATD.TO", "MRU.TO", "WN.TO", "DOL.TO",
-    "EMP-A.TO",
+    "EMP-A.TO", "PJC-A.TO", "PEO.TO", "ITP.TO",
 ]
 
 UNIVERSE_HEALTHCARE = [
@@ -3058,19 +3145,50 @@ UNIVERSE_HEALTHCARE = [
 ]
 
 UNIVERSE_REIT = [
-    "PLD", "AMT", "EQIX", "PSA", "SPG", "O", "WELL",
-    "AVB", "EQR", "CCI", "DLR", "EXR", "VTR", "BXP",
-    "INVH", "MAA", "UDR",
+    # Industrial / logistics
+    "PLD", "DRE", "REXR", "FR", "STAG", "EGP", "TRNO",
+    # Data centers / cell towers
+    "AMT", "EQIX", "CCI", "DLR", "SBAC", "IRM",
+    # Self-storage
+    "PSA", "EXR", "CUBE", "NSA",
+    # Retail / malls
+    "SPG", "O", "REG", "KIM", "FRT", "BRX", "MAC",
+    "SKT", "ROIC", "ADC", "EPRT", "STOR",
+    # Residential
+    "AVB", "EQR", "MAA", "UDR", "ESS", "INVH", "AMH",
+    "CPT", "AIRC", "ELS",
+    # Healthcare REITs
+    "WELL", "VTR", "PEAK", "OHI", "DOC", "MPW",
+    # Office / commercial
+    "BXP", "VNO", "ARE", "KRC", "HIW", "DEI",
+    # Diversified / specialty
+    "WPC", "GLPI", "VICI", "EPR", "LAMR", "OUT",
     # CA REITs
     "REI-UN.TO", "HOM-UN.TO", "AP-UN.TO", "CAR-UN.TO",
     "SRU-UN.TO", "FCR-UN.TO", "GRT-UN.TO", "DIR-UN.TO",
-    "CHP-UN.TO", "BEI-UN.TO",
+    "CHP-UN.TO", "BEI-UN.TO", "CRT-UN.TO", "AX-UN.TO",
+    "BTB-UN.TO", "NXR-UN.TO", "PLZ-UN.TO", "PMZ-UN.TO",
+    "MR-UN.TO", "MRT-UN.TO", "DRR-UN.TO", "ERE-UN.TO",
+    "MEQ-UN.TO", "AAR-UN.TO", "SOT-UN.TO",
 ]
 
 UNIVERSE_SEMI = [
+    # US giants
     "NVDA", "AVGO", "AMD", "INTC", "QCOM", "TXN", "MU",
-    "ASML", "ON", "MRVL", "ARM", "SMCI", "TSM", "ADI",
-    "MCHP", "NXPI", "LRCX", "AMAT", "KLAC", "TER",
+    "ADI", "ON", "MRVL", "ARM", "SMCI", "MCHP", "NXPI",
+    # Foundry
+    "TSM", "ASML", "UMC", "GFS", "SIMO",
+    # Equipment / fab tooling
+    "LRCX", "AMAT", "KLAC", "TER", "ENTG", "ACMR",
+    "ICHR", "AEHR", "ONTO", "AMBA", "POWI",
+    # Analog / RF
+    "QRVO", "SWKS", "MPWR", "MXL", "SLAB", "DIOD",
+    # AI / GPU-adjacent
+    "SMCI", "DELL", "HPE", "ANET", "JNPR",
+    # Memory
+    "MU", "WDC", "STX",
+    # IP / fabless misc
+    "RMBS", "LSCC", "WOLF", "CRDO", "ALAB", "INDI",
 ]
 
 UNIVERSE_UTILITIES = [
@@ -3082,36 +3200,532 @@ UNIVERSE_UTILITIES = [
 ]
 
 UNIVERSE_AEROSPACE_DEFENSE = [
-    "LMT", "RTX", "NOC", "GD", "BA", "TDG", "TXT",
-    "LHX", "HEI", "HII", "KTOS", "AVAV",
+    # Primes
+    "LMT", "RTX", "NOC", "GD", "BA",
+    # Mid-cap defense
+    "LHX", "HII", "TDG", "TXT", "HEI", "TDY",
+    "KBR", "CW", "MRCY", "AJRD",
+    # Drones / next-gen
+    "KTOS", "AVAV", "ACHR", "JOBY", "EVTL",
+    # Space / satellite
+    "MAXR", "RKLB", "SATS", "ASTS", "PL", "BKSY",
+    # Commercial aerospace
+    "BA", "GE", "TDG", "HXL", "MOG-A", "HWM", "SPR",
+    # CA / international
+    "CAE.TO", "BBD-B.TO", "MAL.TO",
 ]
 
 UNIVERSE_URANIUM = [
+    # Producers / mid-tier (US-listed)
     "CCJ", "DNN", "UEC", "UUUU", "URG", "NXE",
+    "EU", "PALAF", "LEU",
+    # TSX uranium
     "CCO.TO", "NXE.TO", "DML.TO", "FCU.TO", "UEX.TO",
-    "ISO.TO", "PALAF",
+    "ISO.TO", "URE.TO", "GLO.TO", "FUU.V", "EU.TO",
+    "AAZ.V", "GMR.V", "AZL.V",
+    # ETFs (for sector exposure)
+    "URA", "URNM", "URAN",
+    # SMR / nuclear builders (adjacent)
+    "BWXT", "SMR", "NNE", "OKLO", "LEU",
+]
+
+UNIVERSE_INSURANCE = [
+    "BRK-B", "PGR", "ALL", "AIG", "MET", "PRU", "TRV",
+    "CB", "HIG", "AFL", "MMC", "AON", "WTW", "AJG",
+    "SLF.TO", "MFC.TO", "GWO.TO", "POW.TO", "IFC.TO",
+    "FFH.TO", "IAG.TO",
+]
+
+UNIVERSE_FINTECH = [
+    # Card networks
+    "V", "MA", "AXP", "DFS",
+    # Digital payments
+    "PYPL", "SQ", "FOUR", "FI", "GPN", "FIS", "ADYEY",
+    "SHOP", "MELI", "STNE", "PAGS", "DLO", "BABA",
+    # Buy-now-pay-later
+    "AFRM", "AFTPF",
+    # Neobanks / consumer fintech
+    "SOFI", "HOOD", "NU", "MQ", "DAVE", "LU", "CASH",
+    "UPST", "LC", "OPRT",
+    # Insurtech / proptech / mortgagetech
+    "RKT", "UWMC", "LMND", "ROOT", "OPEN",
+    # Crypto exchanges / brokerage
+    "COIN", "MARA", "IBKR", "RJF",
+    # Wealth / Robo
+    "SCHW", "BX", "AMP", "AB",
+]
+
+UNIVERSE_CYBERSECURITY = [
+    "CRWD", "PANW", "FTNT", "OKTA", "ZS", "S", "NET",
+    "CYBR", "TENB", "RBRK", "QLYS", "RPD", "VRNS",
+    "MIME", "FFIV", "JNPR", "CSCO", "SAIL", "SCWX",
+    "OSPN", "CPNG",
+]
+
+UNIVERSE_SAAS = [
+    # CRM / Sales / Marketing
+    "CRM", "HUBS", "PCTY", "MNDY", "SEMR", "ZS",
+    # Productivity / collab
+    "NOW", "WDAY", "TEAM", "ZM", "DBX", "BOX",
+    # Dev tools / observability / data
+    "SNOW", "DDOG", "MDB", "DT", "ESTC", "FROG",
+    "GTLB", "AYX", "PATH", "PD", "CFLT",
+    # Design / creative
+    "ADBE", "INTU",
+    # E-comm / restaurant SaaS
+    "SHOP", "GLBE", "BIGC", "WIX", "TOST", "OLO",
+    "PAR",
+    # Vertical SaaS
+    "VEEV", "PCOR", "PLTR", "ADSK", "ANSS",
+    # CA SaaS
+    "SHOP.TO", "CSU.TO", "OTEX.TO", "DSG.TO", "KXS.TO",
+    "TIXT.TO", "ENGH.TO", "DCBO.TO", "TVK.TO",
+]
+
+UNIVERSE_TELECOM = [
+    # US
+    "T", "VZ", "TMUS", "CMCSA", "CHTR", "LBRDA", "LBRDK",
+    "ATUS", "USM", "TDS", "VOD", "CTL", "FYBR",
+    # CA
+    "BCE.TO", "T.TO", "RCI-B.TO", "QBR-B.TO", "CCA.TO",
+    # Towers / infra
+    "AMT", "CCI", "SBAC",
+]
+
+UNIVERSE_GAMING = [
+    # Casinos
+    "MGM", "LVS", "WYNN", "CZR", "CHDN", "GDEN", "BYD",
+    "RRR", "MCRI", "FLL", "CNTY",
+    # Sports betting / online
+    "DKNG", "PENN", "FLUT", "RSI", "GENI", "BETZ",
+    "GAMB", "SRAD",
+    # Lottery / iGaming
+    "IGT", "EVO", "LNW", "CHDN",
+]
+
+UNIVERSE_MEDIA = [
+    # Streaming / content
+    "DIS", "NFLX", "WBD", "PARA", "FOX", "SPOT",
+    "ROKU", "FUBO", "AMC", "CNK", "IMAX",
+    # Cable / broadband
+    "CMCSA", "CHTR", "LBRDA", "FYBR",
+    # Music / podcasts
+    "SPOT", "WMG", "SIRI",
+    # Publishing / news
+    "NYT", "NWSA", "TGNA", "GCI", "JW-A",
+    # Toys / consumer media
+    "HAS", "MAT", "FNKO", "ATVI", "EA", "TTWO",
+    "RBLX", "U", "DKNG",
+]
+
+UNIVERSE_RESTAURANTS = [
+    # Mega-chains
+    "MCD", "SBUX", "CMG", "YUM", "DPZ", "QSR",
+    "YUMC", "WEN", "JACK", "PZZA",
+    # Casual dining
+    "DRI", "TXRH", "EAT", "CAKE", "BLMN", "DIN",
+    "PLAY", "BJRI", "RUTH",
+    # Fast casual / smaller
+    "WING", "SHAK", "BROS", "CAVA", "FUN", "ARKR",
+    "PTLO", "FRGI", "FAT",
+    # Coffee / breakfast
+    "SBUX", "BROS", "FARM",
+    # CA
+    "QSR.TO", "MTY.TO", "RECP.TO", "PZA-UN.TO",
+    "BPF-UN.TO", "AW-UN.TO", "PIZ-UN.TO",
+]
+
+UNIVERSE_FOOD_BEV = [
+    # Beverages
+    "KO", "PEP", "MNST", "KDP", "STZ", "BUD", "TAP",
+    # Food / CPG
+    "MDLZ", "PG", "KHC", "CAG", "GIS", "K", "HSY",
+    "MKC", "CPB", "SJM",
+    # CA
+    "L.TO", "EMP-A.TO", "MRU.TO", "MFI.TO", "WN.TO",
+]
+
+UNIVERSE_AIRLINES_TRAVEL = [
+    "UAL", "DAL", "AAL", "LUV", "ALK", "JBLU",
+    "BKNG", "ABNB", "EXPE", "MAR", "HLT", "H",
+    "RCL", "CCL", "NCLH",
+    "AC.TO", "EXE.TO", "ONEX.TO",
+]
+
+UNIVERSE_RAIL_LOGISTICS = [
+    "UNP", "CSX", "NSC", "UPS", "FDX", "CHRW",
+    "EXPD", "ODFL", "JBHT", "XPO", "ZIM", "MATX",
+    "CNR.TO", "CP.TO", "TFII.TO", "GEI.TO",
+]
+
+UNIVERSE_INDUSTRIAL = [
+    # Mega-cap diversified
+    "HON", "GE", "EMR", "ETN", "ROK", "MMM", "ITW",
+    "JCI", "PH", "DOV", "FAST", "PNR", "IR", "AME",
+    # Building products / HVAC
+    "CARR", "TT", "LII", "AOS", "WSO", "WCC",
+    # Electrical / power equipment
+    "EATON", "PWR", "VRT", "HUBB", "SQM",
+    # Machinery
+    "CAT", "DE", "AGCO", "CNHI", "OSK", "TEX", "PCAR",
+    "CMI", "WAB", "URI", "HEI", "TXT",
+    # Industrial distribution
+    "GWW", "FAST", "MSC", "DXPE",
+    # CA industrials
+    "RBC.TO", "CAE.TO", "MG.TO", "ATA.TO", "EXFO.TO",
+    "CCL-B.TO", "DCBO.TO", "GIB-A.TO", "FTT.TO",
+    "RUS.TO", "BBD-B.TO", "ATA.TO", "MTL.TO",
+    "TIH.TO", "WJX.TO", "TVK.TO",
+]
+
+UNIVERSE_CHEMICALS = [
+    "LIN", "APD", "ECL", "CTVA", "DD", "DOW",
+    "SHW", "PPG", "FMC", "LYB", "ALB", "RPM",
+    "NTR.TO", "CCL-B.TO", "MX.TO",
+]
+
+UNIVERSE_AGRICULTURE = [
+    "DE", "AGCO", "CNHI", "CF", "MOS", "NTR",
+    "ADM", "BG", "TSN", "CALM", "INGR",
+    "NTR.TO", "AFN.TO", "ANRG.TO",
+]
+
+UNIVERSE_RENEWABLES_SOLAR = [
+    "FSLR", "ENPH", "SEDG", "RUN", "SPWR", "ARRY",
+    "SHLS", "MAXN", "JKS", "CSIQ", "DQ",
+    "BEP-UN.TO", "BLX.TO", "INE.TO", "NPI.TO", "AQN.TO",
+]
+
+UNIVERSE_HOMEBUILDERS = [
+    "DHI", "LEN", "PHM", "NVR", "TOL", "KBH",
+    "MTH", "MHO", "TPH", "TMHC", "BLDR",
+    "MAT.TO", "MAGI.TO", "BDT.TO",
+]
+
+UNIVERSE_APPAREL_LUXURY = [
+    "LULU", "NKE", "RL", "TPR", "CPRI", "PVH",
+    "DECK", "VFC", "HBI", "UAA", "LVMUY", "BURBY",
+    "GIL.TO", "ATZ.TO", "CTC-A.TO",
+]
+
+UNIVERSE_CRYPTO_STOCKS = [
+    # Crypto exchanges / asset managers
+    "COIN", "HOOD", "BKKT", "GLXY.TO",
+    # Bitcoin treasury companies
+    "MSTR", "SMLR", "MARA", "BITF", "BITF.TO",
+    # Bitcoin miners
+    "MARA", "RIOT", "CLSK", "HUT", "HUT.TO",
+    "BTBT", "CIFR", "WULF", "IREN", "BTDR",
+    "CAN", "EBON", "HIVE", "HIVE.V", "GREE",
+    "CANG", "DGHI", "BTCS", "CORZ", "GRIID",
+    # Crypto-adjacent payments
+    "PYPL", "SQ", "PAGS",
+    # Stablecoin / settlement
+    "USDC", "SOFI",
+    # Blockchain ETFs / proxies
+    "BLOK", "BITQ", "DAPP",
+]
+
+UNIVERSE_LITHIUM_BATTERY = [
+    # Lithium producers
+    "ALB", "SQM", "LTHM", "LAC", "PLL", "SGML",
+    "ATLX", "AMLI", "SLI", "LITM",
+    # Battery/EV materials
+    "ENVX", "MP", "CBT", "TMC",
+    # Battery manufacturers / startups
+    "QS", "MVST", "FREY", "SES",
+    # TSX/TSXV lithium
+    "LAC.TO", "PMET.V", "FL.TO", "FRC.V",
+    "NMX.V", "ILC.V", "PE.TO", "CRE.V",
+    # Vanadium / cobalt / nickel for batteries
+    "EFR.TO", "ECO.TO", "FNI.V",
+]
+
+UNIVERSE_COPPER = [
+    # US-listed copper miners
+    "FCX", "SCCO", "TGB", "ERO",
+    # TSX copper / base metals
+    "TKO.TO", "ERO.TO", "HBM.TO", "FM.TO", "LUN.TO",
+    "CS.TO", "TGB.TO", "WRN.TO", "FCO.TO", "CMMC.TO",
+    "TECK-B.TO", "NEXA.TO", "FAR.V", "FIL.V",
+    # ETFs for sector
+    "COPX", "COPJ", "CPER",
+]
+
+UNIVERSE_RARE_EARTHS = [
+    # US-listed
+    "MP", "USAR", "REEMF", "REE", "TMC", "UAMY",
+    "VYSI", "TMR",
+    # TSX / TSXV
+    "NEO.TO", "AVL.TO", "UCU.V", "VTMX.V", "DEFN.V",
+    "VITAL.V", "REE.V", "AVL.V", "UREE.V",
+    # ETFs
+    "REMX",
+]
+
+# ===========================================================================
+# Emerging / small-cap / high-growth universes — focused lists of newer,
+# smaller, more speculative names within each major industry. Higher beta,
+# higher risk, often higher reward. Use these to narrow scans away from
+# mega-cap leaders.
+# ===========================================================================
+
+UNIVERSE_EMERGING_AI = [
+    # Pure-play AI software
+    "AI", "BBAI", "SOUN", "PATH", "INOD", "MEGL", "TEM",
+    "VRT", "MTEM", "VERX", "GENI", "GLBE",
+    # AI infrastructure / data centers
+    "VRT", "WGRP", "ETOR", "MGNI",
+    # Recent AI IPOs
+    "ARM", "KVYO", "CART", "ASTH", "RBRK", "S",
+    # AI-adjacent
+    "PLTR", "SMCI", "DELL", "HPE", "WDC",
+    "U", "RBLX", "RDDT", "TEM",
+    # Quantum computing
+    "IONQ", "RGTI", "QBTS", "QUBT", "ARQQ",
+    # Vertical AI / agents
+    "RXRX", "ASTS", "PD", "PCOR", "GTLB",
+    # CA emerging tech
+    "TIXT.TO", "TVK.TO", "REAL.TO", "BB.TO", "DCBO.TO",
+    "ENGH.TO", "FTG.TO", "MDF.TO",
+]
+
+UNIVERSE_EMERGING_BIOTECH = [
+    # Gene editing / CRISPR
+    "CRSP", "EDIT", "NTLA", "BEAM", "VERV", "PRME",
+    # Obesity / GLP-1 plays
+    "VKTX", "MDGL", "ALT", "ANY", "TERN", "RIVN",
+    # Mental health / psychedelics
+    "SAVA", "ATAI", "CMPS", "MNMD", "GHRS",
+    # Rare diseases / orphan drugs
+    "RARE", "KRYS", "PCVX", "CRNX", "NRIX", "RAPT",
+    "INSM", "IMAB", "SRPT", "RYTM",
+    # AI-driven drug discovery
+    "RXRX", "ABCL", "AMRX", "ABSI", "EXAI",
+    # Cell therapy
+    "FATE", "CLLS", "BLUE", "ALLO",
+    # Recent biotech IPOs (smaller)
+    "CDXS", "NUVL", "TGTX", "RVMD", "DAWN",
+]
+
+UNIVERSE_EMERGING_MINING = [
+    # Junior gold (TSXV)
+    "AAG.V", "AOT.V", "OGN.V", "GRZ.V", "VZLA.V",
+    "DSV.V", "GSV.V", "GSV.TO", "AYA.TO", "MOZ.TO",
+    "ASR.TO", "OLA.TO", "VGCX.TO", "RGD.V",
+    # Smaller producers (TSX)
+    "DPM.TO", "LUG.TO", "TXG.TO", "EDV.TO", "AAUC.TO",
+    "PRU.TO", "AGI.TO", "SSL.TO", "OSK.TO",
+    # Silver focused (often higher beta to gold)
+    "AG", "MAG.TO", "FSM.TO", "FVI.TO", "GSV.TO",
+    # Critical minerals juniors
+    "PMET.V", "FL.TO", "FRC.V", "NMX.V", "CRE.V",
+    "ILC.V", "DEFN.V", "VITAL.V", "AVL.V",
+    # Junior copper
+    "TGB.TO", "WRN.TO", "FCO.TO", "FAR.V", "FIL.V",
+]
+
+UNIVERSE_EMERGING_OIL_GAS = [
+    # Small US E&P
+    "NOG", "GPRK", "VTLE", "MGY", "AROC", "PR",
+    "CIVI", "SM", "MTDR", "SDPI", "TGS", "MRTN",
+    # Canadian juniors
+    "BTE.TO", "PXT.TO", "ATH.TO", "CR.TO", "TVE.TO",
+    "NVA.TO", "FRU.TO", "POU.TO", "SDE.TO", "JOY.TO",
+    "PIPE.TO", "GTE.TO", "OBE.TO", "BIR.TO",
+    # Pure-play hydrogen / new energy
+    "PLUG", "BLDP", "BE", "BLDP.TO", "FCEL",
+    "HYZN", "BWEN",
+    # Geothermal / fusion-adjacent
+    "FLNC", "STEM", "TPC", "OII",
+]
+
+UNIVERSE_EMERGING_EV_BATTERY = [
+    # Pure-play EVs
+    "RIVN", "LCID", "NIO", "LI", "XPEV", "ZK", "LOT",
+    "NKLA", "FFIE", "MULN", "GOEV", "WKHS",
+    "INDI", "AYRO", "VFS", "POAHY",
+    # Battery tech / startups
+    "QS", "MVST", "FREY", "SES", "ENVX", "SLDP",
+    # Charging infrastructure
+    "CHPT", "EVGO", "WBX", "BLNK", "ABEV",
+    # Battery materials (lithium juniors)
+    "LAC", "PLL", "SGML", "ATLX", "AMLI", "SLI",
+    "ENVX", "LITM",
+    # TSX/TSXV lithium / battery
+    "LAC.TO", "PMET.V", "FL.TO", "FRC.V", "NMX.V",
+    "ILC.V", "CRE.V", "FNI.V",
+]
+
+UNIVERSE_EMERGING_CRYPTO_MINERS = [
+    # Bitcoin miners — pure plays
+    "MARA", "RIOT", "CLSK", "HUT", "HUT.TO",
+    "BITF", "BITF.TO", "BTBT", "CIFR", "WULF",
+    "IREN", "BTDR", "CAN", "EBON", "HIVE", "HIVE.V",
+    "GREE", "DGHI", "CORZ", "GRIID",
+    # Bitcoin treasury / proxy
+    "MSTR", "SMLR", "BTBT", "GBTC",
+    # Crypto exchanges / brokerage
+    "COIN", "HOOD", "BKKT", "GLXY.TO",
+    # Layer-2 / DeFi adjacent
+    "MARA", "RIOT", "CLSK",
+]
+
+UNIVERSE_EMERGING_SPACE_DRONES = [
+    # Space launch / satellites
+    "RKLB", "ASTS", "BKSY", "PL", "SATS", "RDW",
+    "SPCE", "MAXR", "TRMB", "VSAT", "GSAT",
+    # Drones / autonomous
+    "AVAV", "KTOS", "RZLT",
+    # eVTOL / urban air mobility
+    "ACHR", "JOBY", "EVTL", "BLDE",
+    # Space ETFs
+    "ARKX", "UFO", "ROKT",
+]
+
+UNIVERSE_EMERGING_NUCLEAR = [
+    # SMR / next-gen reactors
+    "OKLO", "SMR", "NNE", "LEU", "ASPI",
+    # Established nuclear engineering
+    "BWXT", "FLR", "CWEN", "JINFF",
+    # Uranium producers (proxy for nuclear)
+    "CCJ", "DNN", "UEC", "UUUU", "NXE",
+    "CCO.TO", "NXE.TO", "DML.TO", "FCU.TO",
+    # ETFs
+    "URA", "URNM", "URAN", "NLR",
+]
+
+UNIVERSE_EMERGING_FINTECH = [
+    # Neobanks
+    "SOFI", "NU", "MQ", "DAVE", "CASH", "LU",
+    # Crypto-adjacent fintech
+    "COIN", "HOOD", "MARA", "RIOT",
+    # Payment tech
+    "AFRM", "AFTPF", "PYPL", "SQ", "FOUR",
+    "STNE", "PAGS", "DLO", "MELI",
+    # Insurtech
+    "LMND", "ROOT", "OSCR",
+    # Proptech / mortgagetech
+    "OPEN", "RKT", "UWMC",
+    # Lending tech
+    "UPST", "LC", "OPRT",
+    # Wealth tech
+    "RJF", "AMP", "AB", "WTW",
+]
+
+UNIVERSE_EMERGING_CYBERSEC = [
+    # Newer cybersec pure-plays
+    "RBRK", "S", "SAIL", "TENB", "QLYS", "RPD",
+    "VRNS", "OSPN", "SCWX", "CYBR", "MIME",
+    # Identity / access
+    "OKTA", "SAIL", "FORG",
+    # Cloud security
+    "ZS", "NET", "CRWD", "FTNT",
+]
+
+UNIVERSE_EMERGING_CANNABIS = [
+    # Established CA producers (still emerging)
+    "ACB.TO", "WEED.TO", "CL.TO", "OGI.TO", "HEXO.TO",
+    "VFF.TO", "VIVO.TO", "FAF.TO", "AGRO.TO",
+    # US plant-touching (OTC)
+    "CURLF", "TCNNF", "VRNOF", "GTBIF", "GLASF",
+    "TLRY", "CGC", "CRON", "SNDL",
+    # Psychedelics (smaller)
+    "ATAI", "CMPS", "MNMD", "GHRS", "FTRP",
+]
+
+UNIVERSE_EMERGING_RENEWABLES = [
+    # Solar
+    "FSLR", "ENPH", "SEDG", "RUN", "SPWR", "ARRY",
+    "SHLS", "MAXN", "JKS", "CSIQ", "DQ", "NOVA",
+    # Wind / storage
+    "STEM", "FLNC", "PLUG", "FCEL", "BE",
+    "BLDP", "HYZN",
+    # CA renewables
+    "BEP-UN.TO", "BLX.TO", "INE.TO", "NPI.TO", "AQN.TO",
+    "PIF.TO", "RNW.TO",
+]
+
+
+UNIVERSE_ASSET_MGMT = [
+    # Mega-asset managers
+    "BLK", "BX", "KKR", "APO", "TPG", "ARES",
+    "OWL", "CG", "HLNE", "BAM", "BN",
+    # Boutique / mid-cap
+    "BSIG", "AB", "BEN", "WTW", "TROW", "IVZ",
+    "AMG", "WHF", "JHG", "VCTR",
+    # CA asset managers
+    "BAM.TO", "BN.TO", "POW.TO", "ONEX.TO", "FFH.TO",
+    "AGF-B.TO", "TF.TO", "IGM.TO", "CIX.TO", "GCG-A.TO",
+    "GS.TO", "BIP-UN.TO",
 ]
 
 # Master dict: emoji + label → ticker list
 # Used by universe selectors so a user can pick "Industry: AI / Tech"
 INDUSTRY_UNIVERSES = {
+    # === Tech / Software ===
     "🤖 AI / Tech": UNIVERSE_AI_TECH,
-    "🧬 Biotech / Pharma": UNIVERSE_BIOTECH,
+    "☁️ Software / SaaS": UNIVERSE_SAAS,
     "💾 Semiconductors": UNIVERSE_SEMI,
+    "🔒 Cybersecurity": UNIVERSE_CYBERSECURITY,
+    "💳 Fintech / Payments": UNIVERSE_FINTECH,
+    "🪙 Crypto-related stocks": UNIVERSE_CRYPTO_STOCKS,
+    # === Healthcare ===
+    "🧬 Biotech / Pharma": UNIVERSE_BIOTECH,
+    "🏥 Healthcare (insurers + devices)": UNIVERSE_HEALTHCARE,
+    # === Materials / Resources ===
     "⛏️ Mining (all metals)": UNIVERSE_MINING,
     "🥇 Gold Mining": UNIVERSE_GOLD_MINING,
+    "🟠 Copper": UNIVERSE_COPPER,
+    "🔋 Lithium / Battery materials": UNIVERSE_LITHIUM_BATTERY,
+    "🪨 Rare Earths / Critical Minerals": UNIVERSE_RARE_EARTHS,
     "☢️ Uranium": UNIVERSE_URANIUM,
+    "🧪 Chemicals": UNIVERSE_CHEMICALS,
+    "🌾 Agriculture / Fertilizers": UNIVERSE_AGRICULTURE,
+    # === Energy ===
     "🛢️ Oil & Gas": UNIVERSE_OIL_GAS_FULL,
+    "☀️ Solar / Renewables": UNIVERSE_RENEWABLES_SOLAR,
     "⚡ Utilities": UNIVERSE_UTILITIES,
+    "⚡ EV / Clean transport": UNIVERSE_EV,
+    # === Financials ===
     "🏦 Banks (CA)": UNIVERSE_BANKS_CA,
     "🏦 Banks (US)": UNIVERSE_BANKS_US,
-    "⚡ EV / Clean Energy": UNIVERSE_EV,
-    "🌿 Cannabis": UNIVERSE_CANNABIS,
-    "🏗️ Construction": UNIVERSE_CONSTRUCTION,
+    "🛡️ Insurance": UNIVERSE_INSURANCE,
+    "💼 Asset Mgmt / Brokerage": UNIVERSE_ASSET_MGMT,
+    # === Consumer ===
     "🛒 Retail": UNIVERSE_RETAIL,
-    "🏥 Healthcare": UNIVERSE_HEALTHCARE,
-    "🏘️ REITs": UNIVERSE_REIT,
+    "🍔 Restaurants": UNIVERSE_RESTAURANTS,
+    "🥤 Food & Beverage / CPG": UNIVERSE_FOOD_BEV,
+    "👗 Apparel / Luxury": UNIVERSE_APPAREL_LUXURY,
+    "🌿 Cannabis": UNIVERSE_CANNABIS,
+    # === Industrials / Transport ===
+    "🏭 Industrial / Machinery": UNIVERSE_INDUSTRIAL,
+    "🚂 Rail / Logistics": UNIVERSE_RAIL_LOGISTICS,
+    "✈️ Airlines / Travel": UNIVERSE_AIRLINES_TRAVEL,
+    "🏗️ Construction": UNIVERSE_CONSTRUCTION,
     "🛡️ Aerospace & Defense": UNIVERSE_AEROSPACE_DEFENSE,
+    # === Real Estate / Media / Other ===
+    "🏘️ REITs": UNIVERSE_REIT,
+    "🏠 Homebuilders": UNIVERSE_HOMEBUILDERS,
+    "📡 Telecom": UNIVERSE_TELECOM,
+    "🎬 Media / Entertainment": UNIVERSE_MEDIA,
+    "🎮 Gaming / Casinos": UNIVERSE_GAMING,
+    # === 🚀 Emerging / High-Growth sub-lists ===
+    # Narrower focus on small-caps, recent IPOs, and high-momentum themes
+    # within each broader industry — useful when the main list is dominated
+    # by mega-caps and you want to scan growth names only.
+    "🚀 Emerging AI / Quantum": UNIVERSE_EMERGING_AI,
+    "🚀 Emerging Biotech": UNIVERSE_EMERGING_BIOTECH,
+    "🚀 Emerging Mining (juniors)": UNIVERSE_EMERGING_MINING,
+    "🚀 Emerging Oil & Gas": UNIVERSE_EMERGING_OIL_GAS,
+    "🚀 Emerging EV / Battery": UNIVERSE_EMERGING_EV_BATTERY,
+    "🚀 Crypto Miners": UNIVERSE_EMERGING_CRYPTO_MINERS,
+    "🚀 Space / Drones / eVTOL": UNIVERSE_EMERGING_SPACE_DRONES,
+    "🚀 SMR / Nuclear": UNIVERSE_EMERGING_NUCLEAR,
+    "🚀 Emerging Fintech": UNIVERSE_EMERGING_FINTECH,
+    "🚀 Emerging Cybersec": UNIVERSE_EMERGING_CYBERSEC,
+    "🚀 Cannabis / Psychedelics": UNIVERSE_EMERGING_CANNABIS,
+    "🚀 Solar / Renewables (growth)": UNIVERSE_EMERGING_RENEWABLES,
 }
 
 
