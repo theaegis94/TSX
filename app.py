@@ -53,9 +53,15 @@ _maybe_clear_stale_cache()
 st.markdown(
     """
     <style>
-    /* Extra breathing room between major page sections */
+    /* Compact spacing between major page sections — was 14px which caused
+       a big empty gap under the watchlist bar before the macro row. */
     .stApp .main .block-container > div > div > div[data-testid="stVerticalBlock"] > div {
-        margin-bottom: 14px;
+        margin-bottom: 4px;
+    }
+
+    /* st.divider() defaults to ~16px top + ~16px bottom margin — tighten. */
+    .stApp hr {
+        margin: 6px 0 !important;
     }
 
     /* Make the Streamlit header's background match the page so the
