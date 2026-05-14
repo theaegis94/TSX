@@ -22,6 +22,33 @@ st.set_page_config(
 )
 
 
+# --------- auto-refresh on session start / new day ---------
+# Streamlit's st.cache_data persists across browser refreshes (server-side).
+# That meant a page refresh showed yesterday's prices when the user came back
+# the next morning. Two triggers force-clear the cache to keep data fresh:
+#   1) First run of a fresh Streamlit session (typical browser refresh in
+#      Streamlit Cloud creates a new session token → state resets → we clear).
+#   2) Calendar day has rolled over since the last clear (catches the case
+#      where session state survived overnight).
+# A manual "🔄 Refresh data" button (rendered below) lets the user force a
+# clear at any time.
+def _maybe_clear_stale_cache() -> None:
+    today_key = datetime.now().strftime("%Y-%m-%d")
+    last_day = st.session_state.get("_cache_day")
+    first_run = "_cache_initialized" not in st.session_state
+    if first_run or last_day != today_key:
+        try:
+            st.cache_data.clear()
+        except Exception:
+            pass
+        st.session_state["_cache_initialized"] = True
+        st.session_state["_cache_day"] = today_key
+        st.session_state["_cache_cleared_at"] = datetime.now()
+
+
+_maybe_clear_stale_cache()
+
+
 # Global CSS — make tabs larger, bolder, with clearer active state
 st.markdown(
     """
@@ -602,7 +629,7 @@ def _is_dark_theme() -> bool:
 
 # --------- caching wrappers ---------
 
-@st.cache_data(ttl=900, show_spinner=False)
+@st.cache_data(ttl=180, show_spinner=False)
 def cached_macro_ca() -> dict:
     return {
         "USD/CAD": ss.boc_valet("FXUSDCAD"),
@@ -613,7 +640,7 @@ def cached_macro_ca() -> dict:
     }
 
 
-@st.cache_data(ttl=900, show_spinner=False)
+@st.cache_data(ttl=180, show_spinner=False)
 def cached_macro_us() -> dict:
     return {
         "DXY": ss.yf_spot("DX-Y.NYB"),
@@ -1052,10 +1079,10 @@ def cached_metrics(ticker: str) -> dict:
     return ss.yf_metrics(ticker)
 
 
-@st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(ttl=120, show_spinner=False)
 def cached_quotes(tickers: tuple) -> dict:
-    """Watchlist tile prices. 10 min TTL — refreshed often enough to feel live
-    during market hours but not so often we burn API quota."""
+    """Watchlist tile prices. 2 min TTL — refreshes often enough to feel live
+    during market hours without burning excessive API quota."""
     return ss.fetch_watchlist_quotes(list(tickers))
 
 
@@ -1794,7 +1821,7 @@ def plt_close_cleanup(fig):
         pass
 
 
-@st.cache_data(ttl=900, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def cached_scan(tickers: tuple, period: str, interval: str,
                 strategy: str, adx_filter: bool,
                 stop_loss_pct: float | None) -> list:
@@ -1804,7 +1831,7 @@ def cached_scan(tickers: tuple, period: str, interval: str,
                    metrics_fn=cached_metrics)
 
 
-@st.cache_data(ttl=900, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def cached_top_movers(tickers: tuple, window_days: int) -> list:
     """Fetch batched OHLC for all tickers, compute window-day return.
     Returns list of dicts: {Ticker, Price, Return %, Avg Daily %}.
@@ -2468,12 +2495,16 @@ with st.sidebar:
     adx_filter = False
     stop_loss_pct = None
 
-    if st.button("🔄 Clear cache & refresh"):
+    if st.button("🔄 Refresh data now"):
         st.cache_data.clear()
+        st.session_state["_cache_cleared_at"] = datetime.now()
         st.rerun()
+    _cleared = st.session_state.get("_cache_cleared_at")
+    _cleared_str = _cleared.strftime("%H:%M:%S") if _cleared else "—"
     st.caption(
-        f"Cached 15 min (scan/macro/news), 1 hr (single). "
-        f"Last loaded: {datetime.now().strftime('%H:%M:%S')}"
+        f"Auto-refreshes on every new session and at midnight. "
+        f"TTLs: macro/quotes ~3 min, scans ~5 min.\n\n"
+        f"Data last refreshed: **{_cleared_str}**"
     )
     st.divider()
     st.caption(
