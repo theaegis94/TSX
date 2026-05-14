@@ -400,9 +400,10 @@ def fetch_watchlist_quotes(tickers: list[str]) -> dict:
     call (rate-limit-friendly). Returns {ticker: {price, prev, change_pct,
     closes_5d}}.
 
-    Uses period="10d" to ensure we get at least 6 trading days of data —
-    we need 6 to color the first day of the 5-day mini-history relative to
-    its actual prior bar.
+    Uses period="1mo" (yfinance only accepts specific period strings —
+    "10d" is silently downgraded). 1mo gives ~22 trading days; we only
+    need 6 (5 to display + 1 reference for the first displayed day's
+    direction color), so 1mo is more than enough.
 
     Bare tickers that return no data are retried with .TO (TSX-only names like HOD).
     """
@@ -411,7 +412,7 @@ def fetch_watchlist_quotes(tickers: list[str]) -> dict:
     try:
         df = yf.download(
             " ".join(tickers),
-            period="10d",
+            period="1mo",
             interval="1d",
             auto_adjust=True,
             progress=False,
@@ -436,7 +437,7 @@ def fetch_watchlist_quotes(tickers: list[str]) -> dict:
         try:
             df2 = yf.download(
                 " ".join(f"{t}.TO" for t in missing_bare),
-                period="10d", interval="1d",
+                period="1mo", interval="1d",
                 auto_adjust=True, progress=False, group_by="ticker",
             )
         except Exception:
