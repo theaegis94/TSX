@@ -1189,15 +1189,26 @@ def render_watchlist_bar(tickers: tuple) -> None:
         "div[data-testid='stHorizontalBlock'] > div:has(.wl-tile-anchor) {"
         "    border: 1px solid #5a5b5e !important;"
         "    border-radius: 10px !important;"
-        "    padding: 6px 3px !important;"
+        "    padding: 6px 4px 8px 4px !important;"
         "    background: #2a2b2e !important;"
         "    box-shadow: 0 1px 3px rgba(0,0,0,0.25);"
         "    margin: 0 !important;"
         "    min-width: 0 !important;"
+        "    overflow: hidden;"
         "}"
         "div[data-testid='stHorizontalBlock'] > div:has(.wl-tile-anchor):hover {"
         "    border-color: #7a7b7e !important;"
         "    background: #323336 !important;"
+        "}"
+        # Kill the bottom margin Streamlit adds to the last markdown block —
+        # that margin was pushing the day-change % outside the card border.
+        "div[data-testid='stHorizontalBlock'] > div:has(.wl-tile-anchor) "
+        "  div[data-testid='stVerticalBlock'] {"
+        "    gap: 2px !important;"
+        "}"
+        "div[data-testid='stHorizontalBlock'] > div:has(.wl-tile-anchor) "
+        "  div[data-testid='stMarkdownContainer'] {"
+        "    margin-bottom: 0 !important;"
         "}"
         # Force the row to never wrap — every tile stays on the same line.
         # Without this, the card border + padding pushed total width past
@@ -1280,53 +1291,58 @@ def render_watchlist_bar(tickers: tuple) -> None:
                     '<div class="wl-tile-anchor"></div>',
                     unsafe_allow_html=True,
                 )
-                # 1. Ticker button (top)
+                # 1. Ticker button (top, full width of the card)
                 cols[i].button(
                     t, key=f"tile_btn_{t}",
                     on_click=_on_tile_click, args=(t,),
                     use_container_width=True,
                 )
 
-                # 2. Target-price input (between ticker and price).
-                # Empty input = no target set.
-                t_upper = t.upper()
-                cur_tgt = targets.get(t_upper)
-                new_tgt = st.number_input(
-                    f"Target for {t}",
-                    min_value=0.0,
-                    value=float(cur_tgt) if cur_tgt else None,
-                    step=0.01,
-                    format="%.2f",
-                    key=f"tgt_{t}",
-                    label_visibility="collapsed",
-                    placeholder="🎯 Target $",
-                )
-                # Persist on change
-                if (new_tgt or 0) != (cur_tgt or 0):
-                    _set_target_price(t, new_tgt)
+                # 2. Below the ticker, a 2-column inner row:
+                #      [ Target $ input ]  [ Price / day-change % ]
+                # Target on the left, price + percent stacked on the right.
+                inner_l, inner_r = st.columns([1, 1], gap="small")
 
-                # 3. Price + change (below target).
-                q = quotes.get(t)
-                if not q:
-                    st.markdown(
-                        '<div style="text-align:center; color:#6b7280; '
-                        'font-size:0.75rem; line-height:1.1;">—<br>—</div>',
-                        unsafe_allow_html=True,
+                with inner_l:
+                    t_upper = t.upper()
+                    cur_tgt = targets.get(t_upper)
+                    new_tgt = st.number_input(
+                        f"Target for {t}",
+                        min_value=0.0,
+                        value=float(cur_tgt) if cur_tgt else None,
+                        step=0.01,
+                        format="%.2f",
+                        key=f"tgt_{t}",
+                        label_visibility="collapsed",
+                        placeholder="🎯 $",
                     )
-                    continue
-                chg = q["change_pct"]
-                color = "#16a34a" if chg >= 0 else "#dc2626"
-                arrow = "▲" if chg >= 0 else "▼"
-                sign = "+" if chg >= 0 else ""
-                st.markdown(
-                    f'<div style="text-align:center; line-height:1.25;">'
-                    f'<span style="font-size:1.05rem; font-weight:600;">${q["price"]:.2f}</span>'
-                    f'<br>'
-                    f'<span style="font-size:0.9rem; color:{color}; font-weight:600;">'
-                    f'{arrow} {sign}{chg:.2f}%</span>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
+                    # Persist on change
+                    if (new_tgt or 0) != (cur_tgt or 0):
+                        _set_target_price(t, new_tgt)
+
+                with inner_r:
+                    q = quotes.get(t)
+                    if not q:
+                        st.markdown(
+                            '<div style="text-align:center; color:#6b7280; '
+                            'font-size:0.75rem; line-height:1.1;">—<br>—</div>',
+                            unsafe_allow_html=True,
+                        )
+                    else:
+                        chg = q["change_pct"]
+                        color = "#16a34a" if chg >= 0 else "#dc2626"
+                        arrow = "▲" if chg >= 0 else "▼"
+                        sign = "+" if chg >= 0 else ""
+                        st.markdown(
+                            f'<div style="text-align:center; line-height:1.15;">'
+                            f'<span style="font-size:0.9rem; font-weight:700; color:#f0f0f0;">'
+                            f'${q["price"]:.2f}</span>'
+                            f'<br>'
+                            f'<span style="font-size:0.72rem; color:{color}; font-weight:600;">'
+                            f'{arrow}{sign}{chg:.2f}%</span>'
+                            f'</div>',
+                            unsafe_allow_html=True,
+                        )
 
 
 def _open_dialog_for(ticker: str):
