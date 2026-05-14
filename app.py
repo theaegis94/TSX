@@ -2089,6 +2089,106 @@ def cached_top_movers(tickers: tuple, window_days: int) -> list:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
+def cached_inception_trend(tickers: tuple) -> list:
+    """For each ticker, fit a linear regression on log(price) vs time over
+    the FULL price history (period='max') and return trend-quality metrics.
+
+    A "forever uptrend" ticker has:
+      • positive slope (compounding annual growth rate > 0)
+      • high R² (price stayed close to its trendline — few big detours)
+      • limited max drawdown (the uptrend wasn't a 90%-crash-and-back ride)
+
+    Returns list of dicts:
+      {Ticker, Price, Years, Total Return %, CAGR %, R², Max DD %, Score}
+    where Score = CAGR × R² × (1 - |max_dd|/200), so bigger = steadier uptrend.
+    """
+    import numpy as np
+    if not tickers:
+        return []
+    batches = [tickers[i:i + 100] for i in range(0, len(tickers), 100)]
+    rows: list[dict] = []
+    for batch in batches:
+        try:
+            df = yf.download(
+                " ".join(batch), period="max", interval="1d",
+                auto_adjust=True, progress=False, group_by="ticker",
+                threads=True,
+            )
+        except Exception:
+            continue
+        if df is None or df.empty:
+            continue
+        for t in batch:
+            try:
+                if isinstance(df.columns, pd.MultiIndex):
+                    if t not in df.columns.get_level_values(0):
+                        continue
+                    td = df[t]["Close"].dropna()
+                else:
+                    td = df["Close"].dropna()
+                # Need at least ~6 months of history to compute a meaningful
+                # long-term trend; under that, the regression is noise.
+                if len(td) < 126:
+                    continue
+                first_price = float(td.iloc[0])
+                last_price = float(td.iloc[-1])
+                if first_price <= 0 or last_price <= 0:
+                    continue
+                days = (td.index[-1] - td.index[0]).days
+                years = max(days / 365.25, 0.5)
+                total_return = (last_price / first_price - 1) * 100
+                # CAGR — geometric annualized return
+                cagr = (((last_price / first_price) ** (1 / years)) - 1) * 100
+                # Linear regression on log(price) vs bar-index. Log makes
+                # exponential growth (like compounding) look linear, so R²
+                # reflects "consistency of compounding" not raw shape.
+                log_p = np.log(td.values.astype(float))
+                x = np.arange(len(log_p), dtype=float)
+                if np.std(x) == 0 or np.std(log_p) == 0:
+                    continue
+                slope, intercept = np.polyfit(x, log_p, 1)
+                yhat = slope * x + intercept
+                ss_res = float(np.sum((log_p - yhat) ** 2))
+                ss_tot = float(np.sum((log_p - log_p.mean()) ** 2))
+                r2 = 1.0 - (ss_res / ss_tot) if ss_tot > 0 else 0.0
+                # Skip pure noise / flat-line / declining names — we only
+                # want uptrends.
+                if slope <= 0 or cagr <= 0:
+                    continue
+                # Max drawdown over the whole history
+                cummax = np.maximum.accumulate(td.values)
+                drawdown = (td.values - cummax) / cummax
+                max_dd = float(drawdown.min()) * 100
+                # Composite score — penalize big drawdowns and reward both
+                # high CAGR and high R².
+                score = cagr * max(r2, 0) * (1 - min(abs(max_dd) / 200, 0.95))
+                # Current RSI(14) — useful for finding compounders that are
+                # currently oversold (dip-buying setup) or overbought (riding
+                # momentum). Falls back to None if too few bars.
+                try:
+                    rsi_now = float(ss.rsi(td, 14).iloc[-1])
+                    if not np.isfinite(rsi_now):
+                        rsi_now = None
+                except Exception:
+                    rsi_now = None
+                rows.append({
+                    "Ticker": t,
+                    "Price": round(last_price, 2),
+                    "Years": round(years, 1),
+                    "Total Return %": round(total_return, 1),
+                    "CAGR %": round(cagr, 1),
+                    "R²": round(r2, 3),
+                    "Max DD %": round(max_dd, 1),
+                    "RSI": (round(rsi_now, 1)
+                            if rsi_now is not None else None),
+                    "Score": round(score, 2),
+                })
+            except Exception:
+                continue
+    return rows
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
 def cached_single(ticker: str, period: str, interval: str,
                   strategy: str, adx_filter: bool,
                   stop_loss_pct: float | None):
@@ -3173,12 +3273,14 @@ with tab_single:
 
 # === Screener tab ===
 with tab_screener:
-    (sc_tab1, sc_tab2, sc_tab3, sc_tab4, sc_tab5) = st.tabs([
+    (sc_tab1, sc_tab2, sc_tab3, sc_tab4, sc_tab5,
+     sc_tab6) = st.tabs([
         "🎯 BUY Screener",
         "📊 Strategy Leaderboard",
         "🎯 Winning Tickers",
         "🏆 Top Movers",
         "🪨 TSXV Mining Catalysts",
+        "📈 Forever Uptrend",
     ])
 
     with sc_tab1:
@@ -4400,6 +4502,236 @@ with tab_screener:
                             "move, low-coverage ticker, or genuine momentum "
                             "without news."
                         )
+
+    with sc_tab6:
+        st.divider()
+        st.subheader("📈 Forever Uptrend")
+        st.caption(
+            "Find tickers whose **entire price history** trends up. Fits a "
+            "log-linear regression on every bar since the company started "
+            "trading and ranks names with high CAGR, high R² (consistent "
+            "compounding — not a one-time pump), and limited drawdowns."
+        )
+
+        ft_col1, ft_col2 = st.columns([2, 1])
+        ft_options = [
+            "S&P 100 (~100)",
+            "S&P 500 (~500 — slow)",
+            "TSX 60 (~60)",
+            "TSX Composite (~250)",
+            "Entire TSX (~1500, slow)",
+            "Popular ETFs (~80)",
+            "Custom watchlist",
+        ] + [
+            f"{lbl} ({len(tk)})"
+            for lbl, tk in ss.INDUSTRY_UNIVERSES.items()
+        ]
+        ft_universe = ft_col1.selectbox(
+            "Universe",
+            options=ft_options,
+            index=0,
+            key="ft_universe",
+        )
+        ft_topn = ft_col2.number_input(
+            "Show top N",
+            min_value=10, max_value=200, value=50, step=10,
+            key="ft_topn",
+        )
+
+        # Quality thresholds — sliders so the user can tune "what counts as
+        # a real uptrend" vs. a marginal one.
+        ft_col3, ft_col4, ft_col5 = st.columns([1, 1, 1])
+        ft_min_cagr = ft_col3.slider(
+            "Min CAGR %",
+            min_value=0, max_value=50, value=10, step=1,
+            key="ft_min_cagr",
+            help="Compounding annual return floor. 10% ≈ S&P average.",
+        )
+        ft_min_r2 = ft_col4.slider(
+            "Min R²",
+            min_value=0.0, max_value=1.0, value=0.70, step=0.05,
+            key="ft_min_r2",
+            help="How tightly the price hugs its trendline (1.0 = perfect "
+                 "exponential growth, 0.5 = noisy uptrend).",
+        )
+        ft_min_years = ft_col5.slider(
+            "Min years of history",
+            min_value=1, max_value=20, value=3, step=1,
+            key="ft_min_years",
+            help="Skip recent IPOs — uptrends mean little with <3 yrs data.",
+        )
+
+        # Current-RSI filter — drag both handles to pick the RSI band you
+        # want the long-term compounder to be in RIGHT NOW. Common uses:
+        #   • 0–35   → forever-uptrenders currently oversold (dip-buy)
+        #   • 30–70  → "normal" RSI — middle of the trend
+        #   • 70–100 → already running hot, momentum chase
+        # Default 0–100 = no filter.
+        ft_rsi_range = st.slider(
+            "Current RSI(14) filter",
+            min_value=0, max_value=100, value=(0, 100), step=1,
+            key="ft_rsi_range",
+            help="Filter by today's RSI value. Set 0–35 to find forever-"
+                 "uptrend names currently in an oversold dip; 70–100 to "
+                 "see ones already running.",
+        )
+
+        if st.button("📈 Find forever uptrenders",
+                     key="ft_run", type="primary"):
+            with st.spinner("Loading universe…"):
+                if ft_universe == "Custom watchlist":
+                    tickers = [t.strip().upper() for t in
+                               st.session_state.get("watchlist_input", "")
+                                    .split(",") if t.strip()]
+                elif ft_universe == "TSX 60 (~60)":
+                    tickers = list(ss.UNIVERSE_TSX60)
+                elif ft_universe == "TSX Composite (~250)":
+                    tickers = ss.get_tsx_composite()
+                elif ft_universe == "Entire TSX (~1500, slow)":
+                    tickers = ss.get_full_tsx_listing("tsx")
+                elif ft_universe == "S&P 100 (~100)":
+                    tickers = list(ss.UNIVERSE_SP100)
+                elif ft_universe == "S&P 500 (~500 — slow)":
+                    tickers = ss.get_sp500()
+                elif ft_universe == "Popular ETFs (~80)":
+                    tickers = list(ss.UNIVERSE_POPULAR_ETFS)
+                else:
+                    # Industry universes
+                    tickers = []
+                    for lbl, tk in ss.INDUSTRY_UNIVERSES.items():
+                        if ft_universe.startswith(lbl):
+                            tickers = list(tk)
+                            break
+
+            if not tickers:
+                st.warning("Universe is empty.")
+            else:
+                with st.spinner(
+                    f"Fetching full history for {len(tickers)} tickers… "
+                    "(this may take a few minutes for big universes)"
+                ):
+                    rows = cached_inception_trend(tuple(tickers))
+                st.session_state["ft_results"] = {
+                    "rows": rows,
+                    "universe": ft_universe,
+                    "scanned": len(tickers),
+                }
+
+        # Render results
+        ft_res = st.session_state.get("ft_results")
+        if ft_res:
+            rows = ft_res["rows"]
+            if not rows:
+                st.info("No tickers passed the long-term-uptrend filter.")
+            else:
+                # Apply user filters. RSI range is only enforced when the
+                # user has narrowed it from the default 0–100 (so we don't
+                # accidentally drop names whose RSI we couldn't compute).
+                rsi_lo, rsi_hi = ft_rsi_range
+                rsi_active = (rsi_lo > 0) or (rsi_hi < 100)
+                filtered = []
+                for r in rows:
+                    if r["CAGR %"] < ft_min_cagr:
+                        continue
+                    if r["R²"] < ft_min_r2:
+                        continue
+                    if r["Years"] < ft_min_years:
+                        continue
+                    if rsi_active:
+                        rsi_val = r.get("RSI")
+                        if rsi_val is None or not (
+                            rsi_lo <= rsi_val <= rsi_hi
+                        ):
+                            continue
+                    filtered.append(r)
+                # Sort by composite score (CAGR × R² × drawdown penalty)
+                filtered.sort(key=lambda r: r["Score"], reverse=True)
+                filtered = filtered[:int(ft_topn)]
+
+                _rsi_note = (
+                    f", RSI {rsi_lo}–{rsi_hi}" if rsi_active else ""
+                )
+                st.caption(
+                    f"Scanned **{ft_res['scanned']} tickers** in "
+                    f"**{ft_res['universe']}**. "
+                    f"{len(rows)} returned valid data, "
+                    f"**{len(filtered)} passed** filters "
+                    f"(CAGR ≥ {ft_min_cagr}%, R² ≥ {ft_min_r2:.2f}, "
+                    f"≥ {ft_min_years}y history{_rsi_note})."
+                )
+
+                if not filtered:
+                    st.warning(
+                        "No tickers passed the current filters. Try lowering "
+                        "Min CAGR or Min R²."
+                    )
+                else:
+                    df_ft = pd.DataFrame(filtered)
+                    # Ticker chips for quick visual scan
+                    chips = []
+                    for r in filtered[:30]:
+                        t = r["Ticker"]
+                        cagr = r["CAGR %"]
+                        href = _chip_href(t, from_tab="Screener")
+                        chips.append(
+                            f"<a href='{href}' target='_self' "
+                            f"style='background:#16a34a; color:#fff; "
+                            "padding:3px 9px; border-radius:8px; "
+                            "font-size:0.78rem; font-weight:700; "
+                            "margin:3px; text-decoration:none; "
+                            "display:inline-block;' "
+                            f"title='Open {t} chart'>{t} "
+                            f"{cagr:+.1f}%/yr</a>"
+                        )
+                    st.markdown(
+                        "<div style='padding:8px; border-radius:8px; "
+                        "background:rgba(22,163,74,0.06); "
+                        "border:1px solid rgba(22,163,74,0.25); "
+                        "margin-bottom:10px;'>"
+                        + "".join(chips) + "</div>",
+                        unsafe_allow_html=True,
+                    )
+
+                    # Full table — sortable in Streamlit
+                    st.dataframe(
+                        df_ft,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Price": st.column_config.NumberColumn(
+                                format="$%.2f"),
+                            "Total Return %": st.column_config.NumberColumn(
+                                format="%+.1f%%"),
+                            "CAGR %": st.column_config.NumberColumn(
+                                format="%+.1f%%"),
+                            "Max DD %": st.column_config.NumberColumn(
+                                format="%.1f%%"),
+                            "R²": st.column_config.NumberColumn(
+                                format="%.3f"),
+                            "Years": st.column_config.NumberColumn(
+                                format="%.1f"),
+                            "RSI": st.column_config.NumberColumn(
+                                format="%.1f",
+                                help="Current RSI(14). <30 oversold, "
+                                     ">70 overbought.",
+                            ),
+                            "Score": st.column_config.NumberColumn(
+                                format="%.2f",
+                                help="CAGR × R² × drawdown penalty — "
+                                     "higher = steadier compounder.",
+                            ),
+                        },
+                    )
+                    st.caption(
+                        "**How to read this:** *CAGR* = compounding "
+                        "annual return. *R²* near 1.0 means the price "
+                        "stayed glued to its trendline (a steady "
+                        "compounder); R² near 0.5 means choppy. "
+                        "*Max DD* is the worst peak-to-trough drop in "
+                        "the entire history — context for whether "
+                        "you could have held through it. *Score* "
+                        "combines all three."
+                    )
 
 
 # === Custom Patterns tab ===
