@@ -3660,6 +3660,133 @@ UNIVERSE_ASSET_MGMT = [
     "GS.TO", "BIP-UN.TO",
 ]
 
+
+# === 🤝 BIG-TECH PARTNERSHIP PLAYS ===
+# Small/mid-caps positioned in the supply chain of a megacap. The thesis:
+# any time NVDA / AAPL / TSLA / MSFT / AMZN announces a new product cycle,
+# capex spend, or strategic partner, these names move on the read-through.
+# Curated for confirmed supplier status or strong rumor-mill partnership track.
+
+# Companies feeding NVIDIA's data-center build-out: liquid cooling, power,
+# optical interconnects, advanced packaging, networking silicon. When NVDA
+# guides up, these tend to gap up the same morning.
+UNIVERSE_NVIDIA_ECOSYSTEM = [
+    # Server / system integrators
+    "SMCI", "DELL", "HPE", "PSTG", "NTAP",
+    # Liquid cooling & thermal
+    "VRT", "MOD", "BLDR", "AAON",
+    # Power / electrical infra
+    "ETN", "GEV", "PWR", "ATKR", "HUBB", "POWL",
+    # Optical / networking silicon
+    "ANET", "AVGO", "MRVL", "ALAB", "CRDO", "LITE",
+    "COHR", "FN", "AAOI", "POET",
+    # Advanced packaging / HBM / DRAM-adjacent
+    "MU", "AMAT", "LRCX", "KLAC", "ASML", "TER",
+    # Foundry / fab equipment
+    "ACMR", "AEHR", "ICHR", "ONTO", "UCTT",
+    # AI-software partners often joint-announced with NVDA
+    "PLTR", "AI", "SOUN", "BBAI",
+]
+
+# Suppliers to the AWS / Azure / GCP / Meta data-center buildout.
+# Overlap with NVIDIA list but broader: includes utilities serving data-center
+# load, cable/fiber, REITs that lease to hyperscalers, real-estate
+# beneficiaries of $300B+ annual capex.
+UNIVERSE_HYPERSCALER_SUPPLIERS = [
+    # Data-center REITs
+    "DLR", "EQIX", "IRM", "AMT", "SBAC",
+    # Utilities serving data-center growth
+    "VST", "CEG", "TLN", "NRG", "PCG", "AEP",
+    "D", "DUK", "SO", "EXC", "PEG",
+    # Power equipment / grid
+    "ETN", "GEV", "PWR", "MYRG", "PRIM", "MTZ",
+    # Fiber / interconnect
+    "LUMN", "CIEN", "INFN", "EXTR",
+    # Cooling / HVAC
+    "JCI", "TT", "CARR", "LII", "WTS",
+    # Server / storage / memory
+    "WDC", "STX", "MU", "ANET",
+    # Data-center software / orchestration
+    "NTNX", "VRT", "DDOG", "MDB", "ESTC", "CFLT", "SNOW",
+]
+
+# Companies in Apple's supply chain — iPhone, Mac, Vision Pro, AI features.
+# A Tim Cook event or earnings beat lifts the whole basket.
+UNIVERSE_APPLE_SUPPLY_CHAIN = [
+    # Analog / RF / PA
+    "QRVO", "SWKS", "AVGO", "QCOM", "CRUS", "SLAB",
+    # Memory / storage
+    "WDC", "MU", "STX",
+    # Sensors / camera / haptics
+    "STM", "ON", "AMBA", "LSCC", "SYNA",
+    # Displays / OLED-adjacent
+    "CRUS", "HIMX", "AMD",
+    # Optical / lasers (Face ID, LiDAR)
+    "LITE", "COHR", "IIVI", "MTSI", "VIAV",
+    # Connectors / cables / PCB
+    "APH", "TEL", "GLW", "FLEX", "JBL", "SANM", "BHE",
+    # Foundry-adjacent (TSMC reads through)
+    "TSM", "ASML", "LRCX", "AMAT",
+]
+
+# Tesla / Ford / GM / Rivian battery + EV supply chain. Splits between
+# pure-play battery science, charging infra, autonomy/LiDAR, and software.
+UNIVERSE_TESLA_EV_ECOSYSTEM = [
+    # Tesla itself + adjacent OEMs
+    "TSLA", "RIVN", "LCID", "F", "GM",
+    # Battery tech / solid-state
+    "QS", "SLDP", "MVST", "FREY", "ENVX",
+    "ABML", "AMPX",
+    # Lithium / cathode upstream
+    "ALB", "LTHM", "SQM", "LAC", "PLL",
+    "SGML", "AMLI", "IONR",
+    # Charging infrastructure
+    "CHPT", "BLNK", "EVGO", "WBX",
+    # Autonomy / LiDAR / ADAS
+    "MBLY", "AUR", "LAZR", "INVZ", "OUST", "CGNX",
+    "NVDA", "AMBA",
+    # Power electronics / silicon carbide
+    "WOLF", "ON", "STM", "POWI", "TXN", "IFNNY",
+    # Battery management / fleet software
+    "STEM", "FLNC", "DRVN", "GRAB",
+]
+
+# SpaceX / Lockheed / Northrop ecosystem. Small caps with DoD contracts,
+# space-launch payload providers, defense software/AI.
+UNIVERSE_DEFENSE_SPACE_ECOSYSTEM = [
+    # Space pure-plays
+    "RKLB", "ASTS", "LUNR", "RDW", "PL", "BKSY",
+    "SPIR", "MNTS", "ARQQ",
+    # Defense primes (read-through anchors)
+    "LMT", "RTX", "NOC", "GD", "BA",
+    # Defense tech / AI / cyber
+    "PLTR", "KTOS", "MRCY", "AVAV", "BBAI", "IDR",
+    "DRS", "PSN", "BWXT", "HII",
+    # Drone / counter-drone / hypersonic
+    "AVAV", "ONDS", "RCAT", "UAVS", "KTOS",
+    # Satellite comms
+    "IRDM", "VSAT", "GSAT", "GILT",
+]
+
+# Big-pharma AI drug-discovery partners. Recursion (RXRX), Schrodinger
+# (SDGR), and AbCellera (ABCL) have publicly disclosed deals with Roche,
+# Sanofi, Bayer, etc. AI-first biotech is one of the hottest partnership
+# themes — every pharma giant is shopping for an AI co-discovery deal.
+UNIVERSE_AI_PHARMA_PARTNERS = [
+    # AI drug-discovery pure-plays
+    "RXRX", "SDGR", "ABCL", "ABSI", "EXAI",
+    "RLAY", "VERV", "GRPH", "TWST",
+    # Big pharma partner anchors (read-through)
+    "PFE", "MRK", "BMY", "LLY", "JNJ",
+    "AZN", "NVS", "GSK", "SNY", "RHHBY",
+    # Clinical-trial / data partners
+    "VEEV", "DOCS", "ICLR", "IQV", "MEDP",
+    # Genomics / sequencing infra
+    "ILMN", "PACB", "TXG", "NTLA",
+    # AI imaging / digital health
+    "TEM", "GH", "EXAS", "NTRA", "HIMS",
+]
+
 # Master dict: emoji + label → ticker list
 # Used by universe selectors so a user can pick "Industry: AI / Tech"
 INDUSTRY_UNIVERSES = {
@@ -3726,6 +3853,16 @@ INDUSTRY_UNIVERSES = {
     "🚀 Emerging Cybersec": UNIVERSE_EMERGING_CYBERSEC,
     "🚀 Cannabis / Psychedelics": UNIVERSE_EMERGING_CANNABIS,
     "🚀 Solar / Renewables (growth)": UNIVERSE_EMERGING_RENEWABLES,
+    # === 🤝 Big-Tech Partnership Plays ===
+    # Suppliers / partners that move on big-tech capex announcements.
+    # Use when you want to ride a megacap product cycle without buying
+    # the megacap itself.
+    "🤝 NVIDIA Ecosystem": UNIVERSE_NVIDIA_ECOSYSTEM,
+    "🤝 Hyperscaler / Cloud Suppliers": UNIVERSE_HYPERSCALER_SUPPLIERS,
+    "🤝 Apple Supply Chain": UNIVERSE_APPLE_SUPPLY_CHAIN,
+    "🤝 Tesla / EV Ecosystem": UNIVERSE_TESLA_EV_ECOSYSTEM,
+    "🤝 Defense / SpaceX Ecosystem": UNIVERSE_DEFENSE_SPACE_ECOSYSTEM,
+    "🤝 AI Drug-Discovery Partners": UNIVERSE_AI_PHARMA_PARTNERS,
 }
 
 
