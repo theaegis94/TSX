@@ -227,13 +227,30 @@ def _quote_from_df(df, t: str) -> dict | None:
             return None
         last = float(closes.iloc[-1])
         prev = float(closes.iloc[-2])
-        # Last 5 closes as (date_str, price) tuples for the watchlist tile
-        # 5-day mini-history. Oldest first → newest last.
-        recent_5 = closes.tail(5)
-        closes_5d = [
-            (idx.strftime("%a"), float(val))
-            for idx, val in recent_5.items()
-        ]
+        # Build the 5-day mini-history for the watchlist tile. We grab 6
+        # bars (5 to display + 1 reference) so we can color the FIRST
+        # displayed bar against its true prior day, not against itself.
+        # Falls back gracefully if we have fewer than 6 bars.
+        window = closes.tail(6)
+        win_vals = list(window.items())  # (Timestamp, value)
+        display = win_vals[-5:]  # always at most 5 to show
+        closes_5d = []
+        for i, (idx, val) in enumerate(display):
+            # Index of this bar in the full window; we need the bar before
+            # it for the up/down comparison.
+            pos_in_window = win_vals.index((idx, val))
+            if pos_in_window == 0:
+                # Genuinely no prior bar (history < 6 bars) — grey
+                direction = "flat"
+            else:
+                prior = win_vals[pos_in_window - 1][1]
+                if val > prior:
+                    direction = "up"
+                elif val < prior:
+                    direction = "down"
+                else:
+                    direction = "flat"
+            closes_5d.append((idx.strftime("%a"), float(val), direction))
         return {
             "price": last,
             "prev": prev,
@@ -380,7 +397,12 @@ def _screen_batch(df, tickers, rsi_threshold, lookback_bars,
 
 def fetch_watchlist_quotes(tickers: list[str]) -> dict:
     """Latest price + day change for a list of tickers, in ONE batched yf.download
-    call (rate-limit-friendly). Returns {ticker: {price, prev, change_pct}}.
+    call (rate-limit-friendly). Returns {ticker: {price, prev, change_pct,
+    closes_5d}}.
+
+    Uses period="10d" to ensure we get at least 6 trading days of data —
+    we need 6 to color the first day of the 5-day mini-history relative to
+    its actual prior bar.
 
     Bare tickers that return no data are retried with .TO (TSX-only names like HOD).
     """
@@ -389,7 +411,7 @@ def fetch_watchlist_quotes(tickers: list[str]) -> dict:
     try:
         df = yf.download(
             " ".join(tickers),
-            period="5d",
+            period="10d",
             interval="1d",
             auto_adjust=True,
             progress=False,
@@ -414,7 +436,7 @@ def fetch_watchlist_quotes(tickers: list[str]) -> dict:
         try:
             df2 = yf.download(
                 " ".join(f"{t}.TO" for t in missing_bare),
-                period="5d", interval="1d",
+                period="10d", interval="1d",
                 auto_adjust=True, progress=False, group_by="ticker",
             )
         except Exception:

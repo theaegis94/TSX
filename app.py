@@ -1384,27 +1384,24 @@ def render_watchlist_bar(tickers: tuple) -> None:
                     #   penny stocks → 3 decimals
                     #   single-dollar → 2 decimals
                     #   above $100 → 1 decimal (saves horizontal space)
-                    max_px = max(p for _, p in history)
+                    max_px = max(item[1] for item in history)
                     if max_px < 1:
                         fmt = "{:.3f}"
                     elif max_px < 100:
                         fmt = "{:.2f}"
                     else:
                         fmt = "{:.1f}"
+                    # Each item is (day_label, price, direction) — direction
+                    # is pre-computed against the true prior bar (we fetch 6
+                    # bars to make this possible for the first displayed
+                    # day too, no more grey first-bar).
                     cells = []
-                    for idx, (day_lbl, px) in enumerate(history):
-                        if idx == 0:
-                            # No prior day in the 5-bar window to compare —
-                            # render neutral grey.
-                            cell_color = "#9ca3af"
-                        else:
-                            prior_px = history[idx - 1][1]
-                            if px > prior_px:
-                                cell_color = "#16a34a"
-                            elif px < prior_px:
-                                cell_color = "#dc2626"
-                            else:
-                                cell_color = "#9ca3af"
+                    for day_lbl, px, direction in history:
+                        cell_color = {
+                            "up": "#16a34a",
+                            "down": "#dc2626",
+                            "flat": "#9ca3af",
+                        }.get(direction, "#9ca3af")
                         cells.append(
                             f'<div style="flex:1; text-align:center; '
                             f'line-height:1.15; padding:1px 0;">'
