@@ -412,6 +412,61 @@ def _save_watchlists(d: dict) -> None:
         pass
 
 
+# --------- per-ticker target prices ---------
+# Stored in target_prices.json as {TICKER: float}. Independent of watchlist
+# membership — a target survives even if you remove the ticker, and is shared
+# across all named watchlists (a $TSLA target of $300 means $300 regardless
+# of which list TSLA is in).
+TARGET_PRICES_PATH = pathlib.Path("target_prices.json")
+
+
+def _load_target_prices() -> dict:
+    if not TARGET_PRICES_PATH.exists():
+        return {}
+    try:
+        data = json.loads(TARGET_PRICES_PATH.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            out = {}
+            for k, v in data.items():
+                if v is None:
+                    continue
+                try:
+                    fv = float(v)
+                    if fv > 0:
+                        out[str(k).upper()] = fv
+                except (TypeError, ValueError):
+                    continue
+            return out
+    except Exception:
+        pass
+    return {}
+
+
+def _save_target_prices(d: dict) -> None:
+    try:
+        TARGET_PRICES_PATH.write_text(
+            json.dumps(d, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+
+
+def _set_target_price(ticker: str, price: float | None) -> None:
+    """Persist a target price for a ticker. Pass None or 0 to clear."""
+    targets = st.session_state.setdefault(
+        "_target_prices", _load_target_prices()
+    )
+    t = ticker.strip().upper()
+    if not t:
+        return
+    if price is None or price <= 0:
+        targets.pop(t, None)
+    else:
+        targets[t] = float(price)
+    _save_target_prices(targets)
+
+
 def _set_active_watchlist(name: str) -> None:
     """Switch active list. Updates session state + URL."""
     all_lists = st.session_state.get("_all_watchlists", {})
@@ -1119,6 +1174,10 @@ def render_watchlist_bar(tickers: tuple) -> None:
     if not tickers:
         return
     quotes = cached_quotes(tickers)
+    # Hydrate target-price map into session_state once per run
+    targets = st.session_state.setdefault(
+        "_target_prices", _load_target_prices()
+    )
 
     # CSS to make tile buttons more compact + look like cards
     st.markdown(
@@ -1138,6 +1197,22 @@ def render_watchlist_bar(tickers: tuple) -> None:
         "  div.stButton > button:hover {"
         "    border-color: #6b7280;"
         "    background: #374151;"
+        "}"
+        # Compact number-input for the target-price box — shrink padding,
+        # hide the +/- spinner buttons, smaller font so it fits in the tile.
+        "div[data-testid='stHorizontalBlock'] div[data-testid='stVerticalBlock'] "
+        "  div[data-testid='stNumberInput'] input {"
+        "    font-size: 0.72rem !important;"
+        "    padding: 2px 4px !important;"
+        "    height: 24px !important;"
+        "    text-align: center;"
+        "    background: #111827 !important;"
+        "    color: #e5e7eb !important;"
+        "    border: 1px solid #374151 !important;"
+        "}"
+        "div[data-testid='stHorizontalBlock'] div[data-testid='stVerticalBlock'] "
+        "  div[data-testid='stNumberInput'] button {"
+        "    display: none !important;"
         "}"
         "</style>",
         unsafe_allow_html=True,
@@ -1175,6 +1250,46 @@ def render_watchlist_bar(tickers: tuple) -> None:
                     f'</div>',
                     unsafe_allow_html=True,
                 )
+
+                # Manual target-price entry. Empty = no target.
+                t_upper = t.upper()
+                cur_tgt = targets.get(t_upper)
+                new_tgt = st.number_input(
+                    f"Target for {t}",
+                    min_value=0.0,
+                    value=float(cur_tgt) if cur_tgt else None,
+                    step=0.01,
+                    format="%.2f",
+                    key=f"tgt_{t}",
+                    label_visibility="collapsed",
+                    placeholder="🎯 Target $",
+                )
+                # Persist on change
+                if (new_tgt or 0) != (cur_tgt or 0):
+                    _set_target_price(t, new_tgt)
+
+                # Distance to target indicator
+                if new_tgt and new_tgt > 0:
+                    diff_pct = (q["price"] - new_tgt) / new_tgt * 100
+                    if diff_pct >= 0:
+                        tgt_color = "#16a34a"
+                        tgt_label = f"✓ {diff_pct:+.1f}%"
+                    else:
+                        tgt_color = "#f59e0b"
+                        tgt_label = f"{diff_pct:+.1f}%"
+                    st.markdown(
+                        f'<div style="text-align:center; font-size:0.7rem; '
+                        f'color:{tgt_color}; font-weight:600; '
+                        f'margin-top:-2px; line-height:1.1;">'
+                        f'{tgt_label}</div>',
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    # Spacer so tiles with/without targets line up vertically
+                    st.markdown(
+                        '<div style="height:14px;"></div>',
+                        unsafe_allow_html=True,
+                    )
 
 
 def _open_dialog_for(ticker: str):
@@ -2042,6 +2157,21 @@ def _render_save_url_banner():
 
 _render_save_url_banner()
 render_quick_analysis()
+
+# Top-right "data refreshed at" chip — small, right-aligned, sits above the
+# macro row so the user always knows how fresh the prices on screen are.
+_cleared = st.session_state.get("_cache_cleared_at")
+_cleared_str = _cleared.strftime("%H:%M:%S") if _cleared else "—"
+_cleared_date = _cleared.strftime("%b %d") if _cleared else ""
+st.markdown(
+    f'<div style="text-align:right; font-size:0.78rem; color:#9ca3af; '
+    f'margin-top:-4px; margin-bottom:4px;">'
+    f'🕒 Tickers refreshed: '
+    f'<b style="color:#e5e7eb;">{_cleared_str}</b>'
+    f'<span style="color:#6b7280;"> &nbsp;·&nbsp; {_cleared_date}</span>'
+    f'</div>',
+    unsafe_allow_html=True,
+)
 
 # Macro context — view selected from sidebar
 _macro_view = st.session_state.get("macro_view", "🇨🇦 Canada")
