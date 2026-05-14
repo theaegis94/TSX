@@ -1373,6 +1373,45 @@ def render_watchlist_bar(tickers: tuple) -> None:
                             unsafe_allow_html=True,
                         )
 
+                # 3. 5-day mini-history (below the target/price row, full
+                # width of the tile). Each closing price is color-coded
+                # green/red vs the prior day. Day labels (Mon/Tue/etc.)
+                # above each price.
+                q = quotes.get(t)
+                if q and q.get("closes_5d"):
+                    history = q["closes_5d"]
+                    cells = []
+                    for idx, (day_lbl, px) in enumerate(history):
+                        if idx == 0:
+                            # No prior day in the 5-bar window to compare —
+                            # render neutral grey.
+                            cell_color = "#9ca3af"
+                        else:
+                            prior_px = history[idx - 1][1]
+                            if px > prior_px:
+                                cell_color = "#16a34a"
+                            elif px < prior_px:
+                                cell_color = "#dc2626"
+                            else:
+                                cell_color = "#9ca3af"
+                        cells.append(
+                            f'<div style="flex:1; text-align:center; '
+                            f'line-height:1.0;">'
+                            f'<div style="font-size:0.55rem; '
+                            f'color:#6b7280;">{day_lbl}</div>'
+                            f'<div style="font-size:0.65rem; '
+                            f'color:{cell_color}; font-weight:600;">'
+                            f'{px:.2f}</div>'
+                            f'</div>'
+                        )
+                    st.markdown(
+                        '<div style="display:flex; gap:1px; '
+                        'margin-top:3px; padding:2px 0; '
+                        'border-top:1px dashed #4a4b4e;">'
+                        + "".join(cells) + "</div>",
+                        unsafe_allow_html=True,
+                    )
+
         # Horizontal divider between every row (including after the last
         # row — that one acts as the bottom border of the watchlist).
         # Uses the .wl-row-divider class so its margin is tight, not the

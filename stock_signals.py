@@ -227,10 +227,18 @@ def _quote_from_df(df, t: str) -> dict | None:
             return None
         last = float(closes.iloc[-1])
         prev = float(closes.iloc[-2])
+        # Last 5 closes as (date_str, price) tuples for the watchlist tile
+        # 5-day mini-history. Oldest first → newest last.
+        recent_5 = closes.tail(5)
+        closes_5d = [
+            (idx.strftime("%a"), float(val))
+            for idx, val in recent_5.items()
+        ]
         return {
             "price": last,
             "prev": prev,
             "change_pct": (last - prev) / prev * 100 if prev else 0.0,
+            "closes_5d": closes_5d,
         }
     except (KeyError, AttributeError, ValueError, IndexError):
         return None
