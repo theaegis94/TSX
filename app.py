@@ -1328,23 +1328,6 @@ def render_watchlist_bar(tickers: tuple) -> None:
                     unsafe_allow_html=True,
                 )
 
-                # 4. Distance-to-target indicator (bottom, only if target set).
-                if new_tgt and new_tgt > 0:
-                    diff_pct = (q["price"] - new_tgt) / new_tgt * 100
-                    if diff_pct >= 0:
-                        tgt_color = "#16a34a"
-                        tgt_label = f"✓ {diff_pct:+.1f}%"
-                    else:
-                        tgt_color = "#f59e0b"
-                        tgt_label = f"{diff_pct:+.1f}%"
-                    st.markdown(
-                        f'<div style="text-align:center; font-size:0.7rem; '
-                        f'color:{tgt_color}; font-weight:600; '
-                        f'margin-top:-2px; line-height:1.1;">'
-                        f'{tgt_label}</div>',
-                        unsafe_allow_html=True,
-                    )
-
 
 def _open_dialog_for(ticker: str):
     """Set the sticky dialog flag for a ticker and rerun."""
