@@ -1298,6 +1298,12 @@ def render_watchlist_bar(tickers: tuple) -> None:
         unsafe_allow_html=True,
     )
 
+    # Top border of the watchlist (sits above the first row of tiles)
+    st.markdown(
+        '<hr class="wl-row-divider">',
+        unsafe_allow_html=True,
+    )
+
     cols_per_row = 8
     total_rows = (len(tickers) + cols_per_row - 1) // cols_per_row
     for row_idx, row_start in enumerate(
@@ -1366,15 +1372,14 @@ def render_watchlist_bar(tickers: tuple) -> None:
                             unsafe_allow_html=True,
                         )
 
-        # Horizontal divider between rows (skip after the last row).
-        # Uses the .wl-row-divider class so its margin is tight (2px),
-        # not the browser-default 16px that pushed the line way below
-        # the row.
-        if row_idx < total_rows - 1:
-            st.markdown(
-                '<hr class="wl-row-divider">',
-                unsafe_allow_html=True,
-            )
+        # Horizontal divider between every row (including after the last
+        # row — that one acts as the bottom border of the watchlist).
+        # Uses the .wl-row-divider class so its margin is tight, not the
+        # browser-default 16px.
+        st.markdown(
+            '<hr class="wl-row-divider">',
+            unsafe_allow_html=True,
+        )
 
 
 def _open_dialog_for(ticker: str):
