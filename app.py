@@ -1198,9 +1198,15 @@ def render_watchlist_bar(tickers: tuple) -> None:
         "_target_prices", _load_target_prices()
     )
 
-    # CSS to make tile buttons more compact + look like cards
+    # CSS to make tile buttons compact and tighten vertical spacing.
+    # The `.wl-tile-anchor` marker (injected inside each tile below) is used
+    # purely for CSS scoping — it has no visual effect — so these spacing
+    # rules apply ONLY to watchlist tiles, not to other column layouts in
+    # the app (Custom Patterns, Screener, etc).
     st.markdown(
         "<style>"
+        ".wl-tile-anchor { display: none; }"
+        # Ticker button styling
         "div[data-testid='stHorizontalBlock'] div[data-testid='stVerticalBlock'] "
         "  div.stButton > button {"
         "    width: 100%;"
@@ -1219,7 +1225,6 @@ def render_watchlist_bar(tickers: tuple) -> None:
         "}"
         # Compact number-input for the target-price box — shrink padding,
         # hide the +/- spinner buttons, smaller font so it fits in the tile.
-        # Transparent background so it blends with the page (no navy box).
         "div[data-testid='stHorizontalBlock'] div[data-testid='stVerticalBlock'] "
         "  div[data-testid='stNumberInput'] input {"
         "    font-size: 0.72rem !important;"
@@ -1239,12 +1244,38 @@ def render_watchlist_bar(tickers: tuple) -> None:
         "  div[data-testid='stNumberInput'] button {"
         "    display: none !important;"
         "}"
-        # Tight vertical spacing around the target input so it doesn't push
-        # the price down too far.
-        "div[data-testid='stHorizontalBlock'] div[data-testid='stVerticalBlock'] "
+        # --- Tight vertical spacing INSIDE each watchlist tile column ---
+        # Scoped by `:has(.wl-tile-anchor)` so only watchlist columns shrink;
+        # other column-based layouts keep their normal spacing.
+        "div[data-testid='stHorizontalBlock'] > div:has(.wl-tile-anchor) "
+        "  div[data-testid='stVerticalBlock'] {"
+        "    gap: 2px !important;"
+        "}"
+        "div[data-testid='stHorizontalBlock'] > div:has(.wl-tile-anchor) "
+        "  div[data-testid='stMarkdownContainer'] p {"
+        "    margin: 0 !important;"
+        "}"
+        "div[data-testid='stHorizontalBlock'] > div:has(.wl-tile-anchor) "
         "  div[data-testid='stNumberInput'] {"
-        "    margin-top: 2px !important;"
-        "    margin-bottom: 2px !important;"
+        "    margin: 0 !important;"
+        "}"
+        "div[data-testid='stHorizontalBlock'] > div:has(.wl-tile-anchor) "
+        "  div[data-testid='stElementContainer'] {"
+        "    margin-bottom: 0 !important;"
+        "}"
+        # Tighten the horizontal row containing tiles — kills the big gap
+        # that Streamlit adds between consecutive rows of columns.
+        "div[data-testid='stHorizontalBlock']:has(.wl-tile-anchor) {"
+        "    margin-bottom: 0 !important;"
+        "    margin-top: 0 !important;"
+        "    gap: 4px !important;"
+        "}"
+        # Tighten the divider <hr> between rows — was 8px+4px=12px tall,
+        # now compact.
+        ".wl-row-divider {"
+        "    margin: 2px 0 !important;"
+        "    border: 0;"
+        "    border-top: 1px solid #4a4b4e;"
         "}"
         "</style>",
         unsafe_allow_html=True,
@@ -1259,6 +1290,12 @@ def render_watchlist_bar(tickers: tuple) -> None:
         cols = st.columns(cols_per_row)
         for i, t in enumerate(row_tickers):
             with cols[i]:
+                # Hidden anchor — CSS uses `:has(.wl-tile-anchor)` to scope
+                # the tight-spacing rules to watchlist tiles only.
+                st.markdown(
+                    '<div class="wl-tile-anchor"></div>',
+                    unsafe_allow_html=True,
+                )
                 # 1. Ticker button (top, full width)
                 cols[i].button(
                     t, key=f"tile_btn_{t}",
@@ -1313,10 +1350,12 @@ def render_watchlist_bar(tickers: tuple) -> None:
                         )
 
         # Horizontal divider between rows (skip after the last row).
+        # Uses the .wl-row-divider class so its margin is tight (2px),
+        # not the browser-default 16px that pushed the line way below
+        # the row.
         if row_idx < total_rows - 1:
             st.markdown(
-                '<hr style="margin: 8px 0 4px 0; border: 0; '
-                'border-top: 1px solid #4a4b4e;">',
+                '<hr class="wl-row-divider">',
                 unsafe_allow_html=True,
             )
 
