@@ -7304,17 +7304,110 @@ with tab_paper:
             height=200,
         )
 
-    # --- Per-strategy stats ---
+    # --- Backtest controls ---
+    st.markdown("### 🧪 Backtest")
+    sim_count = pt.count_sim_trades()
+    bt_left, bt_right = st.columns([1, 2])
+    bt_years = bt_left.selectbox(
+        "Replay history",
+        options=[1, 2, 3, 5, 10],
+        index=3,
+        format_func=lambda y: f"{y} year{'s' if y > 1 else ''}",
+        key="pt_bt_years",
+    )
+    bt_right.markdown(
+        f"<div style='padding-top:30px; color:#9ca3af;'>"
+        f"Currently <b>{sim_count}</b> simulated trades in the DB. "
+        f"Running a backtest clears previous sims and replays. "
+        f"Takes ~30s for 5 years."
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+    if st.button("🧪 Run backtest now",
+                 type="primary",
+                 key="pt_bt_run"):
+        with st.spinner(
+            f"Replaying {bt_years} year(s) of history… this is the "
+            "slow yfinance fetch + day-by-day simulation."
+        ):
+            summary = pt.run_backtest(years=int(bt_years))
+        if summary.get("error"):
+            st.error(f"Backtest failed: {summary['error']}")
+        else:
+            st.success(
+                f"✅ Done! {summary['trades']} sim trades from "
+                f"{summary['start_date']} to {summary['end_date']}. "
+                f"Final balance: ${summary['final_balance']:,.2f} "
+                f"({summary['total_return_pct']:+.1f}%)."
+            )
+        st.rerun()
+
+    # --- Per-strategy stats: LIVE + SIM side by side ---
     st.markdown("### 🎯 Strategy performance")
-    stats = pt.get_strategy_stats()
-    if stats:
-        sdf = pd.DataFrame(stats)
-        if not sdf.empty:
+    stats_view = st.radio(
+        "View",
+        options=["Live only", "Sim only", "Side by side"],
+        index=2 if sim_count > 0 else 0,
+        horizontal=True,
+        key="pt_stats_view",
+    )
+
+    if stats_view in ("Live only", "Side by side"):
+        st.markdown(
+            "<div style='color:#9ca3af; font-size:0.85rem; "
+            "margin-bottom:4px;'>📡 <b>Live trades</b> "
+            "(real, ongoing paper trading)</div>",
+            unsafe_allow_html=True,
+        )
+        live_stats = pt.get_strategy_stats()
+        if live_stats and any(
+            s.get("lifetime_trades", 0) for s in live_stats
+        ):
+            ldf = pd.DataFrame(live_stats)
             display_cols = [
                 "name", "enabled",
                 "lifetime_trades", "lifetime_wins",
                 "win_rate", "profit_factor", "expectancy",
                 "lifetime_pnl",
+            ]
+            display_cols = [c for c in display_cols if c in ldf.columns]
+            st.dataframe(
+                ldf[display_cols],
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "win_rate": st.column_config.NumberColumn(
+                        format="%.1f%%"),
+                    "profit_factor": st.column_config.NumberColumn(
+                        format="%.2f"),
+                    "expectancy": st.column_config.NumberColumn(
+                        format="$%.2f"),
+                    "lifetime_pnl": st.column_config.NumberColumn(
+                        format="$%+.2f"),
+                    "enabled": st.column_config.CheckboxColumn(),
+                },
+            )
+        else:
+            st.caption(
+                "_No live trades yet — appears after first closed "
+                "position._"
+            )
+
+    if stats_view in ("Sim only", "Side by side"):
+        st.markdown(
+            "<div style='color:#9ca3af; font-size:0.85rem; "
+            "margin-top:12px; margin-bottom:4px;'>🧪 <b>Sim trades</b> "
+            "(backtest replay of historical data — directional "
+            "indicator only)</div>",
+            unsafe_allow_html=True,
+        )
+        sim_stats = pt.compute_sim_stats()
+        if sim_stats:
+            sdf = pd.DataFrame(list(sim_stats.values()))
+            display_cols = [
+                "strategy", "sim_trades", "sim_wins",
+                "sim_win_rate", "sim_profit_factor",
+                "sim_expectancy", "sim_pnl",
             ]
             display_cols = [c for c in display_cols if c in sdf.columns]
             st.dataframe(
@@ -7322,35 +7415,48 @@ with tab_paper:
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "win_rate": st.column_config.NumberColumn(
-                        format="%.1f%%",
-                    ),
-                    "profit_factor": st.column_config.NumberColumn(
-                        format="%.2f",
-                    ),
-                    "expectancy": st.column_config.NumberColumn(
-                        format="$%.2f",
-                    ),
-                    "lifetime_pnl": st.column_config.NumberColumn(
-                        format="$%+.2f",
-                    ),
-                    "enabled": st.column_config.CheckboxColumn(),
+                    "sim_win_rate": st.column_config.NumberColumn(
+                        "Win rate", format="%.1f%%"),
+                    "sim_profit_factor": st.column_config.NumberColumn(
+                        "Profit factor", format="%.2f"),
+                    "sim_expectancy": st.column_config.NumberColumn(
+                        "Expectancy", format="$%.2f"),
+                    "sim_pnl": st.column_config.NumberColumn(
+                        "Total P&L", format="$%+.2f"),
+                    "sim_trades": st.column_config.NumberColumn("Trades"),
+                    "sim_wins": st.column_config.NumberColumn("Wins"),
                 },
             )
-    else:
-        st.caption(
-            "_No strategy stats yet — they appear after the first "
-            "completed trade._"
-        )
+            st.caption(
+                "⚠️ Sim performance is informational only — historical "
+                "edge does NOT guarantee live edge. Use as a filter to "
+                "kill bad strategies, not to trust good ones."
+            )
+        else:
+            st.caption(
+                "_No sim trades yet. Click '🧪 Run backtest now' above._"
+            )
 
-    # --- Recent trades ---
+    # --- Recent trades (live + sim mixed, sim rows tagged) ---
     st.markdown("### 📜 Trade history")
-    trades = pt.get_trade_history(limit=50)
+    trades_view = st.radio(
+        "Show",
+        options=["Live only", "Sim only", "Both"],
+        index=2 if sim_count > 0 else 0,
+        horizontal=True,
+        key="pt_trades_view",
+    )
+    include_sim = trades_view != "Live only"
+    only_sim = trades_view == "Sim only"
+    trades = pt.get_trade_history(
+        limit=200, include_sim=include_sim, only_sim=only_sim,
+    )
     if trades:
         tdf = pd.DataFrame(trades)
-        # Friendlier column order
+        # Friendlier column order; is_sim shown as a chip so user can
+        # always see whether a row is real or simulated
         cols_order = [
-            "exit_date", "ticker", "strategy",
+            "is_sim", "exit_date", "ticker", "strategy",
             "entry_price", "exit_price", "shares",
             "pnl_pct", "pnl_dollars", "exit_reason", "direction_ok",
         ]
@@ -7360,6 +7466,10 @@ with tab_paper:
             use_container_width=True,
             hide_index=True,
             column_config={
+                "is_sim": st.column_config.CheckboxColumn(
+                    "Sim?",
+                    help="✓ = backtest replay, blank = live paper trade",
+                ),
                 "entry_price": st.column_config.NumberColumn(format="$%.4f"),
                 "exit_price": st.column_config.NumberColumn(format="$%.4f"),
                 "pnl_pct": st.column_config.NumberColumn(format="%+.2f%%"),

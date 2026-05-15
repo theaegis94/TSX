@@ -200,3 +200,148 @@ def fetch_latest_etf_prices() -> dict[str, float]:
         except Exception:
             continue
     return out
+
+
+# ---------------------------------------------------------------------------
+# Backtest support — features as-of a past date, with no future leakage.
+# ---------------------------------------------------------------------------
+
+def precompute_feature_history(years_back: int = 5) -> pd.DataFrame:
+    """One-shot fetch of every symbol's full daily history for the
+    backtest window. Returns a MultiIndex DataFrame so callers can
+    slice by (symbol, date) without further network calls."""
+    syms = list(SYMBOLS.values())
+    try:
+        df = yf.download(
+            " ".join(syms),
+            period=f"{years_back + 1}y",  # +1 yr buffer for lookback windows
+            interval="1d",
+            auto_adjust=True,
+            progress=False,
+            group_by="ticker",
+            threads=True,
+        )
+    except Exception:
+        return pd.DataFrame()
+    return df if df is not None else pd.DataFrame()
+
+
+def precompute_etf_history(years_back: int = 5) -> pd.DataFrame:
+    """Same idea, for the 4 paper-tradable ETFs."""
+    from .storage import TICKERS
+    try:
+        df = yf.download(
+            " ".join(TICKERS),
+            period=f"{years_back + 1}y",
+            interval="1d",
+            auto_adjust=True,
+            progress=False,
+            group_by="ticker",
+            threads=True,
+        )
+    except Exception:
+        return pd.DataFrame()
+    return df if df is not None else pd.DataFrame()
+
+
+def features_as_of(
+    precomputed_df: pd.DataFrame,
+    as_of_date,
+) -> dict[str, Any]:
+    """Compute features as they would have looked at the close of
+    `as_of_date`. CRITICAL: slices the series to bars AT or BEFORE
+    as_of_date so we have zero future leakage.
+    """
+    as_of_ts = pd.Timestamp(as_of_date)
+    out: dict[str, Any] = {
+        "as_of": as_of_ts.strftime("%Y-%m-%d"),
+    }
+    if precomputed_df is None or precomputed_df.empty:
+        return out
+
+    for short, full_sym in SYMBOLS.items():
+        try:
+            if isinstance(precomputed_df.columns, pd.MultiIndex):
+                if full_sym not in precomputed_df.columns.get_level_values(0):
+                    continue
+                close = precomputed_df[full_sym]["Close"].dropna()
+            else:
+                close = precomputed_df["Close"].dropna()
+            # Slice to <= as_of_date — that's where the leakage guard lives.
+            # Normalize tz so the comparison works whether the index is
+            # tz-aware (yfinance auto_adjust returns UTC-naive) or naive.
+            if getattr(close.index, "tz", None) is not None:
+                cutoff = as_of_ts.tz_localize(close.index.tz) if as_of_ts.tz is None else as_of_ts
+            else:
+                cutoff = as_of_ts.tz_localize(None) if as_of_ts.tz else as_of_ts
+            close = close[close.index <= cutoff]
+            if len(close) < 20:
+                continue
+            sub = _series_features(close)
+            for k, v in sub.items():
+                out[f"{short}_{k}"] = v
+        except Exception:
+            continue
+
+    # Calendar features derived from as_of_date — not from "now"
+    out["day_of_week"] = int(as_of_ts.dayofweek)
+    out["is_eia_oil_day"] = (as_of_ts.dayofweek == 2)
+    out["is_eia_gas_day"] = (as_of_ts.dayofweek == 3)
+    out["month"] = int(as_of_ts.month)
+    out["is_winter"] = as_of_ts.month in (11, 12, 1, 2, 3)
+    out["is_summer"] = as_of_ts.month in (6, 7, 8)
+
+    # Brent-WTI spread
+    if "brent_close" in out and "wti_close" in out:
+        b = out.get("brent_close")
+        w = out.get("wti_close")
+        if b is not None and w is not None:
+            out["brent_wti_spread"] = b - w
+
+    return out
+
+
+def etf_close_on(
+    etf_df: pd.DataFrame,
+    ticker: str,
+    on_date,
+) -> float | None:
+    """Get the ETF's close on `on_date` (exact match — None if the ETF
+    didn't trade that day, e.g. holiday or pre-IPO)."""
+    if etf_df is None or etf_df.empty:
+        return None
+    ts = pd.Timestamp(on_date)
+    try:
+        if isinstance(etf_df.columns, pd.MultiIndex):
+            if ticker not in etf_df.columns.get_level_values(0):
+                return None
+            close = etf_df[ticker]["Close"].dropna()
+        else:
+            close = etf_df["Close"].dropna()
+        # Normalize tz on the comparison
+        if getattr(close.index, "tz", None) is not None:
+            target = ts.tz_localize(close.index.tz) if ts.tz is None else ts
+        else:
+            target = ts.tz_localize(None) if ts.tz else ts
+        # Try exact-date match; tolerate timestamp-shaped dates.
+        mask = close.index.normalize() == target.normalize()
+        if mask.any():
+            return float(close[mask].iloc[0])
+    except Exception:
+        return None
+    return None
+
+
+def trading_days_in_window(etf_df: pd.DataFrame) -> list:
+    """Return the sorted list of trading-day timestamps available in
+    `etf_df` — the union across all 4 ETFs so we don't miss any day
+    one ticker traded but another didn't."""
+    if etf_df is None or etf_df.empty:
+        return []
+    try:
+        if isinstance(etf_df.columns, pd.MultiIndex):
+            # Use the index from any first-level slice — all share the same index
+            return sorted(etf_df.index.normalize().unique())
+        return sorted(etf_df.index.normalize().unique())
+    except Exception:
+        return []

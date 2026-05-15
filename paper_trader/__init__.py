@@ -28,8 +28,12 @@ from .storage import (
     set_agent_paused,
     reset_capital,
     init_databases,
+    count_sim_trades,
+    clear_sim_trades,
+    compute_sim_stats,
     TICKERS,
 )
+from .simulate import run_backtest
 
 __all__ = [
     "DEFAULT_INITIAL_CAPITAL",
@@ -44,5 +48,9 @@ __all__ = [
     "set_agent_paused",
     "reset_capital",
     "init_databases",
+    "count_sim_trades",
+    "clear_sim_trades",
+    "compute_sim_stats",
+    "run_backtest",
     "TICKERS",
 ]

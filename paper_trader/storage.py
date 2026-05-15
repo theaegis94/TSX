@@ -81,6 +81,10 @@ CREATE TABLE IF NOT EXISTS positions (
 CREATE INDEX IF NOT EXISTS idx_positions_status ON positions(status);
 CREATE INDEX IF NOT EXISTS idx_positions_entry_date ON positions(entry_date);
 
+-- NB: the `is_sim` column is added by _migrate_paper_db() rather than
+-- declared here so the same code-path works for both fresh DBs and DBs
+-- created by earlier versions of this app (CREATE TABLE IF NOT EXISTS
+-- won't add columns to an existing table).
 CREATE TABLE IF NOT EXISTS trades (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     position_id     INTEGER REFERENCES positions(id),
@@ -155,10 +159,33 @@ def _connect(path: pathlib.Path) -> sqlite3.Connection:
     return conn
 
 
+def _migrate_paper_db(c: sqlite3.Connection) -> None:
+    """Idempotent migrations. Runs AFTER the base schema's
+    CREATE TABLE IF NOT EXISTS, so the trades table is guaranteed to
+    exist by the time we reach here — we only need to add columns that
+    weren't in older schema revisions.
+    """
+    cols = {row["name"] for row in c.execute("PRAGMA table_info(trades)")}
+    if not cols:
+        # Defensive: table somehow missing. Shouldn't happen because
+        # executescript runs first, but if it does we just skip — the
+        # next init_databases call will fix it.
+        return
+    if "is_sim" not in cols:
+        c.execute(
+            "ALTER TABLE trades "
+            "ADD COLUMN is_sim INTEGER NOT NULL DEFAULT 0"
+        )
+    c.execute(
+        "CREATE INDEX IF NOT EXISTS idx_trades_is_sim ON trades(is_sim)"
+    )
+
+
 def init_databases() -> None:
     """Create tables if missing; safe to call repeatedly."""
     with _connect(PAPER_DB) as c:
         c.executescript(PAPER_SCHEMA)
+        _migrate_paper_db(c)
         # Seed config defaults
         defaults = [
             ("initial_capital", str(DEFAULT_INITIAL_CAPITAL)),
@@ -377,13 +404,75 @@ def debit_capital(amount: float) -> None:
     set_balance(cur - amount)
 
 
-def get_trade_history(limit: int = 200) -> list[dict]:
+def get_trade_history(
+    limit: int = 200,
+    include_sim: bool = True,
+    only_sim: bool = False,
+) -> list[dict]:
+    """Return trades ordered newest-first.
+
+    By default returns BOTH live and sim trades. Set include_sim=False
+    to filter out sim trades, or only_sim=True for the inverse.
+    """
     with _connect(PAPER_DB) as c:
-        rows = c.execute(
-            "SELECT * FROM trades ORDER BY exit_date DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
+        if only_sim:
+            sql = "SELECT * FROM trades WHERE is_sim=1 ORDER BY exit_date DESC LIMIT ?"
+        elif include_sim:
+            sql = "SELECT * FROM trades ORDER BY exit_date DESC LIMIT ?"
+        else:
+            sql = "SELECT * FROM trades WHERE is_sim=0 ORDER BY exit_date DESC LIMIT ?"
+        rows = c.execute(sql, (limit,)).fetchall()
     return [dict(r) for r in rows]
+
+
+def record_sim_trade(
+    ticker: str,
+    strategy: str,
+    entry_date: str,
+    exit_date: str,
+    entry_price: float,
+    exit_price: float,
+    shares: float,
+    pnl_dollars: float,
+    pnl_pct: float,
+    exit_reason: str,
+) -> int:
+    """Insert a simulated trade row directly. Does NOT touch the live
+    cash balance or positions table — sim trades are purely a learning
+    record. Returns the new trade id.
+    """
+    direction_ok = 1 if pnl_dollars > 0 else 0
+    with _connect(PAPER_DB) as c:
+        cur = c.execute(
+            "INSERT INTO trades "
+            "(position_id, ticker, strategy, entry_date, exit_date, "
+            " entry_price, exit_price, shares, pnl_dollars, pnl_pct, "
+            " exit_reason, direction_ok, is_sim) "
+            "VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
+            (ticker, strategy, entry_date, exit_date,
+             entry_price, exit_price, shares,
+             pnl_dollars, pnl_pct, exit_reason, direction_ok),
+        )
+        c.commit()
+        return int(cur.lastrowid)
+
+
+def clear_sim_trades() -> int:
+    """Delete every sim trade (is_sim=1). Returns rows deleted.
+    Used to re-run a backtest from scratch without polluting prior data.
+    """
+    with _connect(PAPER_DB) as c:
+        cur = c.execute("DELETE FROM trades WHERE is_sim=1")
+        c.commit()
+        return int(cur.rowcount or 0)
+
+
+def count_sim_trades() -> int:
+    with _connect(PAPER_DB) as c:
+        row = c.execute(
+            "SELECT COUNT(*) as n FROM trades WHERE is_sim=1"
+        ).fetchone()
+    return int(row["n"]) if row else 0
 
 
 # ---------------------------------------------------------------------------
@@ -512,15 +601,28 @@ def get_strategies() -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def recompute_strategy_stats() -> dict[str, dict[str, Any]]:
+def recompute_strategy_stats(
+    include_sim: bool = False,
+) -> dict[str, dict[str, Any]]:
     """Walk every closed trade and compute per-strategy stats.
     Writes a snapshot row to strategy_stats (one per day per strategy).
     Returns {strategy_name: stats_dict}.
+
+    By default this aggregates LIVE trades only — sim trades have
+    their own stats endpoint (compute_sim_stats) so the dashboard can
+    show both side by side without confusing the two.
     """
     with _connect(PAPER_DB) as c:
-        rows = c.execute(
-            "SELECT strategy, pnl_dollars, direction_ok FROM trades"
-        ).fetchall()
+        if include_sim:
+            sql = (
+                "SELECT strategy, pnl_dollars, direction_ok FROM trades"
+            )
+        else:
+            sql = (
+                "SELECT strategy, pnl_dollars, direction_ok "
+                "FROM trades WHERE is_sim=0"
+            )
+        rows = c.execute(sql).fetchall()
 
     stats: dict[str, dict[str, Any]] = {}
     for r in rows:
@@ -581,6 +683,53 @@ def recompute_strategy_stats() -> dict[str, dict[str, Any]]:
                  rec["profit_factor"], rec["expectancy"]),
             )
             c.commit()
+    return out
+
+
+def compute_sim_stats() -> dict[str, dict[str, Any]]:
+    """Per-strategy aggregates from SIM trades only. Doesn't write to
+    strategy_stats — returns a fresh in-memory dict for display.
+    """
+    with _connect(PAPER_DB) as c:
+        rows = c.execute(
+            "SELECT strategy, pnl_dollars, direction_ok "
+            "FROM trades WHERE is_sim=1"
+        ).fetchall()
+    stats: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        s = r["strategy"]
+        st = stats.setdefault(s, {
+            "trades": 0,
+            "wins": 0,
+            "gross_pnl": 0.0,
+            "gross_wins": 0.0,
+            "gross_losses": 0.0,
+        })
+        st["trades"] += 1
+        pnl = float(r["pnl_dollars"])
+        st["gross_pnl"] += pnl
+        if r["direction_ok"]:
+            st["wins"] += 1
+            st["gross_wins"] += pnl
+        else:
+            st["gross_losses"] += abs(pnl)
+    out: dict[str, dict[str, Any]] = {}
+    for name, st in stats.items():
+        trades = st["trades"]
+        wins = st["wins"]
+        wr = wins / trades if trades else 0.0
+        pf = (st["gross_wins"] / st["gross_losses"]
+              if st["gross_losses"] > 0 else 0.0)
+        exp = st["gross_pnl"] / trades if trades else 0.0
+        out[name] = {
+            "strategy": name,
+            "sim_trades": trades,
+            "sim_wins": wins,
+            "sim_pnl": st["gross_pnl"],
+            "sim_win_rate": wr,
+            "sim_profit_factor": pf,
+            "sim_expectancy": exp,
+        }
     return out
 
 
