@@ -48,21 +48,16 @@ _HERE = pathlib.Path(__file__).resolve().parent.parent
 _CACHE_DIR = _HERE / ".eia_cache"
 _CACHE_DIR.mkdir(exist_ok=True)
 
-EIA_BASE = "https://api.eia.gov/v2"
+# Use the legacy v1 series API — much simpler than v2's facet system
+# and the series IDs are stable and well-documented. (v1 is "deprecated"
+# but EIA has kept it working for years and the failure mode if they
+# ever turn it off is graceful — same as having no key.)
+EIA_V1_BASE = "https://api.eia.gov/series/"
 
-# Series IDs (EIA's stable identifiers)
-# US crude oil ending stocks, excl. SPR (commercial), weekly, thousand bbl
-OIL_STOCKS_PATH = (
-    "petroleum/stoc/wstk/data/"
-    "?frequency=weekly&data[0]=value"
-    "&facets[product][]=EPC0&facets[duoarea][]=NUS"
-)
-# Lower-48 working gas in underground storage, weekly, billion cubic ft
-NATGAS_STORAGE_PATH = (
-    "natural-gas/stor/wkly/data/"
-    "?frequency=weekly&data[0]=value"
-    "&facets[duoarea][]=NUS-Z00"
-)
+# US ending crude oil stocks (commercial, excl. SPR), weekly, thousand bbl
+OIL_STOCKS_SERIES = "PET.WCRSTUS1.W"
+# Lower-48 working gas in underground storage, weekly, billion cubic feet
+NATGAS_STORAGE_SERIES = "NG.NW2_EPG0_SWO_R48_BCF.W"
 
 _API_KEY_WARNED = False
 
@@ -90,38 +85,57 @@ def _get_api_key() -> str | None:
     return key
 
 
-def _fetch_series(path: str, length: int = 5000) -> pd.DataFrame:
-    """Hit the EIA v2 API and return a 2-column DataFrame
+def _fetch_series(series_id: str) -> pd.DataFrame:
+    """Hit the EIA v1 series API and return a 2-column DataFrame
     [period (datetime), value (float)] sorted ascending. Empty if
-    no key or API failure."""
+    no key or API failure.
+
+    v1 response shape:
+      {
+        "series": [{
+          "series_id": "PET.WCRSTUS1.W",
+          "data": [["20231201", 462123], ["20231124", 458200], ...],
+          ...
+        }]
+      }
+    """
     key = _get_api_key()
     if not key:
         return pd.DataFrame()
-    url = f"{EIA_BASE}/{path}&api_key={key}&length={length}"
+    url = f"{EIA_V1_BASE}?api_key={key}&series_id={series_id}"
     try:
         resp = requests.get(url, timeout=30)
         resp.raise_for_status()
         data = resp.json()
     except Exception as e:
-        LOGGER.warning(f"EIA fetch failed for {path[:40]}…: {e}")
+        LOGGER.warning(f"EIA fetch failed for {series_id}: {e}")
         return pd.DataFrame()
-    items = (data or {}).get("response", {}).get("data") or []
-    if not items:
-        LOGGER.warning(f"EIA returned 0 rows for {path[:40]}…")
+    series_list = (data or {}).get("series") or []
+    if not series_list:
+        # Try to surface the actual API error if there is one
+        err = (data or {}).get("data", {}).get("error") or (data or {}).get("error")
+        msg = f" ({err})" if err else ""
+        LOGGER.warning(f"EIA returned no series for {series_id}{msg}")
+        return pd.DataFrame()
+    data_rows = series_list[0].get("data") or []
+    if not data_rows:
+        LOGGER.warning(f"EIA returned 0 rows for {series_id}")
         return pd.DataFrame()
     rows = []
-    for it in items:
+    for row in data_rows:
         try:
+            date_str, value = row[0], row[1]
+            if value is None:
+                continue
             rows.append({
-                "period": pd.Timestamp(it.get("period")),
-                "value": float(it.get("value")),
+                "period": pd.Timestamp(date_str),
+                "value": float(value),
             })
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, IndexError):
             continue
     if not rows:
         return pd.DataFrame()
-    df = pd.DataFrame(rows).sort_values("period").reset_index(drop=True)
-    return df
+    return pd.DataFrame(rows).sort_values("period").reset_index(drop=True)
 
 
 def _cache_path(name: str) -> pathlib.Path:
@@ -161,7 +175,7 @@ def fetch_oil_stocks() -> pd.DataFrame:
     cached = _read_cache("oil_stocks")
     if cached is not None and not cached.empty:
         return cached
-    df = _fetch_series(OIL_STOCKS_PATH)
+    df = _fetch_series(OIL_STOCKS_SERIES)
     if not df.empty:
         _write_cache("oil_stocks", df)
     return df
@@ -173,7 +187,7 @@ def fetch_natgas_storage() -> pd.DataFrame:
     cached = _read_cache("natgas_storage")
     if cached is not None and not cached.empty:
         return cached
-    df = _fetch_series(NATGAS_STORAGE_PATH)
+    df = _fetch_series(NATGAS_STORAGE_SERIES)
     if not df.empty:
         _write_cache("natgas_storage", df)
     return df
