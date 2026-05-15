@@ -3094,9 +3094,9 @@ st.session_state["_stop_loss_pct"] = stop_loss_pct
 # --------- tabs ---------
 
 (tab_scan, tab_single, tab_screener, tab_patterns, tab_news,
- tab_help) = st.tabs(
+ tab_paper, tab_help) = st.tabs(
     ["📊 Watchlist", "🔍 Single Ticker", "🎯 Screener",
-     "🧩 Custom Patterns", "📰 News", "ℹ️ Help"]
+     "🧩 Custom Patterns", "📰 News", "🤖 Paper Trader", "ℹ️ Help"]
 )
 # After the popup closes, restore the tab the user was on (if any)
 _restore_active_tab()
@@ -7172,6 +7172,262 @@ with tab_news:
                             )
                 except Exception as e:
                     st.error(f"Error: {e}")
+
+
+# === Paper Trader tab ===
+with tab_paper:
+    import paper_trader as pt
+    pt.init_databases()
+
+    st.subheader("🤖 Paper Trader — HOU / HOD / HNU / HND")
+    st.caption(
+        "Background agent that paper-trades the four Horizons 2x ETFs "
+        "based on signals from WTI / Henry Hub / DXY. Designed to run "
+        "24/7 via Windows Task Scheduler. This tab reads from the "
+        "agent's SQLite logs — read-only — and surfaces capital, open "
+        "position, trade history, and per-strategy accuracy."
+    )
+
+    # --- Agent health ---
+    hb = pt.get_heartbeat()
+    if hb:
+        from datetime import datetime as _dt
+        try:
+            last_alive = _dt.fromisoformat(hb["last_alive"])
+            from datetime import timezone as _tz
+            age_sec = int(
+                (_dt.now(_tz.utc) - last_alive).total_seconds()
+            )
+        except Exception:
+            age_sec = 99999
+        status_color = (
+            "#16a34a" if age_sec < 600
+            else "#f59e0b" if age_sec < 3600
+            else "#dc2626"
+        )
+        status_text = (
+            "🟢 Alive" if age_sec < 600
+            else "🟡 Stale" if age_sec < 3600
+            else "🔴 Down"
+        )
+        st.markdown(
+            f"<div style='padding:8px; border-radius:6px; "
+            f"background:rgba(0,0,0,0.2); margin-bottom:10px;'>"
+            f"<span style='color:{status_color}; font-weight:700;'>"
+            f"{status_text}</span> &nbsp;·&nbsp; "
+            f"Last heartbeat: <b>{hb['last_alive']}</b> "
+            f"({age_sec}s ago) &nbsp;·&nbsp; "
+            f"Last action: <i>{hb.get('last_action') or '—'}</i>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.warning(
+            "⚠️ No heartbeat yet — the agent has never run on this "
+            "machine. Start it with `python -m paper_trader.agent` "
+            "or by setting up the Windows scheduled task (see "
+            "`docs/paper_trader_setup.md`)."
+        )
+
+    # --- Top metrics row ---
+    balance = pt.get_balance()
+    pos = pt.get_open_position()
+    open_mtm = 0.0
+    if pos:
+        try:
+            quick = ss.fetch_watchlist_quotes([pos["ticker"]])
+            q = quick.get(pos["ticker"])
+            if q:
+                open_mtm = float(pos["shares"]) * float(q["price"])
+        except Exception:
+            pass
+    total_equity = balance + open_mtm
+    initial_cap = float(pt.storage.get_initial_capital())
+    pnl_total = total_equity - initial_cap
+    pnl_pct = (pnl_total / initial_cap * 100) if initial_cap else 0.0
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("💰 Cash", f"${balance:,.2f}")
+    m2.metric("📊 Open MTM", f"${open_mtm:,.2f}")
+    m3.metric("🏦 Total equity", f"${total_equity:,.2f}",
+              f"{pnl_pct:+.2f}% vs starting ${initial_cap:,.0f}")
+    m4.metric("📜 Trades", f"{len(pt.get_trade_history(limit=10000))}")
+
+    st.divider()
+
+    # --- Open position ---
+    if pos:
+        st.markdown("### 📊 Open Position")
+        try:
+            quick = ss.fetch_watchlist_quotes([pos["ticker"]])
+            q = quick.get(pos["ticker"])
+            cur_px = float(q["price"]) if q else float(pos["entry_price"])
+        except Exception:
+            cur_px = float(pos["entry_price"])
+        entry_px = float(pos["entry_price"])
+        live_pnl_pct = (cur_px - entry_px) / entry_px * 100
+        live_pnl_pct_color = (
+            "#16a34a" if live_pnl_pct >= 0 else "#dc2626"
+        )
+        from datetime import datetime as _dt
+        try:
+            entry_dt = _dt.fromisoformat(pos["entry_date"])
+            from datetime import timezone as _tz
+            days_held = (
+                (_dt.now(_tz.utc) - entry_dt).total_seconds() / 86400.0
+            )
+        except Exception:
+            days_held = 0
+        st.markdown(
+            f"<div style='padding:10px; border-radius:8px; "
+            f"background:rgba(0,0,0,0.2);'>"
+            f"<b style='font-size:1.1rem;'>{pos['ticker']}</b> &nbsp;·&nbsp; "
+            f"strategy <b>{pos['strategy']}</b> &nbsp;·&nbsp; "
+            f"entry ${entry_px:.4f} &nbsp;·&nbsp; "
+            f"now ${cur_px:.4f} &nbsp;·&nbsp; "
+            f"<span style='color:{live_pnl_pct_color}; font-weight:700;'>"
+            f"{live_pnl_pct:+.2f}%</span> &nbsp;·&nbsp; "
+            f"held {days_held:.1f}d / 5d max"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.info("No open position — agent is flat.")
+
+    # --- Equity curve ---
+    eq = pt.get_equity_curve()
+    if eq:
+        st.markdown("### 📈 Equity curve")
+        eq_df = pd.DataFrame(eq)
+        st.line_chart(
+            eq_df.set_index("as_of_date")[["total_equity"]],
+            height=200,
+        )
+
+    # --- Per-strategy stats ---
+    st.markdown("### 🎯 Strategy performance")
+    stats = pt.get_strategy_stats()
+    if stats:
+        sdf = pd.DataFrame(stats)
+        if not sdf.empty:
+            display_cols = [
+                "name", "enabled",
+                "lifetime_trades", "lifetime_wins",
+                "win_rate", "profit_factor", "expectancy",
+                "lifetime_pnl",
+            ]
+            display_cols = [c for c in display_cols if c in sdf.columns]
+            st.dataframe(
+                sdf[display_cols],
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "win_rate": st.column_config.NumberColumn(
+                        format="%.1f%%",
+                    ),
+                    "profit_factor": st.column_config.NumberColumn(
+                        format="%.2f",
+                    ),
+                    "expectancy": st.column_config.NumberColumn(
+                        format="$%.2f",
+                    ),
+                    "lifetime_pnl": st.column_config.NumberColumn(
+                        format="$%+.2f",
+                    ),
+                    "enabled": st.column_config.CheckboxColumn(),
+                },
+            )
+    else:
+        st.caption(
+            "_No strategy stats yet — they appear after the first "
+            "completed trade._"
+        )
+
+    # --- Recent trades ---
+    st.markdown("### 📜 Trade history")
+    trades = pt.get_trade_history(limit=50)
+    if trades:
+        tdf = pd.DataFrame(trades)
+        # Friendlier column order
+        cols_order = [
+            "exit_date", "ticker", "strategy",
+            "entry_price", "exit_price", "shares",
+            "pnl_pct", "pnl_dollars", "exit_reason", "direction_ok",
+        ]
+        cols_order = [c for c in cols_order if c in tdf.columns]
+        st.dataframe(
+            tdf[cols_order],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "entry_price": st.column_config.NumberColumn(format="$%.4f"),
+                "exit_price": st.column_config.NumberColumn(format="$%.4f"),
+                "pnl_pct": st.column_config.NumberColumn(format="%+.2f%%"),
+                "pnl_dollars": st.column_config.NumberColumn(format="$%+.2f"),
+                "direction_ok": st.column_config.CheckboxColumn("Won?"),
+            },
+        )
+    else:
+        st.caption("_No closed trades yet._")
+
+    # --- Admin controls ---
+    st.divider()
+    st.markdown("### ⚙️ Controls")
+    paused = pt.is_agent_paused()
+    c1, c2, c3 = st.columns([1, 1, 2])
+    if paused:
+        if c1.button("▶️ Resume agent", use_container_width=True):
+            pt.set_agent_paused(False)
+            st.rerun()
+    else:
+        if c1.button("⏸️ Pause agent", use_container_width=True):
+            pt.set_agent_paused(True)
+            st.rerun()
+
+    new_capital = c3.number_input(
+        "Reset capital to",
+        min_value=100.0, max_value=10_000_000.0,
+        value=float(pt.storage.get_initial_capital()),
+        step=1000.0,
+        format="%.2f",
+        key="pt_reset_amount",
+        help="Wipes positions / trades / equity / signal log. "
+             "Strategy training state (lifetime stats) is preserved.",
+    )
+    if c2.button("🔄 Reset capital", use_container_width=True,
+                  type="primary"):
+        pt.reset_capital(new_capital)
+        st.success(f"Reset to ${new_capital:,.2f}. Refresh to see.")
+        st.rerun()
+
+    with st.expander("ℹ️ How this works"):
+        st.markdown("""
+**Setup:**
+- The agent runs as a background process. See
+  `docs/paper_trader_setup.md` for Windows Task Scheduler setup.
+- Manual start: `python -m paper_trader.agent` from the project folder.
+
+**Strategy:**
+- 3 starting strategies (oil RSI mean reversion, natgas MACD cross,
+  DXY-oil inverse). Each emits a (ticker, conviction) signal.
+- The agent picks the highest-conviction signal across all enabled
+  strategies and opens **one** position (25% of cash).
+- Exits: −5% stop / +5% take / opposite signal flip / 5-day max hold.
+
+**"Training":**
+- Every off-hours cycle recomputes lifetime stats per strategy.
+- Future weeks: capital weight shifts toward strategies with positive
+  expectancy (bandit-style allocation), so winners get more capital.
+- A "reset capital" preserves all strategy stats — the agent keeps
+  learning across resets.
+
+**Limitations:**
+- The 2x ETFs have severe volatility drag — short hold periods are
+  by design.
+- Direction prediction on commodities is hard. Expect the baseline
+  strategies to be near-random; real edge will come from EIA inventory
+  data + weather features in weeks 2-4.
+        """)
 
 
 # === Help tab ===

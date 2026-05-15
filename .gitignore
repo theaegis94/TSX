@@ -20,3 +20,13 @@ venv/
 # OS
 .DS_Store
 Thumbs.db
+
+# Paper trader runtime data
+paper_trader.db
+paper_trader.db-wal
+paper_trader.db-shm
+strategies_state.db
+strategies_state.db-wal
+strategies_state.db-shm
+paper_trader.lock
+logs/
