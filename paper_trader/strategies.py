@@ -89,6 +89,104 @@ class NatgasMacdCross(Strategy):
         return (None, 0.0)
 
 
+class OilInventoryDrawdown(Strategy):
+    """When weekly EIA oil inventory drew much more than the recent
+    4-week trailing trend, supply is tighter than expected — bullish
+    crude → buy HOU (2x bull oil).
+
+    Only fires within 2 days of the EIA release (Wed AM ET) so we
+    don't act on stale data.
+    """
+    name = "oil_inv_drawdown"
+    description = (
+        "Buy HOU when crude oil inventory drew far below the 4-week "
+        "trailing average change (bullish supply surprise). Fires "
+        "only within 2 days of the EIA Wed release."
+    )
+
+    def signal(self, features):
+        surprise = features.get("oil_inv_surprise")
+        days_old = features.get("oil_inv_days_since_report")
+        if surprise is None or days_old is None or days_old > 2:
+            return (None, 0.0)
+        # surprise is in thousand barrels. >5,000 = ~5M bbl move
+        # Negative surprise = bigger draw than expected = bullish
+        if surprise < -5000:
+            return ("HOU.TO", 0.80)
+        if surprise < -2500:
+            return ("HOU.TO", 0.65)
+        return (None, 0.0)
+
+
+class OilInventoryBuild(Strategy):
+    """Mirror of OilInventoryDrawdown: bigger-than-expected build =
+    surplus → bearish crude → buy HOD (2x bear oil)."""
+    name = "oil_inv_build"
+    description = (
+        "Buy HOD when crude oil inventory built far above the 4-week "
+        "trailing average change (bearish supply surprise). Fires "
+        "only within 2 days of the EIA Wed release."
+    )
+
+    def signal(self, features):
+        surprise = features.get("oil_inv_surprise")
+        days_old = features.get("oil_inv_days_since_report")
+        if surprise is None or days_old is None or days_old > 2:
+            return (None, 0.0)
+        if surprise > 5000:
+            return ("HOD.TO", 0.80)
+        if surprise > 2500:
+            return ("HOD.TO", 0.65)
+        return (None, 0.0)
+
+
+class NatgasStorageDrawdown(Strategy):
+    """When EIA gas storage drew far more than the 4-week trailing
+    trend, supply tighter than expected → bullish natgas → buy HNU.
+
+    Fires within 2 days of the EIA Thu release.
+    """
+    name = "gas_storage_drawdown"
+    description = (
+        "Buy HNU when natgas storage drew far below the 4-week "
+        "trailing average change. Fires only within 2 days of the "
+        "EIA Thu release."
+    )
+
+    def signal(self, features):
+        surprise = features.get("gas_stor_surprise")
+        days_old = features.get("gas_stor_days_since_report")
+        if surprise is None or days_old is None or days_old > 2:
+            return (None, 0.0)
+        # surprise is in Bcf
+        if surprise < -50:
+            return ("HNU.TO", 0.80)
+        if surprise < -25:
+            return ("HNU.TO", 0.65)
+        return (None, 0.0)
+
+
+class NatgasStorageBuild(Strategy):
+    """Mirror: bigger-than-expected build = surplus → bearish → HND."""
+    name = "gas_storage_build"
+    description = (
+        "Buy HND when natgas storage built far above the 4-week "
+        "trailing average change. Fires only within 2 days of the "
+        "EIA Thu release."
+    )
+
+    def signal(self, features):
+        surprise = features.get("gas_stor_surprise")
+        days_old = features.get("gas_stor_days_since_report")
+        if surprise is None or days_old is None or days_old > 2:
+            return (None, 0.0)
+        if surprise > 50:
+            return ("HND.TO", 0.80)
+        if surprise > 25:
+            return ("HND.TO", 0.65)
+        return (None, 0.0)
+
+
 class DxyOilInverse(Strategy):
     """Dollar weakness with oil holding up = oil bullish. Strong DXY
     drop (>0.5%) on a day WTI was flat or up → buy HOU next bar.
@@ -117,9 +215,19 @@ class DxyOilInverse(Strategy):
 # doesn't matter — the agent picks the highest-conviction signal across
 # all of them.
 ALL_STRATEGIES: list[Strategy] = [
+    # Price-pattern baselines (the 5-year backtest showed these are
+    # likely too weak on 2x leveraged ETFs — keeping them for now as
+    # a control / comparison group).
     OilRsiReversion(),
     NatgasMacdCross(),
     DxyOilInverse(),
+    # EIA-driven catalyst strategies — the real bet.
+    # Inventory surprise vs 4-week trailing trend has historically
+    # been THE biggest mover for these commodities.
+    OilInventoryDrawdown(),
+    OilInventoryBuild(),
+    NatgasStorageDrawdown(),
+    NatgasStorageBuild(),
 ]
 
 

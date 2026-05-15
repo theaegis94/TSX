@@ -32,6 +32,7 @@ import sys
 
 import pandas as pd
 
+from . import eia
 from . import features as feat_mod
 from . import storage
 from . import strategies as strat_mod
@@ -108,6 +109,17 @@ def run_backtest(
         LOGGER.error("Empty data fetch — aborting backtest.")
         return {"error": "empty_data", "trades": 0}
 
+    # Fetch EIA inventory history once. Returns empty DataFrame if
+    # EIA_API_KEY isn't set — the inventory-based strategies will
+    # simply not fire in that case.
+    eia_oil_df = eia.fetch_oil_stocks()
+    eia_gas_df = eia.fetch_natgas_storage()
+    if eia_oil_df.empty:
+        LOGGER.warning(
+            "No EIA oil data — inventory strategies will be inactive. "
+            "Set EIA_API_KEY to enable them."
+        )
+
     # 2. Establish the trading-day calendar (union of all ETF dates).
     trading_days = feat_mod.trading_days_in_window(etf_df)
     if len(trading_days) < min_warmup_bars + 10:
@@ -140,7 +152,11 @@ def run_backtest(
     trades_logged = 0
 
     for D in iter_days:
-        features = feat_mod.features_as_of(feat_df, D)
+        features = feat_mod.features_as_of(
+            feat_df, D,
+            eia_oil_df=eia_oil_df,
+            eia_gas_df=eia_gas_df,
+        )
         signals = strat_mod.run_all_strategies(features)
         best = strat_mod.best_signal(signals)
 

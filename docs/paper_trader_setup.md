@@ -7,6 +7,26 @@ read-only dashboard.
 
 ## Quick start
 
+### 0. (Optional but recommended) Get an EIA API key
+
+The inventory-based strategies (`oil_inv_drawdown`, `oil_inv_build`,
+`gas_storage_drawdown`, `gas_storage_build`) need the free EIA Open
+Data API. Without a key they simply don't fire — the other
+strategies still work. With a key, the backtest and live agent both
+benefit from real catalyst data.
+
+1. Register here (takes one minute): https://www.eia.gov/opendata/register.php
+2. Set the env var in PowerShell:
+   ```powershell
+   setx EIA_API_KEY "your_key_here"
+   ```
+   The `setx` form persists across reboots. Restart PowerShell + the
+   agent + Streamlit after running this.
+3. Alternatively, add to `.streamlit/secrets.toml`:
+   ```
+   EIA_API_KEY = "your_key_here"
+   ```
+
 ### 1. Initialize the databases
 
 The first time you click the **🤖 Paper Trader** tab in the Streamlit

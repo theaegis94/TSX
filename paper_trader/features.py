@@ -21,6 +21,8 @@ import yfinance as yf
 
 import stock_signals as ss
 
+from . import eia
+
 # Underlying commodities + macro
 SYMBOLS = {
     "wti":  "CL=F",       # WTI crude oil futures
@@ -166,6 +168,18 @@ def fetch_features() -> dict[str, Any]:
         if b is not None and w is not None:
             out["brent_wti_spread"] = b - w
 
+    # --- EIA inventory features (live) ---
+    # Will all be None if EIA_API_KEY is not set; that's the graceful
+    # degradation path so the rest of the system keeps working.
+    try:
+        out.update(eia.oil_inventory_features())
+    except Exception:
+        pass
+    try:
+        out.update(eia.natgas_storage_features())
+    except Exception:
+        pass
+
     return out
 
 
@@ -247,10 +261,16 @@ def precompute_etf_history(years_back: int = 5) -> pd.DataFrame:
 def features_as_of(
     precomputed_df: pd.DataFrame,
     as_of_date,
+    eia_oil_df: pd.DataFrame | None = None,
+    eia_gas_df: pd.DataFrame | None = None,
 ) -> dict[str, Any]:
     """Compute features as they would have looked at the close of
     `as_of_date`. CRITICAL: slices the series to bars AT or BEFORE
     as_of_date so we have zero future leakage.
+
+    `eia_oil_df` / `eia_gas_df` are pre-fetched EIA inventory series
+    (passed in once for the whole backtest so we don't re-hit the
+    API every day). Pass None to skip EIA features.
     """
     as_of_ts = pd.Timestamp(as_of_date)
     out: dict[str, Any] = {
@@ -297,6 +317,24 @@ def features_as_of(
         w = out.get("wti_close")
         if b is not None and w is not None:
             out["brent_wti_spread"] = b - w
+
+    # --- EIA inventory features for backtest ---
+    # The eia module enforces the publication-lag filter so historical
+    # decisions never see data published after the decision date.
+    if eia_oil_df is not None and not eia_oil_df.empty:
+        try:
+            out.update(eia.oil_inventory_features(
+                as_of_date=as_of_ts, precomputed=eia_oil_df,
+            ))
+        except Exception:
+            pass
+    if eia_gas_df is not None and not eia_gas_df.empty:
+        try:
+            out.update(eia.natgas_storage_features(
+                as_of_date=as_of_ts, precomputed=eia_gas_df,
+            ))
+        except Exception:
+            pass
 
     return out
 
