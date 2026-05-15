@@ -48,16 +48,52 @@ _HERE = pathlib.Path(__file__).resolve().parent.parent
 _CACHE_DIR = _HERE / ".eia_cache"
 _CACHE_DIR.mkdir(exist_ok=True)
 
-# Use the legacy v1 series API — much simpler than v2's facet system
-# and the series IDs are stable and well-documented. (v1 is "deprecated"
-# but EIA has kept it working for years and the failure mode if they
-# ever turn it off is graceful — same as having no key.)
-EIA_V1_BASE = "https://api.eia.gov/series/"
+# EIA v2 API. (v1 was retired — returns 404 as of mid-2025.)
+EIA_V2_BASE = "https://api.eia.gov/v2"
 
-# US ending crude oil stocks (commercial, excl. SPR), weekly, thousand bbl
-OIL_STOCKS_SERIES = "PET.WCRSTUS1.W"
-# Lower-48 working gas in underground storage, weekly, billion cubic feet
-NATGAS_STORAGE_SERIES = "NG.NW2_EPG0_SWO_R48_BCF.W"
+# Per-endpoint config. v2's facet names differ between commodities,
+# so we keep them in a structured dict instead of one URL string.
+# For each endpoint we also store a list of fallback facet sets to try
+# if the first one returns 0 rows (defensive against EIA facet renames).
+OIL_STOCKS_ENDPOINT = {
+    "name": "oil_stocks",
+    "path": "petroleum/stoc/wstk/data/",
+    "facet_attempts": [
+        # Primary: U.S. ending stocks of crude oil excluding SPR
+        {"duoarea": "NUS", "product": "EPC0", "process": "SAX"},
+        # Fallback 1: drop the process filter (returns multiple series;
+        # we'll filter to commercial-stocks-like values client-side)
+        {"duoarea": "NUS", "product": "EPC0"},
+        # Fallback 2: just crude oil products, US-wide
+        {"product": "EPC0"},
+    ],
+    # Client-side hint: prefer rows whose series-description hints at
+    # commercial crude oil ending stocks
+    "name_hints": [
+        "commercial crude oil",
+        "ending stocks excluding spr",
+        "ending stocks of crude oil",
+    ],
+}
+
+NATGAS_STORAGE_ENDPOINT = {
+    "name": "natgas_storage",
+    "path": "natural-gas/stor/wkly/data/",
+    "facet_attempts": [
+        # Primary: Lower 48 working gas in underground storage
+        {"duoarea": "R48", "process": "SAW"},
+        # Fallback 1: working gas, alternative facet code
+        {"duoarea": "NUS", "process": "SAW"},
+        # Fallback 2: Lower 48 only
+        {"duoarea": "R48"},
+        # Fallback 3: minimal — fetch and filter client-side
+        {},
+    ],
+    "name_hints": [
+        "working gas in underground storage",
+        "lower 48",
+    ],
+}
 
 _API_KEY_WARNED = False
 
@@ -85,57 +121,118 @@ def _get_api_key() -> str | None:
     return key
 
 
-def _fetch_series(series_id: str) -> pd.DataFrame:
-    """Hit the EIA v1 series API and return a 2-column DataFrame
-    [period (datetime), value (float)] sorted ascending. Empty if
-    no key or API failure.
+def _build_v2_url(path: str, facets: dict, key: str) -> str:
+    """Construct a v2 data URL with facets correctly URL-encoded."""
+    parts = [
+        f"api_key={key}",
+        "frequency=weekly",
+        "data[0]=value",
+        "sort[0][column]=period",
+        "sort[0][direction]=desc",
+        "offset=0",
+        "length=5000",
+    ]
+    for k, v in facets.items():
+        parts.append(f"facets[{k}][]={v}")
+    return f"{EIA_V2_BASE}/{path}?" + "&".join(parts)
 
-    v1 response shape:
-      {
-        "series": [{
-          "series_id": "PET.WCRSTUS1.W",
-          "data": [["20231201", 462123], ["20231124", 458200], ...],
-          ...
-        }]
-      }
-    """
-    key = _get_api_key()
-    if not key:
-        return pd.DataFrame()
-    url = f"{EIA_V1_BASE}?api_key={key}&series_id={series_id}"
+
+def _fetch_v2_single(url: str) -> tuple[list, str | None]:
+    """Single v2 GET. Returns (data_rows, err_str). err_str is None on
+    success, otherwise a short human-readable error for logging."""
     try:
         resp = requests.get(url, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
     except Exception as e:
-        LOGGER.warning(f"EIA fetch failed for {series_id}: {e}")
+        return [], f"network error: {e}"
+    if resp.status_code == 404:
+        return [], f"404 — bad endpoint path: {url.split('?')[0]}"
+    try:
+        resp.raise_for_status()
+    except Exception as e:
+        return [], f"HTTP {resp.status_code}: {e}"
+    try:
+        data = resp.json()
+    except Exception:
+        return [], "non-JSON response"
+    items = (data or {}).get("response", {}).get("data") or []
+    if not items:
+        err = (data or {}).get("response", {}).get("error")
+        return [], (f"0 rows ({err})" if err else "0 rows")
+    return items, None
+
+
+def _rows_to_df(items: list, name_hints: list[str]) -> pd.DataFrame:
+    """Convert raw EIA items to a clean [period, value] DataFrame.
+    If multiple distinct series are present, prefer the one whose
+    `series-description` matches one of `name_hints` (case-insensitive).
+    """
+    if not items:
         return pd.DataFrame()
-    series_list = (data or {}).get("series") or []
-    if not series_list:
-        # Try to surface the actual API error if there is one
-        err = (data or {}).get("data", {}).get("error") or (data or {}).get("error")
-        msg = f" ({err})" if err else ""
-        LOGGER.warning(f"EIA returned no series for {series_id}{msg}")
-        return pd.DataFrame()
-    data_rows = series_list[0].get("data") or []
-    if not data_rows:
-        LOGGER.warning(f"EIA returned 0 rows for {series_id}")
-        return pd.DataFrame()
+    # Detect if multiple series were returned (each row has a
+    # series-description); if so, prefer the best-matching one.
+    descriptions = {it.get("series-description") for it in items
+                    if it.get("series-description")}
+    chosen_desc = None
+    if len(descriptions) > 1 and name_hints:
+        lower_hints = [h.lower() for h in name_hints]
+        for desc in descriptions:
+            d_low = (desc or "").lower()
+            if any(h in d_low for h in lower_hints):
+                chosen_desc = desc
+                break
     rows = []
-    for row in data_rows:
+    for it in items:
+        if chosen_desc and it.get("series-description") != chosen_desc:
+            continue
         try:
-            date_str, value = row[0], row[1]
-            if value is None:
+            period = it.get("period")
+            value = it.get("value")
+            if period is None or value is None:
                 continue
             rows.append({
-                "period": pd.Timestamp(date_str),
+                "period": pd.Timestamp(period),
                 "value": float(value),
             })
-        except (TypeError, ValueError, IndexError):
+        except (TypeError, ValueError):
             continue
     if not rows:
         return pd.DataFrame()
     return pd.DataFrame(rows).sort_values("period").reset_index(drop=True)
+
+
+def _fetch_endpoint(endpoint_config: dict) -> pd.DataFrame:
+    """Try each facet attempt in order, return first non-empty result.
+    Logs detailed diagnostics on failure so we can debug facet names."""
+    key = _get_api_key()
+    if not key:
+        return pd.DataFrame()
+    name = endpoint_config["name"]
+    path = endpoint_config["path"]
+    name_hints = endpoint_config.get("name_hints", [])
+    for i, facets in enumerate(endpoint_config["facet_attempts"]):
+        url = _build_v2_url(path, facets, key)
+        items, err = _fetch_v2_single(url)
+        if err:
+            facet_label = (
+                ", ".join(f"{k}={v}" for k, v in facets.items())
+                or "(no facets)"
+            )
+            LOGGER.warning(
+                f"EIA {name} attempt {i + 1} [{facet_label}] failed: {err}"
+            )
+            continue
+        df = _rows_to_df(items, name_hints)
+        if not df.empty:
+            LOGGER.info(
+                f"EIA {name}: fetched {len(df)} weekly rows "
+                f"using facets {facets or '(none)'}"
+            )
+            return df
+    LOGGER.error(
+        f"EIA {name}: all facet attempts returned empty. "
+        f"Inventory features for this commodity will stay None."
+    )
+    return pd.DataFrame()
 
 
 def _cache_path(name: str) -> pathlib.Path:
@@ -175,7 +272,7 @@ def fetch_oil_stocks() -> pd.DataFrame:
     cached = _read_cache("oil_stocks")
     if cached is not None and not cached.empty:
         return cached
-    df = _fetch_series(OIL_STOCKS_SERIES)
+    df = _fetch_endpoint(OIL_STOCKS_ENDPOINT)
     if not df.empty:
         _write_cache("oil_stocks", df)
     return df
@@ -187,7 +284,7 @@ def fetch_natgas_storage() -> pd.DataFrame:
     cached = _read_cache("natgas_storage")
     if cached is not None and not cached.empty:
         return cached
-    df = _fetch_series(NATGAS_STORAGE_SERIES)
+    df = _fetch_endpoint(NATGAS_STORAGE_ENDPOINT)
     if not df.empty:
         _write_cache("natgas_storage", df)
     return df
