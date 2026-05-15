@@ -5,11 +5,15 @@
 #   - Persists across reboots
 #
 # Usage:
-#   1. Right-click PowerShell → Run as Administrator
+#   1. Right-click PowerShell -> Run as Administrator
 #   2. cd to this folder
 #   3. ./setup_agent_task.ps1
 #
 # To remove: Unregister-ScheduledTask -TaskName "PaperTraderAgent" -Confirm:$false
+#
+# NOTE: This file is intentionally ASCII-only. Windows PowerShell 5.1 reads
+# .ps1 files as Windows-1252 by default; non-ASCII characters (emoji, smart
+# quotes, en/em dashes) silently corrupt and break string parsing.
 
 $ErrorActionPreference = "Stop"
 
@@ -20,15 +24,15 @@ $IsAdmin = ([Security.Principal.WindowsPrincipal] `
 
 if (-not $IsAdmin) {
     Write-Host ""
-    Write-Host "❌ This script must run as Administrator." -ForegroundColor Red
+    Write-Host "[ERROR] This script must run as Administrator." -ForegroundColor Red
     Write-Host ""
     Write-Host "Close this window, then:"
-    Write-Host "  1. Start menu → search 'PowerShell'"
-    Write-Host "  2. Right-click → Run as administrator"
+    Write-Host "  1. Start menu -> search 'PowerShell'"
+    Write-Host "  2. Right-click -> Run as administrator"
     Write-Host "  3. cd `"$((Resolve-Path "$PSScriptRoot\..").Path)`""
     Write-Host "  4. .\scripts\setup_agent_task.ps1"
     Write-Host ""
-    Write-Host "Or use the Startup-folder alternative (no admin needed) —"
+    Write-Host "Or use the Startup-folder alternative (no admin needed)"
     Write-Host "see docs/paper_trader_setup.md for the .bat-shortcut method."
     exit 1
 }
@@ -37,8 +41,7 @@ $TaskName = "PaperTraderAgent"
 $RepoRoot = (Resolve-Path "$PSScriptRoot\..").Path
 $PythonExe = (Get-Command pythonw.exe -ErrorAction SilentlyContinue).Path
 if (-not $PythonExe) {
-    Write-Warning "pythonw.exe not found; falling back to python.exe " +
-                  "(will show a console window)."
+    Write-Warning "pythonw.exe not found; falling back to python.exe (will show a console window)."
     $PythonExe = (Get-Command python.exe).Path
 }
 
@@ -84,12 +87,12 @@ try {
 }
 catch {
     Write-Host ""
-    Write-Host "❌ Registration failed: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "[ERROR] Registration failed: $($_.Exception.Message)" -ForegroundColor Red
     exit 1
 }
 
 Write-Host ""
-Write-Host "✅ Scheduled task '$TaskName' registered."
+Write-Host "[OK] Scheduled task '$TaskName' registered."
 Write-Host ""
 Write-Host "Useful commands:"
 Write-Host "  Start now : Start-ScheduledTask -TaskName $TaskName"
@@ -97,6 +100,6 @@ Write-Host "  Stop      : Stop-ScheduledTask  -TaskName $TaskName"
 Write-Host "  Status    : Get-ScheduledTask   -TaskName $TaskName"
 Write-Host "  Remove    : Unregister-ScheduledTask -TaskName $TaskName -Confirm:`$false"
 Write-Host ""
-Write-Host "Starting it now…"
+Write-Host "Starting it now..."
 Start-ScheduledTask -TaskName $TaskName
-Write-Host "✅ Started. Check logs/agent.log for activity."
+Write-Host "[OK] Started. Check logs/agent.log for activity."
