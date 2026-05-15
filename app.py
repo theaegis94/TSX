@@ -3125,6 +3125,7 @@ with tab_scan:
                 "TSX 60 (~60) — fastest",
                 "Entire TSX (~1500) — slower",
                 "Entire TSX Venture (~1500) — slower",
+                "Entire TSX + TSXV (~3500) — slowest",
                 "S&P 100 (~100)",
                 "S&P 500 (~500)",
                 "Popular ETFs (~80)",
@@ -3149,6 +3150,8 @@ with tab_scan:
                                                 lambda: ss.get_full_tsx_listing("tsx")),
                 "Entire TSX Venture (~1500) — slower": ("tsxv",
                                                           lambda: ss.get_full_tsx_listing("tsxv")),
+                "Entire TSX + TSXV (~3500) — slowest": ("tsx_and_tsxv",
+                                                          ss.get_tsx_and_tsxv),
                 "S&P 100 (~100)": ("sp100",
                                     lambda: list(ss.UNIVERSE_SP100)),
                 "S&P 500 (~500)": ("sp500", ss.get_sp500),
@@ -3528,6 +3531,7 @@ with tab_screener:
                 "TSX Composite (~250)",
                 "Entire TSX (~1500)",
                 "Entire TSX Venture (~1500)",
+                "Entire TSX + TSXV (~3500)",
                 "Popular ETFs (~80)",
                 "All US + TSX + ETFs (~850)",
                 "Custom watchlist",
@@ -3598,6 +3602,10 @@ with tab_screener:
             return ss.get_full_tsx_listing(market)
 
         @st.cache_data(ttl=86400, show_spinner=False)
+        def _cached_tsx_and_tsxv() -> list:
+            return ss.get_tsx_and_tsxv()
+
+        @st.cache_data(ttl=86400, show_spinner=False)
         def _cached_full_us() -> list:
             return ss.get_full_us_listing()
 
@@ -3623,6 +3631,8 @@ with tab_screener:
                 universe = _cached_tsx_composite()
             elif universe_choice.startswith("Entire TSX Venture"):
                 universe = _cached_full_tsx("tsxv")
+            elif universe_choice.startswith("Entire TSX + TSXV"):
+                universe = _cached_tsx_and_tsxv()
             elif universe_choice.startswith("Entire TSX"):
                 universe = _cached_full_tsx("tsx")
             elif universe_choice.startswith("Popular ETFs"):
@@ -4023,6 +4033,7 @@ with tab_screener:
             "TSX 60 (~60)",
             "Entire TSX (~1500) — slow",
             "Entire TSX Venture (~1500) — slow",
+            "Entire TSX + TSXV (~3500) — slowest",
             "S&P 100 (~100)",
             "S&P 500 (~500) — slow",
             "Popular ETFs (~80)",
@@ -4072,6 +4083,8 @@ with tab_screener:
                     tickers = ss.get_full_tsx_listing("tsx")
                 elif wt_universe == "Entire TSX Venture (~1500) — slow":
                     tickers = ss.get_full_tsx_listing("tsxv")
+                elif wt_universe == "Entire TSX + TSXV (~3500) — slowest":
+                    tickers = ss.get_tsx_and_tsxv()
                 elif wt_universe == "S&P 100 (~100)":
                     tickers = list(ss.UNIVERSE_SP100)
                 elif wt_universe == "S&P 500 (~500) — slow":
@@ -4270,6 +4283,7 @@ with tab_screener:
             "TSX Composite (~250)",
             "TSX 60 (~60)",
             "Entire TSX Venture (~1500)",
+            "Entire TSX + TSXV (~3500)",
             "S&P 100 (~100)",
             "S&P 500 (~500 — slow)",
             "Entire US (~7000, very slow)",
@@ -4313,6 +4327,8 @@ with tab_screener:
                     tickers = ss.get_full_tsx_listing("tsx")
                 elif tm_universe == "Entire TSX Venture (~1500)":
                     tickers = ss.get_full_tsx_listing("tsxv")
+                elif tm_universe == "Entire TSX + TSXV (~3500)":
+                    tickers = ss.get_tsx_and_tsxv()
                 elif tm_universe == "S&P 100 (~100)":
                     tickers = list(ss.UNIVERSE_SP100)
                 elif tm_universe == "S&P 500 (~500 — slow)":
@@ -4747,6 +4763,8 @@ with tab_screener:
             "TSX 60 (~60)",
             "TSX Composite (~250)",
             "Entire TSX (~1500, slow)",
+            "Entire TSX Venture (~1500, slow)",
+            "Entire TSX + TSXV (~3500, slowest)",
             "Popular ETFs (~80)",
             "Custom watchlist",
         ] + [
@@ -4816,6 +4834,10 @@ with tab_screener:
                     tickers = ss.get_tsx_composite()
                 elif ft_universe == "Entire TSX (~1500, slow)":
                     tickers = ss.get_full_tsx_listing("tsx")
+                elif ft_universe == "Entire TSX Venture (~1500, slow)":
+                    tickers = ss.get_full_tsx_listing("tsxv")
+                elif ft_universe == "Entire TSX + TSXV (~3500, slowest)":
+                    tickers = ss.get_tsx_and_tsxv()
                 elif ft_universe == "S&P 100 (~100)":
                     tickers = list(ss.UNIVERSE_SP100)
                 elif ft_universe == "S&P 500 (~500 — slow)":
@@ -4978,6 +5000,7 @@ with tab_screener:
             "TSX Composite (~250)",
             "Entire TSX (~1500, slow)",
             "Entire TSX Venture (~1500, slow)",
+            "Entire TSX + TSXV (~3500, slowest)",
             "Popular ETFs (~80)",
             "Custom watchlist",
         ] + [
@@ -5050,6 +5073,8 @@ with tab_screener:
                     tickers = ss.get_full_tsx_listing("tsx")
                 elif rs_universe == "Entire TSX Venture (~1500, slow)":
                     tickers = ss.get_full_tsx_listing("tsxv")
+                elif rs_universe == "Entire TSX + TSXV (~3500, slowest)":
+                    tickers = ss.get_tsx_and_tsxv()
                 elif rs_universe == "S&P 100 (~100)":
                     tickers = list(ss.UNIVERSE_SP100)
                 elif rs_universe == "S&P 500 (~500 — slow)":

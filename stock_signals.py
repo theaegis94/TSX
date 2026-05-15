@@ -538,6 +538,21 @@ def get_full_us_listing() -> list[str]:
         return []
 
 
+def get_tsx_and_tsxv() -> list[str]:
+    """Combined TSX main board + TSX Venture listings — every Canadian
+    equity (≈3,500 tickers per TMX). Concatenates `get_full_tsx_listing`
+    for both markets and de-duplicates while preserving order.
+    """
+    seen: set[str] = set()
+    combined: list[str] = []
+    for market in ("tsx", "tsxv"):
+        for t in get_full_tsx_listing(market):
+            if t not in seen:
+                seen.add(t)
+                combined.append(t)
+    return combined
+
+
 def get_full_tsx_listing(market: str = "tsx") -> list[str]:
     """All listed companies on TSX (or TSXV) via TMX Group's directory.
     market='tsx' for the main board (~1000 names), 'tsxv' for Venture (~1700).
