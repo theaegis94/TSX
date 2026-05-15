@@ -13,6 +13,26 @@
 
 $ErrorActionPreference = "Stop"
 
+# --- Require admin: Task Scheduler registration needs elevation ---
+$IsAdmin = ([Security.Principal.WindowsPrincipal] `
+    [Security.Principal.WindowsIdentity]::GetCurrent()
+).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+if (-not $IsAdmin) {
+    Write-Host ""
+    Write-Host "❌ This script must run as Administrator." -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Close this window, then:"
+    Write-Host "  1. Start menu → search 'PowerShell'"
+    Write-Host "  2. Right-click → Run as administrator"
+    Write-Host "  3. cd `"$((Resolve-Path "$PSScriptRoot\..").Path)`""
+    Write-Host "  4. .\scripts\setup_agent_task.ps1"
+    Write-Host ""
+    Write-Host "Or use the Startup-folder alternative (no admin needed) —"
+    Write-Host "see docs/paper_trader_setup.md for the .bat-shortcut method."
+    exit 1
+}
+
 $TaskName = "PaperTraderAgent"
 $RepoRoot = (Resolve-Path "$PSScriptRoot\..").Path
 $PythonExe = (Get-Command pythonw.exe -ErrorAction SilentlyContinue).Path
@@ -52,13 +72,21 @@ $Principal = New-ScheduledTaskPrincipal `
 # Remove any existing version first
 Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
 
-Register-ScheduledTask `
-    -TaskName $TaskName `
-    -Action $Action `
-    -Trigger $Trigger `
-    -Settings $Settings `
-    -Principal $Principal `
-    -Description "Paper-trades HOU/HOD/HNU/HND with logged signals" | Out-Null
+try {
+    Register-ScheduledTask `
+        -TaskName $TaskName `
+        -Action $Action `
+        -Trigger $Trigger `
+        -Settings $Settings `
+        -Principal $Principal `
+        -Description "Paper-trades HOU/HOD/HNU/HND with logged signals" `
+        -ErrorAction Stop | Out-Null
+}
+catch {
+    Write-Host ""
+    Write-Host "❌ Registration failed: $($_.Exception.Message)" -ForegroundColor Red
+    exit 1
+}
 
 Write-Host ""
 Write-Host "✅ Scheduled task '$TaskName' registered."
