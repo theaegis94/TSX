@@ -56,6 +56,7 @@ from . import features as feat_mod
 from . import storage
 from . import strategies as strat_mod
 from . import exits as exit_mod
+from . import weather
 
 # Match the live config exactly so sim trades are comparable
 COMMISSION = 5.0
@@ -139,6 +140,10 @@ def run_backtest(
         LOGGER.warning(
             "No CFTC data — speculator-positioning boost disabled."
         )
+    # Weather data — free, no key, drives natgas demand
+    weather_df = weather.fetch_weather_history()
+    if weather_df.empty:
+        LOGGER.warning("No weather data — weather strategies disabled.")
     if eia_oil_df.empty:
         LOGGER.warning(
             "No EIA oil data — inventory strategies will be inactive. "
@@ -182,6 +187,7 @@ def run_backtest(
             eia_oil_df=eia_oil_df,
             eia_gas_df=eia_gas_df,
             cftc_df=cftc_df,
+            weather_df=weather_df,
         )
         signals = strat_mod.run_all_strategies(features)
         best = strat_mod.best_signal(signals)

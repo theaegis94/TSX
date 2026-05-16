@@ -160,6 +160,77 @@ class OilSharpDip(Strategy):
         return (None, 0.0)
 
 
+class NatgasColdSnap(Strategy):
+    """Buy HNU when actual 7-day HDD is materially above seasonal
+    normal (cold snap = heating demand spike = natgas bullish)."""
+    name = "natgas_cold_snap"
+    description = (
+        "Buy HNU when 7-day HDD anomaly is >+20% vs seasonal normal "
+        "(cold snap → heating demand spike)."
+    )
+
+    def signal(self, features):
+        cold = features.get("weather_cold_snap", False)
+        anom = features.get("weather_hdd_anomaly_7d")
+        if not cold or anom is None:
+            return (None, 0.0)
+        # Bigger anomaly = stronger conviction
+        if anom > 30:
+            return ("HNU.TO", 0.80)
+        if anom > 15:
+            return ("HNU.TO", 0.65)
+        return ("HNU.TO", 0.55)
+
+
+class NatgasWarmWinter(Strategy):
+    """Buy HND when actual 7-day HDD is well below seasonal normal
+    DURING winter (mild winter = lower demand → bearish)."""
+    name = "natgas_warm_winter"
+    description = (
+        "Buy HND when 7-day HDD anomaly is <-20% vs normal during "
+        "winter months (mild winter → demand collapse)."
+    )
+
+    def signal(self, features):
+        warm = features.get("weather_warm_anomaly", False)
+        month = features.get("month")
+        if not warm or month is None:
+            return (None, 0.0)
+        # Only meaningful Nov-Mar when there's real heating demand
+        if month not in (11, 12, 1, 2, 3):
+            return (None, 0.0)
+        anom = features.get("weather_hdd_anomaly_7d")
+        if anom is None:
+            return (None, 0.0)
+        if anom < -30:
+            return ("HND.TO", 0.75)
+        return ("HND.TO", 0.55)
+
+
+class NatgasHeatDome(Strategy):
+    """Buy HNU when summer cooling demand spikes (heat-dome events
+    drive power-generation natgas burn)."""
+    name = "natgas_heat_dome"
+    description = (
+        "Buy HNU when 7-day CDD anomaly is >+30% in summer months "
+        "(heat dome → AC demand surge → power-gen natgas burn)."
+    )
+
+    def signal(self, features):
+        heat = features.get("weather_heat_dome", False)
+        month = features.get("month")
+        if not heat or month is None:
+            return (None, 0.0)
+        if month not in (6, 7, 8, 9):
+            return (None, 0.0)
+        anom = features.get("weather_cdd_anomaly_7d")
+        if anom is None:
+            return (None, 0.0)
+        if anom > 15:
+            return ("HNU.TO", 0.75)
+        return ("HNU.TO", 0.55)
+
+
 class NatgasPullbackInUptrend(Strategy):
     """Natgas mirror of OilPullbackInUptrend — buy HNU on NG=F pullback
     inside a confirmed uptrend."""
@@ -477,15 +548,20 @@ class DxyOilInverse(Strategy):
 # doesn't matter — the agent picks the highest-conviction signal across
 # all of them.
 ALL_STRATEGIES: list[Strategy] = [
-    # Iter 46 production config: oil-only edge, regime-filtered.
-    # Natgas tested separately (PF 0.52 on sharp dip — broken on
-    # natgas pair, kept in code for future research).
+    # Iter 46 production: oil-only, regime-filtered, +453% 10y.
     OilBollingerOversold(),
     OilPullbackInUptrend(),
     OilSharpDip(),
-    # NatgasPullbackInUptrend(),  # PF 1.33 alone (decent but not used)
-    # NatgasSharpDip(),  # PF 0.52 on 10y — broken
-    # NatgasBollingerOversold(),  # never fires due to RSI competition
+    # WEATHER STRATEGIES TESTED — ALL FAILED in production-mix backtest.
+    # Standalone test of NatgasHeatDome showed PF 3.64 / 11 trades, but
+    # that was selection bias from competing with other natgas losers.
+    # When mixed with oil strategies, HeatDome takes slots from oil
+    # winners and bleeds (PF 0.37 / 34 trades, -$8,811).
+    # NatgasHeatDome(),    # iter 47: looked good standalone, broke prod
+    # NatgasColdSnap(),    # PF 0.37 — news already priced in
+    # NatgasWarmWinter(),  # PF 0.39 — HND decay overpowers thesis
+    # NatgasPullbackInUptrend(),  # PF 0.15
+    # NatgasSharpDip(),    # PF 0.46
 ]
 
 
@@ -506,6 +582,10 @@ def run_all_strategies(
     bear_regime = features.get("wti_bear_regime", False)
     fast_bear = features.get("wti_fast_bear", False)
     if bear_regime or fast_bear:
+        return [{
+            "strategy": s.name, "ticker": None, "conviction": 0.0,
+        } for s in ALL_STRATEGIES
+            if enabled_names is None or s.name in enabled_names]
         return [{
             "strategy": s.name, "ticker": None, "conviction": 0.0,
         } for s in ALL_STRATEGIES

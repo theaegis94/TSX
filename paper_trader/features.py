@@ -23,6 +23,7 @@ import stock_signals as ss
 
 from . import eia
 from . import cftc
+from . import weather
 
 # Underlying commodities + macro
 SYMBOLS = {
@@ -222,6 +223,13 @@ def fetch_features() -> dict[str, Any]:
     except Exception:
         pass
 
+    # --- Weather (live) — natgas demand driver ---
+    try:
+        wx_df = weather.fetch_weather_history()
+        out.update(weather.compute_weather_features(wx_df))
+    except Exception:
+        pass
+
     return out
 
 
@@ -306,6 +314,7 @@ def features_as_of(
     eia_oil_df: pd.DataFrame | None = None,
     eia_gas_df: pd.DataFrame | None = None,
     cftc_df: pd.DataFrame | None = None,
+    weather_df: pd.DataFrame | None = None,
 ) -> dict[str, Any]:
     """Compute features as they would have looked at the close of
     `as_of_date`. CRITICAL: slices the series to bars AT or BEFORE
@@ -384,6 +393,15 @@ def features_as_of(
         try:
             out.update(cftc.compute_cftc_features(
                 cftc_df, as_of_date=as_of_ts,
+            ))
+        except Exception:
+            pass
+
+    # --- Weather (backtest path) ---
+    if weather_df is not None and not weather_df.empty:
+        try:
+            out.update(weather.compute_weather_features(
+                weather_df, as_of_date=as_of_ts,
             ))
         except Exception:
             pass
