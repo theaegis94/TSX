@@ -160,6 +160,50 @@ class OilSharpDip(Strategy):
         return (None, 0.0)
 
 
+class NatgasPullbackInUptrend(Strategy):
+    """Natgas mirror of OilPullbackInUptrend — buy HNU on NG=F pullback
+    inside a confirmed uptrend."""
+    name = "natgas_pullback_uptrend"
+    description = (
+        "Buy HNU when NG=F 20d return is positive AND RSI is in a "
+        "40-50 pullback zone."
+    )
+
+    def signal(self, features):
+        ret_20 = features.get("ng_ret_20d_pct")
+        rsi = features.get("ng_rsi")
+        if ret_20 is None or rsi is None:
+            return (None, 0.0)
+        if ret_20 > 3.0 and 40 <= rsi <= 50:
+            return ("HNU.TO", 0.55)
+        if ret_20 > 5.0 and 35 <= rsi <= 55:
+            return ("HNU.TO", 0.50)
+        return (None, 0.0)
+
+
+class NatgasSharpDip(Strategy):
+    """Natgas mirror of OilSharpDip — buy HNU on sharp 1-day drop while
+    20d trend remains up."""
+    name = "natgas_sharp_dip"
+    description = (
+        "Buy HNU when NG=F dropped >2% in one day AND 20d return is "
+        "still positive — buying a panic dip inside a natgas uptrend."
+    )
+
+    def signal(self, features):
+        ret_1 = features.get("ng_ret_1d_pct")
+        ret_20 = features.get("ng_ret_20d_pct")
+        if ret_1 is None or ret_20 is None:
+            return (None, 0.0)
+        if ret_1 < -4.0 and ret_20 > 0:
+            return ("HNU.TO", 0.70)
+        if ret_1 < -2.0 and ret_20 > 2:
+            return ("HNU.TO", 0.55)
+        if ret_1 < -1.5 and ret_20 > 4:
+            return ("HNU.TO", 0.50)
+        return (None, 0.0)
+
+
 class OilDxyTailwind(Strategy):
     """Buy HOU when DXY weakens substantially over 5 days — dollar
     weakness historically lifts dollar-priced commodities. Fires on
@@ -433,14 +477,15 @@ class DxyOilInverse(Strategy):
 # doesn't matter — the agent picks the highest-conviction signal across
 # all of them.
 ALL_STRATEGIES: list[Strategy] = [
-    # Iter 46: oil_rsi_reversion REMOVED. Out-of-sample testing showed
-    # it loses in every window from 3y to 10y (PF 0.63-0.92). The 5y
-    # backtest's +3830% was a misleading aggregate — RSI was always
-    # the loser dragging down two real winners.
-    # OilRsiReversion(),  # PF <1 across all tested windows
+    # Iter 46 production config: oil-only edge, regime-filtered.
+    # Natgas tested separately (PF 0.52 on sharp dip — broken on
+    # natgas pair, kept in code for future research).
     OilBollingerOversold(),
     OilPullbackInUptrend(),
     OilSharpDip(),
+    # NatgasPullbackInUptrend(),  # PF 1.33 alone (decent but not used)
+    # NatgasSharpDip(),  # PF 0.52 on 10y — broken
+    # NatgasBollingerOversold(),  # never fires due to RSI competition
 ]
 
 
@@ -458,7 +503,6 @@ def run_all_strategies(
     # ITER 45: faster regime detector. Skip if EITHER condition fires:
     #   - bear_regime (200d SMA filter — slow but durable)
     #   - fast_bear (30-day return < -10% — catches crashes early)
-    # Together these should filter out the 2018-2020 bleed period.
     bear_regime = features.get("wti_bear_regime", False)
     fast_bear = features.get("wti_fast_bear", False)
     if bear_regime or fast_bear:
