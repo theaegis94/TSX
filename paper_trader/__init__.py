@@ -34,6 +34,7 @@ from .storage import (
     TICKERS,
 )
 from .simulate import run_backtest
+from .recommend import compute_recommendations
 
 __all__ = [
     "DEFAULT_INITIAL_CAPITAL",
@@ -52,5 +53,6 @@ __all__ = [
     "clear_sim_trades",
     "compute_sim_stats",
     "run_backtest",
+    "compute_recommendations",
     "TICKERS",
 ]

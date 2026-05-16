@@ -7188,6 +7188,145 @@ with tab_paper:
         "position, trade history, and per-strategy accuracy."
     )
 
+    # === Live BUY/SELL recommendations panel ===
+    st.markdown("### 🎯 Live Recommendations")
+
+    @st.cache_data(ttl=60, show_spinner=False)
+    def _cached_recommendations():
+        """1-minute cache so refreshing the page doesn't repeatedly
+        hit yfinance. The 15-min upstream delay means more frequent
+        refreshes wouldn't help anyway."""
+        return pt.compute_recommendations()
+
+    _rec_col_a, _rec_col_b = st.columns([3, 1])
+    with _rec_col_a:
+        st.caption(
+            "Each ETF gets a BUY or SELL chip based on the current "
+            "feature snapshot. HOU/HOD are inverses (only one can "
+            "succeed/day) — likewise HNU/HND. Only HOU bull signals "
+            "are backtest-validated (+453% 10y); others are experimental."
+        )
+    with _rec_col_b:
+        if st.button("🔄 Refresh now", key="pt_refresh_recs",
+                      use_container_width=True):
+            _cached_recommendations.clear()
+            st.rerun()
+
+    try:
+        _recs = _cached_recommendations()
+    except Exception as e:
+        st.error(f"Could not compute recommendations: {e}")
+        _recs = None
+
+    def _render_etf_card(etf: dict, validated: bool, regime_note: str):
+        """Render a single ETF's BUY/SELL chip + conviction + signals."""
+        ticker = etf["ticker"]
+        action = etf["action"]
+        conv = etf["conviction"]
+        signals = etf["signals"]
+
+        # Color + text by action
+        if action == "BUY":
+            bg = "rgba(34,197,94,0.18)"
+            border = "#16a34a"
+            chip_bg = "#16a34a"
+        else:  # SELL / AVOID
+            bg = "rgba(75,85,99,0.18)"
+            border = "#4b5563"
+            chip_bg = "#6b7280"
+
+        # Validation badge
+        if validated:
+            val_badge = (
+                '<span style="background:#1e40af; color:#fff; '
+                'padding:1px 6px; border-radius:6px; '
+                'font-size:0.65rem;">VALIDATED</span>'
+            )
+        else:
+            val_badge = (
+                '<span style="background:#7c2d12; color:#fff; '
+                'padding:1px 6px; border-radius:6px; '
+                'font-size:0.65rem;">EXPERIMENTAL</span>'
+            )
+
+        # Signal list
+        if signals:
+            sig_html = "<br>".join(
+                f'<span style="font-size:0.78rem; color:#9ca3af;">'
+                f'· {s["label"]} (conv {s["conviction"]:.2f})</span>'
+                for s in signals
+            )
+        elif regime_note:
+            sig_html = (
+                f'<span style="font-size:0.78rem; color:#f59e0b;">'
+                f'⏸ Bull signals blocked: {regime_note}</span>'
+            )
+        else:
+            sig_html = (
+                '<span style="font-size:0.78rem; color:#6b7280;">'
+                'No signals firing right now</span>'
+            )
+
+        st.markdown(
+            f'<div style="background:{bg}; border:2px solid {border}; '
+            f'border-radius:10px; padding:10px 14px; '
+            f'margin-bottom:8px;">'
+            f'<div style="display:flex; justify-content:space-between; '
+            f'align-items:center;">'
+            f'<span style="font-size:1.1rem; font-weight:700;">'
+            f'{ticker}</span>'
+            f'{val_badge}'
+            f'</div>'
+            f'<div style="margin:6px 0;">'
+            f'<span style="background:{chip_bg}; color:#fff; '
+            f'padding:4px 14px; border-radius:6px; font-weight:700; '
+            f'font-size:1.0rem;">{action}</span>'
+            f'<span style="margin-left:8px; color:#d1d5db; '
+            f'font-size:0.85rem;">conviction {conv:.2f}</span>'
+            f'</div>'
+            f'<div>{sig_html}</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+    if _recs:
+        oil = _recs["oil"]
+        gas = _recs["gas"]
+
+        # Two columns: oil pair on left, gas pair on right
+        _ocol, _gcol = st.columns(2)
+        with _ocol:
+            st.markdown("**🛢️ Oil pair (WTI underlying)**")
+            _render_etf_card(
+                oil["bull"], validated=oil["bull"]["validated"],
+                regime_note=oil["regime_reason"] or "",
+            )
+            _render_etf_card(
+                oil["bear"], validated=oil["bear"]["validated"],
+                regime_note="",
+            )
+        with _gcol:
+            st.markdown("**🔥 Natgas pair (Henry Hub underlying)**")
+            _render_etf_card(
+                gas["bull"], validated=gas["bull"]["validated"],
+                regime_note=gas["regime_reason"] or "",
+            )
+            _render_etf_card(
+                gas["bear"], validated=gas["bear"]["validated"],
+                regime_note="",
+            )
+
+        # Footer with refresh timestamp + data delay caveat
+        from datetime import datetime as _dt
+        _now_str = _dt.now().strftime("%H:%M:%S")
+        st.caption(
+            f"_Computed at {_now_str} · Auto-cached 60s · "
+            f"yfinance prices are ~15 min delayed during market hours. "
+            f"Click Refresh to recompute._"
+        )
+
+    st.divider()
+
     # --- Agent health ---
     hb = pt.get_heartbeat()
     if hb:
