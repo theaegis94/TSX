@@ -22,6 +22,7 @@ import yfinance as yf
 import stock_signals as ss
 
 from . import eia
+from . import cftc
 
 # Underlying commodities + macro
 SYMBOLS = {
@@ -169,14 +170,19 @@ def fetch_features() -> dict[str, Any]:
             out["brent_wti_spread"] = b - w
 
     # --- EIA inventory features (live) ---
-    # Will all be None if EIA_API_KEY is not set; that's the graceful
-    # degradation path so the rest of the system keeps working.
     try:
         out.update(eia.oil_inventory_features())
     except Exception:
         pass
     try:
         out.update(eia.natgas_storage_features())
+    except Exception:
+        pass
+
+    # --- CFTC speculator positioning (live) ---
+    try:
+        cot_df = cftc.fetch_cot_data()
+        out.update(cftc.compute_cftc_features(cot_df))
     except Exception:
         pass
 
@@ -263,6 +269,7 @@ def features_as_of(
     as_of_date,
     eia_oil_df: pd.DataFrame | None = None,
     eia_gas_df: pd.DataFrame | None = None,
+    cftc_df: pd.DataFrame | None = None,
 ) -> dict[str, Any]:
     """Compute features as they would have looked at the close of
     `as_of_date`. CRITICAL: slices the series to bars AT or BEFORE
@@ -332,6 +339,15 @@ def features_as_of(
         try:
             out.update(eia.natgas_storage_features(
                 as_of_date=as_of_ts, precomputed=eia_gas_df,
+            ))
+        except Exception:
+            pass
+
+    # --- CFTC speculator positioning (backtest path) ---
+    if cftc_df is not None and not cftc_df.empty:
+        try:
+            out.update(cftc.compute_cftc_features(
+                cftc_df, as_of_date=as_of_ts,
             ))
         except Exception:
             pass

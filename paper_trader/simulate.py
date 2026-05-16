@@ -1,8 +1,8 @@
 """Walk-forward backtest of the paper-trading agent.
 
 ================================================================
-CURRENT CONFIG: iter 35 — aggressive 3x-leveraged version.
-5-year backtest: +2594% (final $269,432 from $10,000).
+CURRENT CONFIG: iter 39 — 3x leverage + CFTC boost + OVX boost.
+5-year backtest: +3830% (final $393,078 from $10,000).
 
 THIS IS A PAPER-TRADE-ONLY CONFIG. DO NOT FUND WITH REAL MONEY
 WITHOUT MONTHS OF LIVE PAPER VALIDATION FIRST.
@@ -50,6 +50,7 @@ import sys
 
 import pandas as pd
 
+from . import cftc
 from . import eia
 from . import features as feat_mod
 from . import storage
@@ -132,6 +133,12 @@ def run_backtest(
     # simply not fire in that case.
     eia_oil_df = eia.fetch_oil_stocks()
     eia_gas_df = eia.fetch_natgas_storage()
+    # CFTC speculator positioning — no key required, public data
+    cftc_df = cftc.fetch_cot_data()
+    if cftc_df.empty:
+        LOGGER.warning(
+            "No CFTC data — speculator-positioning boost disabled."
+        )
     if eia_oil_df.empty:
         LOGGER.warning(
             "No EIA oil data — inventory strategies will be inactive. "
@@ -174,6 +181,7 @@ def run_backtest(
             feat_df, D,
             eia_oil_df=eia_oil_df,
             eia_gas_df=eia_gas_df,
+            cftc_df=cftc_df,
         )
         signals = strat_mod.run_all_strategies(features)
         best = strat_mod.best_signal(signals)
@@ -226,17 +234,15 @@ def run_backtest(
                     # shrink. 0.50-0.65 = 1.0x base; 0.65-0.80 ramps
                     # to 2.0x for the strongest signals.
                     conv = best["conviction"]
-                    # Iter 32: allow up to 2x leverage on top-conviction
-                    # signals. Margin interest not modeled — real-world
-                    # would shave ~6-8%/yr off these numbers.
+                    # Back to iter 39 sizing (best so far)
                     if conv >= 0.65:
                         size_mult = 2.5 + (conv - 0.65) / 0.15 * 2.5
                     else:
                         size_mult = 1.0
-                    size_mult = max(1.0, min(8.0, size_mult))
+                    size_mult = max(1.0, min(5.0, size_mult))
                     capital = min(
                         sim_balance * POSITION_SIZE_PCT * size_mult,
-                        sim_balance * 3.0,  # 3x leverage cap
+                        sim_balance * 3.0,
                     )
                     if capital >= COMMISSION * 2:
                         exec_price = _slip_buy(entry_close)

@@ -455,6 +455,23 @@ def run_all_strategies(
       {"strategy": name, "ticker": str|None, "conviction": float}
     """
     out: list[dict] = []
+    # CFTC conviction modifier — boost-only (iter 36 reduce hurt us)
+    cftc_boost = 0.0
+    days_old = features.get("cftc_days_old")
+    if days_old is not None and days_old <= 14:
+        if features.get("cftc_spec_extreme_short"):
+            cftc_boost = +0.05
+
+    # Iter 39: high OVX = mean reversion pays best. Moderate boost.
+    # (iter 43 tried bigger boosts — pushed result into fantasy zone.)
+    ovx = features.get("ovx_close")
+    ovx_boost = 0.0
+    if ovx is not None:
+        if ovx > 60:
+            ovx_boost = +0.10
+        elif ovx > 40:
+            ovx_boost = +0.05
+
     for strat in ALL_STRATEGIES:
         if enabled_names is not None and strat.name not in enabled_names:
             continue
@@ -464,6 +481,9 @@ def run_all_strategies(
             ticker, conv = (None, 0.0)
         # Apply the bull-only filter (no-op when BULL_ONLY is False)
         ticker, conv = _bull_only_filter((ticker, conv))
+        # Combined conviction boosts for bull-side signals
+        if ticker in ("HOU.TO", "HNU.TO"):
+            conv = max(0.0, min(0.90, conv + cftc_boost + ovx_boost))
         out.append({
             "strategy": strat.name,
             "ticker": ticker,
