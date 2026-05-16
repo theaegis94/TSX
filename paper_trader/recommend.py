@@ -202,32 +202,54 @@ def _pair_recommendation(
     bull_conv = bull_top["conviction"] if bull_top else 0.0
     bear_conv = bear_top["conviction"] if bear_top else 0.0
 
-    # Decide which side wins (or neutral)
-    direction = "neutral"
+    # Decide which side wins. If neither has a strong signal, fall
+    # back to trend direction (5-day return) so we ALWAYS pick a side
+    # — never "neutral". Low conviction (0.30) signals the fallback.
+    direction = None
+    fallback_reason = None
+
     if bull_conv >= WEAK and bull_conv > bear_conv:
         direction = "bull"
     elif bear_conv >= WEAK and bear_conv > bull_conv:
         direction = "bear"
+    else:
+        # Trend tiebreaker — short-term momentum
+        ret_5 = features.get(f"{prefix}_ret_5d_pct")
+        ret_1 = features.get(f"{prefix}_ret_1d_pct")
+        # Prefer 5d, fall back to 1d, fall back to neutral-bull
+        trend = ret_5 if ret_5 is not None else (ret_1 if ret_1 is not None else 0.0)
+        if trend >= 0:
+            direction = "bull"
+            bull_conv = max(bull_conv, 0.30)
+            fallback_reason = f"5d trend {trend:+.1f}% (bull fallback)"
+        else:
+            direction = "bear"
+            bear_conv = max(bear_conv, 0.30)
+            fallback_reason = f"5d trend {trend:+.1f}% (bear fallback)"
+        # In bear regime, force bear bias even if trend tiebreaker says bull —
+        # the agent itself wouldn't trade bull here.
+        if in_bear_regime and direction == "bull":
+            direction = "bear"
+            bull_conv = 0.0
+            bear_conv = max(bear_conv, 0.30)
+            fallback_reason = "bear regime active (bear fallback)"
 
-    # Per-ETF recommendation
+    # Per-ETF recommendation — always one BUY and one SELL
     if direction == "bull":
         bull_action = "BUY"
         bear_action = "SELL"
         primary_conv = bull_conv
-    elif direction == "bear":
+    else:  # bear
         bull_action = "SELL"
         bear_action = "BUY"
         primary_conv = bear_conv
-    else:
-        bull_action = "SELL"
-        bear_action = "SELL"
-        primary_conv = max(bull_conv, bear_conv)
 
     return {
         "prefix": prefix,
         "direction": direction,
         "primary_conviction": primary_conv,
         "in_bear_regime": in_bear_regime,
+        "fallback_reason": fallback_reason,
         "regime_reason": (
             "fast bear (30d return < -10%)" if features.get(f"{prefix}_fast_bear")
             else "bear regime (200d SMA declining)" if features.get(f"{prefix}_bear_regime")

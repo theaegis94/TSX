@@ -7218,22 +7218,25 @@ with tab_paper:
         st.error(f"Could not compute recommendations: {e}")
         _recs = None
 
-    def _render_etf_card(etf: dict, validated: bool, regime_note: str):
+    def _render_etf_card(etf: dict, validated: bool, regime_note: str,
+                          fallback_note: str = ""):
         """Render a single ETF's BUY/SELL chip + conviction + signals."""
         ticker = etf["ticker"]
         action = etf["action"]
         conv = etf["conviction"]
         signals = etf["signals"]
 
-        # Color + text by action
+        # Color + text by action. SELL on a "true" signal vs SELL as the
+        # losing side of a trend-fallback should both look greyed-out;
+        # only BUY gets the green call-out.
         if action == "BUY":
             bg = "rgba(34,197,94,0.18)"
             border = "#16a34a"
             chip_bg = "#16a34a"
-        else:  # SELL / AVOID
-            bg = "rgba(75,85,99,0.18)"
-            border = "#4b5563"
-            chip_bg = "#6b7280"
+        else:
+            bg = "rgba(220,38,38,0.12)"
+            border = "#7f1d1d"
+            chip_bg = "#dc2626"
 
         # Validation badge
         if validated:
@@ -7249,12 +7252,17 @@ with tab_paper:
                 'font-size:0.65rem;">EXPERIMENTAL</span>'
             )
 
-        # Signal list
+        # Signal list: real signals > regime block > fallback note > none
         if signals:
             sig_html = "<br>".join(
                 f'<span style="font-size:0.78rem; color:#9ca3af;">'
                 f'· {s["label"]} (conv {s["conviction"]:.2f})</span>'
                 for s in signals
+            )
+        elif fallback_note and action == "BUY":
+            sig_html = (
+                f'<span style="font-size:0.78rem; color:#9ca3af;">'
+                f'· Trend-fallback (no strong signal): {fallback_note}</span>'
             )
         elif regime_note:
             sig_html = (
@@ -7264,7 +7272,7 @@ with tab_paper:
         else:
             sig_html = (
                 '<span style="font-size:0.78rem; color:#6b7280;">'
-                'No signals firing right now</span>'
+                'No strong signals — losing side of the pair</span>'
             )
 
         st.markdown(
@@ -7300,20 +7308,24 @@ with tab_paper:
             _render_etf_card(
                 oil["bull"], validated=oil["bull"]["validated"],
                 regime_note=oil["regime_reason"] or "",
+                fallback_note=oil.get("fallback_reason") or "",
             )
             _render_etf_card(
                 oil["bear"], validated=oil["bear"]["validated"],
                 regime_note="",
+                fallback_note=oil.get("fallback_reason") or "",
             )
         with _gcol:
             st.markdown("**🔥 Natgas pair (Henry Hub underlying)**")
             _render_etf_card(
                 gas["bull"], validated=gas["bull"]["validated"],
                 regime_note=gas["regime_reason"] or "",
+                fallback_note=gas.get("fallback_reason") or "",
             )
             _render_etf_card(
                 gas["bear"], validated=gas["bear"]["validated"],
                 regime_note="",
+                fallback_note=gas.get("fallback_reason") or "",
             )
 
         # Footer with refresh timestamp + data delay caveat
