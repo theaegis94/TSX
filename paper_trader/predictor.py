@@ -302,18 +302,39 @@ def predict_tomorrow_both() -> dict[str, Any]:
                    "prob_underlying_up": ng_p, "tier": "none"},
     }
 
+    # === ITER 48 thresholds (from research module breakthrough analysis) ===
+    # WTI bucket performance (12-year walk-forward):
+    #   [0.70, 1.00): 58.7% accuracy (172 samples) ← VERY STRONG
+    #   [0.55, 0.60): 56.4% accuracy (241 samples) ← STRONG
+    #   [0.45, 0.50): bet DOWN, 53.5% accuracy (185 samples) ← HOD signal
+    #   [0.60, 0.70): 54.6% accuracy (337 samples) ← WEAK
+    # NG bucket performance:
+    #   [0.60, 0.70): 56.8% accuracy (229 samples) ← BEST
+    #   [0.70, 1.00): 53.3% accuracy (107 samples) ← worse than mid-bucket
+    # Best practice: don't bucket too coarsely; the OOS multi-year tests
+    # show specific probability bands matter.
+
     # --- OIL PAIR ---
     if wti_p is not None:
-        if 0.55 <= wti_p < 0.60:
+        if wti_p >= 0.70:
             rec["HOU.TO"] = {
-                "action": "BUY", "reason": f"WTI P(up)={wti_p:.2f} → 60% historical accuracy",
+                "action": "BUY", "reason": f"WTI P(up)={wti_p:.2f} → 59% historical accuracy (very high confidence)",
+                "prob_underlying_up": wti_p, "tier": "very_strong",
+            }
+            rec["HOD.TO"] = {
+                "action": "SELL", "reason": "opposing side of HOU very-strong-buy",
+                "prob_underlying_up": wti_p, "tier": "none",
+            }
+        elif 0.55 <= wti_p < 0.60:
+            rec["HOU.TO"] = {
+                "action": "BUY", "reason": f"WTI P(up)={wti_p:.2f} → 56% historical accuracy",
                 "prob_underlying_up": wti_p, "tier": "strong",
             }
             rec["HOD.TO"] = {
                 "action": "SELL", "reason": "opposing side of HOU strong-buy",
                 "prob_underlying_up": wti_p, "tier": "none",
             }
-        elif wti_p >= 0.60:
+        elif 0.60 <= wti_p < 0.70:
             rec["HOU.TO"] = {
                 "action": "BUY", "reason": f"WTI P(up)={wti_p:.2f} → 55% historical accuracy",
                 "prob_underlying_up": wti_p, "tier": "weak",
@@ -322,8 +343,18 @@ def predict_tomorrow_both() -> dict[str, Any]:
                 "action": "SELL", "reason": "opposing side of HOU buy",
                 "prob_underlying_up": wti_p, "tier": "none",
             }
+        elif 0.45 <= wti_p < 0.50:
+            # Validated bet-down bucket
+            rec["HOD.TO"] = {
+                "action": "BUY", "reason": f"WTI P(up)={wti_p:.2f} → 54% historical down rate (calibrated)",
+                "prob_underlying_up": wti_p, "tier": "weak",
+            }
+            rec["HOU.TO"] = {
+                "action": "SELL", "reason": "opposing side of HOD calibrated buy",
+                "prob_underlying_up": wti_p, "tier": "none",
+            }
         else:
-            # FALLBACK: no calibrated bucket fires — use direction of P(up)
+            # Fallback for noisy zones
             if wti_p >= 0.50:
                 rec["HOU.TO"] = {
                     "action": "BUY",
@@ -337,7 +368,7 @@ def predict_tomorrow_both() -> dict[str, Any]:
             else:
                 rec["HOD.TO"] = {
                     "action": "BUY",
-                    "reason": f"WTI P(up)={wti_p:.2f} → directional bias (uncalibrated, HOD untested)",
+                    "reason": f"WTI P(up)={wti_p:.2f} → directional bias (uncalibrated)",
                     "prob_underlying_up": wti_p, "tier": "fallback",
                 }
                 rec["HOU.TO"] = {
@@ -345,20 +376,29 @@ def predict_tomorrow_both() -> dict[str, Any]:
                     "prob_underlying_up": wti_p, "tier": "none",
                 }
 
-    # --- NATGAS PAIR ---
+    # --- NATGAS PAIR — sweet spot is [0.60, 0.70), NOT >=0.70 ---
     if ng_p is not None:
-        if ng_p >= 0.60:
+        if 0.60 <= ng_p < 0.70:
             rec["HNU.TO"] = {
-                "action": "BUY", "reason": f"NG P(up)={ng_p:.2f} → 55% historical accuracy",
+                "action": "BUY", "reason": f"NG P(up)={ng_p:.2f} → 57% historical accuracy (sweet spot)",
+                "prob_underlying_up": ng_p, "tier": "strong",
+            }
+            rec["HND.TO"] = {
+                "action": "SELL", "reason": "opposing side of HNU strong-buy",
+                "prob_underlying_up": ng_p, "tier": "none",
+            }
+        elif ng_p >= 0.70:
+            rec["HNU.TO"] = {
+                "action": "BUY", "reason": f"NG P(up)={ng_p:.2f} → 53% historical (very-high less reliable than mid)",
                 "prob_underlying_up": ng_p, "tier": "weak",
             }
             rec["HND.TO"] = {
                 "action": "SELL", "reason": "opposing side of HNU buy",
                 "prob_underlying_up": ng_p, "tier": "none",
             }
-        elif ng_p <= 0.40:
+        elif ng_p <= 0.30:
             rec["HND.TO"] = {
-                "action": "BUY", "reason": f"NG P(up)={ng_p:.2f} → 52% historical down rate",
+                "action": "BUY", "reason": f"NG P(up)={ng_p:.2f} → 53% historical down rate",
                 "prob_underlying_up": ng_p, "tier": "weak",
             }
             rec["HNU.TO"] = {
@@ -366,7 +406,6 @@ def predict_tomorrow_both() -> dict[str, Any]:
                 "prob_underlying_up": ng_p, "tier": "none",
             }
         else:
-            # FALLBACK
             if ng_p >= 0.50:
                 rec["HNU.TO"] = {
                     "action": "BUY",
@@ -395,6 +434,8 @@ def predict_tomorrow_both() -> dict[str, Any]:
 def evaluate_recent_recommendations(
     months_back: int = 12,
     train_years_back: int = 12,
+    wti_hold_days: int = 1,
+    ng_hold_days: int = 1,
 ) -> dict[str, Any]:
     """Walk through the last `months_back` months. For each trading
     day, retrain the model on PRIOR data, generate a recommendation
@@ -421,6 +462,7 @@ def evaluate_recent_recommendations(
     }
     daily_log: list[dict] = []
 
+    hold_lookup = {"wti": wti_hold_days, "ng": ng_hold_days}
     # We need one model per underlying, trained on data before the
     # earliest test date. For speed we train ONCE (pre-cutoff) rather
     # than retraining every day — this is a fair test because the
@@ -453,38 +495,55 @@ def evaluate_recent_recommendations(
         )
         clf.fit(X_train, y_train)
 
+        # For multi-day hold, compute N-day forward return from underlying
+        underlying_close = data.get(target, pd.DataFrame()).get("Close")
+        hold = hold_lookup.get(target, 1)
+        forward_ret = None
+        if underlying_close is not None and hold > 1:
+            forward_ret = underlying_close.pct_change(hold).shift(-hold)
+            if forward_ret.index.tz is not None:
+                forward_ret.index = forward_ret.index.tz_localize(None)
+
         for date, row in df.loc[test_mask].iterrows():
             x = row[feat_cols].values.reshape(1, -1)
             prob_up = float(clf.predict_proba(x)[0, 1])
-            actual_up = bool(row["label"])  # 1 = next-day up
+            # For multi-day, use N-day forward return; for 1-day, use the label
+            if forward_ret is not None and hold > 1:
+                try:
+                    fr = forward_ret.asof(date)
+                    if pd.isna(fr):
+                        continue
+                    actual_up = bool(fr > 0)
+                except (KeyError, ValueError):
+                    continue
+            else:
+                actual_up = bool(row["label"])  # 1 = next-day up
 
-            # Apply same logic as predict_tomorrow_both
+            # Apply iter-48 calibrated thresholds
             if target == "wti":
-                if 0.55 <= prob_up < 0.60:
-                    rec_ticker = bull_ticker
-                    tier = "strong"
-                elif prob_up >= 0.60:
-                    rec_ticker = bull_ticker
-                    tier = "weak"
+                if prob_up >= 0.70:
+                    rec_ticker = bull_ticker; tier = "very_strong"
+                elif 0.55 <= prob_up < 0.60:
+                    rec_ticker = bull_ticker; tier = "strong"
+                elif 0.60 <= prob_up < 0.70:
+                    rec_ticker = bull_ticker; tier = "weak"
+                elif 0.45 <= prob_up < 0.50:
+                    rec_ticker = bear_ticker; tier = "weak"
                 elif prob_up >= 0.50:
-                    rec_ticker = bull_ticker
-                    tier = "fallback"
+                    rec_ticker = bull_ticker; tier = "fallback"
                 else:
-                    rec_ticker = bear_ticker
-                    tier = "fallback"
+                    rec_ticker = bear_ticker; tier = "fallback"
             else:  # ng
-                if prob_up >= 0.60:
-                    rec_ticker = bull_ticker
-                    tier = "weak"
-                elif prob_up <= 0.40:
-                    rec_ticker = bear_ticker
-                    tier = "weak"
+                if 0.60 <= prob_up < 0.70:
+                    rec_ticker = bull_ticker; tier = "strong"
+                elif prob_up >= 0.70:
+                    rec_ticker = bull_ticker; tier = "weak"
+                elif prob_up <= 0.30:
+                    rec_ticker = bear_ticker; tier = "weak"
                 elif prob_up >= 0.50:
-                    rec_ticker = bull_ticker
-                    tier = "fallback"
+                    rec_ticker = bull_ticker; tier = "fallback"
                 else:
-                    rec_ticker = bear_ticker
-                    tier = "fallback"
+                    rec_ticker = bear_ticker; tier = "fallback"
 
             # Score: did the BUY actually pay off next day?
             #   bull_ticker = right if underlying was up

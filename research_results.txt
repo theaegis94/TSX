@@ -1,0 +1,135 @@
+Starting full research suite...
+
+
+============================================================
+ WTI RESEARCH RESULTS
+============================================================
+
+--- Stage 1: Statistical Significance ---
+  Trades: 1597, Right: 839, Accuracy: 52.54%
+  95% CI: [50.1%, 55.0%]
+  p-value vs random (one-sided): 0.0226
+  Statistically significant: True
+
+--- Stage 2: Yearly Stability ---
+  2020: 51.4% on 253 samples  x
+  2021: 53.2% on 252 samples  ✓
+  2022: 49.8% on 251 samples  x
+  2023: 58.0% on 250 samples  ✓
+  2024: 48.8% on 252 samples  x
+  2025: 54.1% on 246 samples  ✓
+  2026: 52.7% on 93 samples  ✓
+
+--- Stage 3: Regime Conditioning ---
+  By day of week:
+    Mon: 51.2% (n=297)
+    Tue: 49.8% (n=331)
+    Wed: 52.3% (n=329)
+    Thu: 56.7% (n=321)
+    Fri: 52.7% (n=319)
+  By month:
+    Month  1: 52.5% (n=139)
+    Month  2: 49.3% (n=134)
+    Month  3: 56.5% (n=154)
+    Month  4: 55.2% (n=145)
+    Month  5: 57.7% (n=137)
+    Month  6: 50.4% (n=125)
+    Month  7: 48.8% (n=125)
+    Month  8: 53.0% (n=132)
+    Month  9: 48.4% (n=124)
+    Month 10: 49.2% (n=132)
+    Month 11: 57.4% (n=122)
+    Month 12: 50.8% (n=128)
+
+--- Stage 4: Probability Buckets ---
+  [0.00,0.30)        n=112   avg_p=0.242  actual_up=0.527  bet=down  effective=47.3%
+  [0.30,0.40)        n=178   avg_p=0.353  actual_up=0.494  bet=down  effective=50.6%
+  [0.40,0.45)        n=143   avg_p=0.427  actual_up=0.559  bet=down  effective=44.1%
+  [0.45,0.50)        n=185   avg_p=0.475  actual_up=0.465  bet=down  effective=53.5%
+  [0.50,0.55)        n=229   avg_p=0.524  actual_up=0.493  bet=up    effective=49.3%
+  [0.55,0.60)        n=241   avg_p=0.575  actual_up=0.564  bet=up    effective=56.4%
+  [0.60,0.70)        n=337   avg_p=0.645  actual_up=0.546  bet=up    effective=54.6%
+  [0.70,1.00)        n=172   avg_p=0.763  actual_up=0.587  bet=up    effective=58.7%
+
+--- Stage 5: Single vs Ensemble (5 seeds) ---
+  Single  : 52.41% (n=1597)
+  Ensemble: 52.29% (n=1597)
+  Delta: -0.13 pp
+
+--- Stage 6: Confluence Filter (ML + momentum agree) ---
+  Confluence trades: 479, Skipped: 1118
+  Accuracy: 49.48% (237r / 242w)
+
+--- Stage 7: Multi-Day Hold Analysis ---
+  1-day hold: 52.54%
+  hold_2d: 54.16% (n=1597)
+  hold_3d: 52.72% (n=1597)
+  hold_5d: 51.22% (n=1597)
+
+============================================================
+ NG RESEARCH RESULTS
+============================================================
+
+--- Stage 1: Statistical Significance ---
+  Trades: 1595, Right: 819, Accuracy: 51.35%
+  95% CI: [48.9%, 53.8%]
+  p-value vs random (one-sided): 0.1465
+  Statistically significant: False
+
+--- Stage 2: Yearly Stability ---
+  2020: 53.0% on 253 samples  ✓
+  2021: 52.0% on 252 samples  x
+  2022: 46.6% on 251 samples  x
+  2023: 48.4% on 248 samples  x
+  2024: 53.6% on 252 samples  ✓
+  2025: 50.4% on 246 samples  x
+  2026: 62.4% on 93 samples  ✓
+
+--- Stage 3: Regime Conditioning ---
+  By day of week:
+    Mon: 50.5% (n=297)
+    Tue: 52.6% (n=331)
+    Wed: 50.8% (n=329)
+    Thu: 52.2% (n=320)
+    Fri: 50.6% (n=318)
+  By month:
+    Month  1: 53.2% (n=139)
+    Month  2: 55.2% (n=134)
+    Month  3: 47.4% (n=154)
+    Month  4: 51.0% (n=145)
+    Month  5: 51.8% (n=137)
+    Month  6: 55.2% (n=125)
+    Month  7: 52.0% (n=125)
+    Month  8: 50.0% (n=132)
+    Month  9: 45.2% (n=124)
+    Month 10: 43.9% (n=132)
+    Month 11: 53.3% (n=120)
+    Month 12: 58.6% (n=128)
+
+--- Stage 4: Probability Buckets ---
+  [0.00,0.30)        n=143   avg_p=0.231  actual_up=0.469  bet=down  effective=53.1%
+  [0.30,0.40)        n=264   avg_p=0.358  actual_up=0.477  bet=down  effective=52.3%
+  [0.40,0.45)        n=198   avg_p=0.426  actual_up=0.505  bet=down  effective=49.5%
+  [0.45,0.50)        n=224   avg_p=0.475  actual_up=0.527  bet=down  effective=47.3%
+  [0.50,0.55)        n=212   avg_p=0.524  actual_up=0.509  bet=up    effective=50.9%
+  [0.55,0.60)        n=218   avg_p=0.573  actual_up=0.486  bet=up    effective=48.6%
+  [0.60,0.70)        n=229   avg_p=0.642  actual_up=0.568  bet=up    effective=56.8%
+  [0.70,1.00)        n=107   avg_p=0.755  actual_up=0.533  bet=up    effective=53.3%
+
+--- Stage 5: Single vs Ensemble (5 seeds) ---
+  Single  : 51.03% (n=1595)
+  Ensemble: 51.03% (n=1595)
+  Delta: +0.00 pp
+
+--- Stage 6: Confluence Filter (ML + momentum agree) ---
+  Confluence trades: 328, Skipped: 1267
+  Accuracy: 52.74% (173r / 155w)
+
+--- Stage 7: Multi-Day Hold Analysis ---
+  1-day hold: 51.35%
+  hold_2d: 50.85% (n=1595)
+  hold_3d: 49.22% (n=1595)
+  hold_5d: 47.90% (n=1595)
+
+
+DONE.
