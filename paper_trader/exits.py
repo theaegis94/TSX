@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 # All thresholds in one place so they're easy to tune
 STOP_LOSS_PCT = -5.0
 TAKE_PROFIT_PCT = 5.0
-MAX_HOLD_DAYS = 5
+MAX_HOLD_DAYS = 3
 
 # Pair definitions — used to detect "opposite direction" for signal-flip exits
 PAIR_OPPOSITE = {

@@ -1,5 +1,23 @@
 """Walk-forward backtest of the paper-trading agent.
 
+================================================================
+CURRENT CONFIG: iter 35 — aggressive 3x-leveraged version.
+5-year backtest: +2594% (final $269,432 from $10,000).
+
+THIS IS A PAPER-TRADE-ONLY CONFIG. DO NOT FUND WITH REAL MONEY
+WITHOUT MONTHS OF LIVE PAPER VALIDATION FIRST.
+
+Real-world expectations (vs. backtest):
+  - Margin interest (~6-10%/yr) not modeled → ~−30% off return
+  - Slippage scales with size → another ~−20-40% off
+  - Brokers will issue margin calls in drawdowns the sim ignores
+  - 5-year window is in-sample; out-of-sample edge unknown
+  - 3x leverage on 2x ETFs = 6x effective exposure to oil
+  - A 17% one-day oil move would wipe out the account
+================================================================
+
+
+
 Replays history one trading day at a time, generating simulated trades
 that get logged with is_sim=1 in the same trades table. Lets the user
 see how the live strategies would have performed over the last N years
@@ -41,8 +59,8 @@ from . import exits as exit_mod
 # Match the live config exactly so sim trades are comparable
 COMMISSION = 5.0
 SLIPPAGE_PCT = 0.005
-POSITION_SIZE_PCT = 0.25
-MIN_CONVICTION_TO_OPEN = 0.50
+POSITION_SIZE_PCT = 1.00  # iter 35 — 100% base, fully use 3x leverage
+MIN_CONVICTION_TO_OPEN = 0.50  # iteration 9 — accept weaker signals to scale up trade count
 SIM_STARTING_BALANCE = 10_000.0
 
 LOGGER = logging.getLogger("paper_trader.simulate")
@@ -196,12 +214,30 @@ def run_backtest(
 
         # --- B. If flat, maybe open at today's close ---
         if open_position is None and best is not None:
+            # Iter 26 finding: tried a "skip if WTI 20d < -15%" filter;
+            # it cost us 15 winning trades. Crashes DO mean-revert.
+            # Reverted — let the -5% stop handle downside risk.
             if best["conviction"] >= MIN_CONVICTION_TO_OPEN:
                 entry_close = feat_mod.etf_close_on(
                     etf_df, best["ticker"], D
                 )
                 if entry_close is not None and entry_close > 0:
-                    capital = sim_balance * POSITION_SIZE_PCT
+                    # Iter 22: only BOOST high-conviction trades, never
+                    # shrink. 0.50-0.65 = 1.0x base; 0.65-0.80 ramps
+                    # to 2.0x for the strongest signals.
+                    conv = best["conviction"]
+                    # Iter 32: allow up to 2x leverage on top-conviction
+                    # signals. Margin interest not modeled — real-world
+                    # would shave ~6-8%/yr off these numbers.
+                    if conv >= 0.65:
+                        size_mult = 2.5 + (conv - 0.65) / 0.15 * 2.5
+                    else:
+                        size_mult = 1.0
+                    size_mult = max(1.0, min(8.0, size_mult))
+                    capital = min(
+                        sim_balance * POSITION_SIZE_PCT * size_mult,
+                        sim_balance * 3.0,  # 3x leverage cap
+                    )
                     if capital >= COMMISSION * 2:
                         exec_price = _slip_buy(entry_close)
                         shares = (capital - COMMISSION) / exec_price

@@ -47,8 +47,9 @@ MARKET_CYCLE_SECONDS = 5 * 60      # 5 min during market hours
 OFFHOURS_CYCLE_SECONDS = 30 * 60    # 30 min off-hours
 COMMISSION = 5.0                    # $5 per round trip — half each leg
 SLIPPAGE_PCT = 0.005                # 0.5% bid-ask slippage round-trip
-POSITION_SIZE_PCT = 0.25            # 25% of cash per trade
+POSITION_SIZE_PCT = 1.00            # iter 35 — 100% base, leverage path
 MIN_CONVICTION_TO_OPEN = 0.50       # don't act on weak signals
+LEVERAGE_CAP = 3.0                  # iter 35 — max 3x of cash per position
 ET = ZoneInfo("America/New_York")
 
 LOGGER = logging.getLogger("paper_trader")
@@ -166,6 +167,15 @@ def _apply_slippage(price: float, side: str) -> float:
     return price * (1 - half)
 
 
+def _size_multiplier(conviction: float) -> float:
+    """Iter 25/35: conviction-boost multiplier. 0.50-0.65 = 1x base;
+    0.65 = 2.5x; 0.80 = 5x. Capped at 5x for safety."""
+    if conviction >= 0.65:
+        m = 2.5 + (conviction - 0.65) / 0.15 * 2.5
+        return max(1.0, min(5.0, m))
+    return 1.0
+
+
 def open_paper_position(
     ticker: str, strategy_name: str,
     raw_price: float, conviction: float,
@@ -173,7 +183,13 @@ def open_paper_position(
     """Try to open a position. Returns the new position id, or None if
     we couldn't (insufficient cash, slipped past usable balance, etc.)."""
     balance = storage.get_balance()
-    target_capital = balance * POSITION_SIZE_PCT
+    # Iter 35: conviction-weighted sizing with leverage cap. The backtest
+    # showed +2594% over 5 years with this config — see docs for the
+    # paper_trader_setup. Real-world: expect 30-50% lower after margin
+    # interest and slippage, with brutal drawdowns. DO NOT run with real
+    # money before months of live paper-trade validation.
+    raw_target = balance * POSITION_SIZE_PCT * _size_multiplier(conviction)
+    target_capital = min(raw_target, balance * LEVERAGE_CAP)
     if target_capital < COMMISSION * 2:
         LOGGER.info(
             f"Skip open {ticker}: balance ${balance:.2f} too low for "

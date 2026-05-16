@@ -21,6 +21,26 @@ from __future__ import annotations
 
 from typing import Any
 
+# === Strategy mode toggle ===
+# Iteration result: the 5-year backtest showed bear-ETF positions
+# (HOD/HND) have systematically lower win rates and worse PF than the
+# bull-ETF positions (HOU/HNU). Bear ETFs decay faster than bull ETFs
+# because shorting + daily rebalancing costs more than going long.
+# When BULL_ONLY is True, every strategy that would have emitted a HOD
+# or HND signal returns None instead.
+BULL_ONLY = True
+BEAR_TICKERS = {"HOD.TO", "HND.TO"}
+
+
+def _bull_only_filter(sig: tuple[str | None, float]) -> tuple[str | None, float]:
+    """Strip bear-ETF signals when BULL_ONLY is enabled."""
+    if not BULL_ONLY:
+        return sig
+    ticker, conv = sig
+    if ticker in BEAR_TICKERS:
+        return (None, 0.0)
+    return sig
+
 
 class Strategy:
     """Base class. Subclasses set `name` + `description` and implement
@@ -38,16 +58,45 @@ class Strategy:
         raise NotImplementedError
 
 
+class OilBollingerOversold(Strategy):
+    """Buy HOU when WTI's price is touching or below the lower
+    Bollinger band — a different oversold signal than RSI that fires
+    on different days. The hypothesis is that combining two
+    uncorrelated mean-reversion signals lets us capture more setups
+    without lowering signal quality.
+    """
+    name = "oil_bb_oversold"
+    description = (
+        "Buy HOU when WTI Bollinger position < 0.10 (touching lower "
+        "band) — a deep mean-reversion entry on the bull side only."
+    )
+
+    def signal(self, features):
+        bb_pos = features.get("wti_bb_position")
+        rsi = features.get("wti_rsi")
+        if bb_pos is None:
+            return (None, 0.0)
+        # Iter 31: only fire when RSI ISN'T also oversold — otherwise
+        # we'd just be a weaker duplicate of OilRsiReversion. By firing
+        # exclusively on "BB oversold + RSI mid-range" days, we catch a
+        # genuinely different setup (sharp single-day drop without
+        # cumulative weakness).
+        if rsi is not None and rsi < 45:
+            return (None, 0.0)
+        if bb_pos < 0.10:
+            return ("HOU.TO", 0.70)
+        if bb_pos < 0.20:
+            return ("HOU.TO", 0.55)
+        return (None, 0.0)
+
+
 class OilRsiReversion(Strategy):
-    """When WTI RSI is extreme, bet on mean reversion of the underlying.
-    Oversold WTI (RSI<30) → long HOU (2x bull oil).
-    Overbought WTI (RSI>70) → long HOD (2x bear oil).
+    """Broader RSI-based oil entries. Was conservative (<30 only);
+    now graded thresholds from <25 down to <40 to fire more often.
     """
     name = "oil_rsi_reversion"
     description = (
-        "Buy 2x-bull oil (HOU) when WTI RSI(14) < 30; buy 2x-bear oil "
-        "(HOD) when RSI > 70. Bets on RSI mean reversion in the "
-        "underlying."
+        "Buy HOU on WTI RSI mean reversion, multi-tier thresholds."
     )
 
     def signal(self, features):
@@ -55,14 +104,183 @@ class OilRsiReversion(Strategy):
         if rsi is None:
             return (None, 0.0)
         if rsi < 25:
-            # Deep oversold — strong conviction
             return ("HOU.TO", 0.80)
         if rsi < 30:
-            return ("HOU.TO", 0.60)
-        if rsi > 75:
-            return ("HOD.TO", 0.80)
+            return ("HOU.TO", 0.65)
+        if rsi < 35:
+            return ("HOU.TO", 0.55)
+        if rsi < 40:
+            return ("HOU.TO", 0.50)
+        # Mirror for short side (bull_only filter strips these)
         if rsi > 70:
             return ("HOD.TO", 0.60)
+        return (None, 0.0)
+
+
+class OilMacdMomentum(Strategy):
+    """Buy HOU only on actual MACD bullish cross — much rarer signal
+    than 'hist > 0' but should carry real momentum information.
+    Iteration-11 lesson: the lax hist>0 branch fired 299 times at
+    PF 0.68 (catastrophic) — removed."""
+    name = "oil_macd_momentum"
+    description = "Buy HOU on confirmed WTI MACD bullish cross."
+
+    def signal(self, features):
+        bull = features.get("wti_macd_cross_bull", False)
+        hist = features.get("wti_macd_hist")
+        if hist is None:
+            return (None, 0.0)
+        if bull and hist > 0:
+            return ("HOU.TO", 0.65)
+        return (None, 0.0)
+
+
+class OilSharpDip(Strategy):
+    """Buy HOU on a sharp 1-day drop (>2%) when the broader trend is
+    still up. 'Buy the panic flush' — different timing than RSI or BB
+    oversold, fires on single-day events rather than cumulative."""
+    name = "oil_sharp_dip"
+    description = (
+        "Buy HOU when WTI dropped >2% in one day AND 20d return is "
+        "still positive — buying a panic dip inside an uptrend."
+    )
+
+    def signal(self, features):
+        ret_1 = features.get("wti_ret_1d_pct")
+        ret_20 = features.get("wti_ret_20d_pct")
+        if ret_1 is None or ret_20 is None:
+            return (None, 0.0)
+        if ret_1 < -4.0 and ret_20 > 0:
+            return ("HOU.TO", 0.70)
+        if ret_1 < -2.0 and ret_20 > 2:
+            return ("HOU.TO", 0.55)
+        # Iteration 14: loosen to capture more dips
+        if ret_1 < -1.5 and ret_20 > 4:
+            return ("HOU.TO", 0.50)
+        return (None, 0.0)
+
+
+class OilDxyTailwind(Strategy):
+    """Buy HOU when DXY weakens substantially over 5 days — dollar
+    weakness historically lifts dollar-priced commodities. Fires on
+    macro days unrelated to oil's own price action."""
+    name = "oil_dxy_tailwind"
+    description = (
+        "Buy HOU when DXY 5d return < -1.5% (sustained dollar "
+        "weakness — tailwind for oil-priced-in-USD)."
+    )
+
+    def signal(self, features):
+        dxy_ret = features.get("dxy_ret_5d_pct")
+        if dxy_ret is None:
+            return (None, 0.0)
+        if dxy_ret < -2.5:
+            return ("HOU.TO", 0.65)
+        if dxy_ret < -1.5:
+            return ("HOU.TO", 0.55)
+        return (None, 0.0)
+
+
+class OilEarlyBounce(Strategy):
+    """Catch the earliest sign of a reversal: 3-day return is negative
+    but today's return is positive — the 'first green day after a
+    selloff' pattern."""
+    name = "oil_early_bounce"
+    description = (
+        "Buy HOU when WTI 5d return < -3% but today's return > 0 — "
+        "first green day after a selloff."
+    )
+
+    def signal(self, features):
+        ret_1 = features.get("wti_ret_1d_pct")
+        ret_5 = features.get("wti_ret_5d_pct")
+        if ret_1 is None or ret_5 is None:
+            return (None, 0.0)
+        if ret_5 < -5.0 and ret_1 > 0.5:
+            return ("HOU.TO", 0.65)
+        if ret_5 < -3.0 and ret_1 > 0.5:
+            return ("HOU.TO", 0.55)
+        return (None, 0.0)
+
+
+class OilTrendContinuation(Strategy):
+    """Trend-follow: WTI 20d return strongly positive AND RSI in
+    mid-range (40-60) — buying the trend, not the bottom. Fires on
+    different days than mean-reversion signals."""
+    name = "oil_trend_continuation"
+    description = (
+        "Buy HOU when WTI 20d return is strongly positive (>8%) "
+        "and RSI is mid-range — trend-following entry."
+    )
+
+    def signal(self, features):
+        ret_20 = features.get("wti_ret_20d_pct")
+        rsi = features.get("wti_rsi")
+        if ret_20 is None or rsi is None:
+            return (None, 0.0)
+        if ret_20 > 12 and 45 <= rsi <= 60:
+            return ("HOU.TO", 0.60)
+        if ret_20 > 8 and 45 <= rsi <= 60:
+            return ("HOU.TO", 0.50)
+        return (None, 0.0)
+
+
+class OilPullbackInUptrend(Strategy):
+    """Buy the dip: when 20-day return is positive (uptrend) AND RSI
+    is in mid-range pullback territory (40-50). This is "buy weakness
+    in strength" — different from RSI extreme oversold."""
+    name = "oil_pullback_uptrend"
+    description = (
+        "Buy HOU when WTI 20d return is positive AND RSI is in a "
+        "40-50 pullback zone (buy-the-dip in established uptrend)."
+    )
+
+    def signal(self, features):
+        ret_20 = features.get("wti_ret_20d_pct")
+        rsi = features.get("wti_rsi")
+        if ret_20 is None or rsi is None:
+            return (None, 0.0)
+        if ret_20 > 3.0 and 40 <= rsi <= 50:
+            return ("HOU.TO", 0.55)
+        if ret_20 > 5.0 and 35 <= rsi <= 55:
+            return ("HOU.TO", 0.50)
+        return (None, 0.0)
+
+
+class NatgasRsiReversion(Strategy):
+    """ITER 27: Iteration 9 tested natgas RSI with broad thresholds —
+    PF was 0.79 across 130 trades (loser). Hypothesis: only the
+    DEEPEST oversold has any edge. Tightening to RSI<25 only, with
+    high conviction to attract the position-sizing boost."""
+    name = "natgas_rsi_deep"
+    description = "Buy HNU only on natgas RSI<25 (deepest oversold)."
+
+    def signal(self, features):
+        rsi = features.get("ng_rsi")
+        if rsi is None:
+            return (None, 0.0)
+        if rsi < 20:
+            return ("HNU.TO", 0.80)
+        if rsi < 25:
+            return ("HNU.TO", 0.70)
+        return (None, 0.0)
+
+
+class NatgasBollingerOversold(Strategy):
+    """Natgas BB position oversold (analog of OilBollingerOversold)."""
+    name = "natgas_bb_oversold"
+    description = "Buy HNU when NG=F Bollinger position is low."
+
+    def signal(self, features):
+        bb_pos = features.get("ng_bb_position")
+        if bb_pos is None:
+            return (None, 0.0)
+        if bb_pos < 0.05:
+            return ("HNU.TO", 0.70)
+        if bb_pos < 0.15:
+            return ("HNU.TO", 0.55)
+        if bb_pos < 0.25:
+            return ("HNU.TO", 0.50)
         return (None, 0.0)
 
 
@@ -215,19 +433,14 @@ class DxyOilInverse(Strategy):
 # doesn't matter — the agent picks the highest-conviction signal across
 # all of them.
 ALL_STRATEGIES: list[Strategy] = [
-    # Price-pattern baselines (the 5-year backtest showed these are
-    # likely too weak on 2x leveraged ETFs — keeping them for now as
-    # a control / comparison group).
     OilRsiReversion(),
-    NatgasMacdCross(),
-    DxyOilInverse(),
-    # EIA-driven catalyst strategies — the real bet.
-    # Inventory surprise vs 4-week trailing trend has historically
-    # been THE biggest mover for these commodities.
-    OilInventoryDrawdown(),
-    OilInventoryBuild(),
-    NatgasStorageDrawdown(),
-    NatgasStorageBuild(),
+    OilBollingerOversold(),
+    OilPullbackInUptrend(),
+    OilSharpDip(),
+    # NatgasRsiReversion(),  # iter 27: never fired in 5y, no edge
+    # OilTrendContinuation(),  # iter 17: PF 0.77 at short hold
+    # OilDxyTailwind(),  # iter 15: PF 0.77
+    # OilEarlyBounce(),  # iter 14: PF 0.79
 ]
 
 
@@ -249,6 +462,8 @@ def run_all_strategies(
             ticker, conv = strat.signal(features)
         except Exception:
             ticker, conv = (None, 0.0)
+        # Apply the bull-only filter (no-op when BULL_ONLY is False)
+        ticker, conv = _bull_only_filter((ticker, conv))
         out.append({
             "strategy": strat.name,
             "ticker": ticker,
