@@ -405,6 +405,20 @@ def features_as_of(
             ))
         except Exception:
             pass
+        # Weather change features (no lookahead)
+        try:
+            out.update(weather.compute_weather_change_features(
+                weather_df, as_of_date=as_of_ts,
+            ))
+        except Exception:
+            pass
+        # Oracle / lookahead features (research only)
+        try:
+            out.update(weather.compute_weather_oracle_features(
+                weather_df, as_of_date=as_of_ts, lookahead_days=7,
+            ))
+        except Exception:
+            pass
 
     return out
 

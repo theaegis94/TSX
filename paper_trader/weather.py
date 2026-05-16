@@ -182,6 +182,116 @@ def fetch_weather_history(years_back: int = 12) -> pd.DataFrame:
     return out
 
 
+def compute_weather_change_features(
+    df: pd.DataFrame,
+    as_of_date=None,
+) -> dict[str, Any]:
+    """Compute weather TRANSITION features (no lookahead).
+
+    The hypothesis: traders react slowly to weather changes. If today's
+    7-day HDD just spiked from last week's level, the move hasn't been
+    fully priced. We test this using ONLY past data — strict no-lookahead.
+
+    Returns:
+      weather_hdd_change_7v7 — current 7d HDD vs prior 7d HDD (% change)
+      weather_cdd_change_7v7 — same for cooling
+      weather_cold_front     — bool: HDD up >50% over 7 days
+      weather_warm_front     — bool: HDD down >50% over 7 days
+    """
+    out: dict[str, Any] = {
+        "weather_hdd_change_7v7": None,
+        "weather_cdd_change_7v7": None,
+        "weather_cold_front": False,
+        "weather_warm_front": False,
+    }
+    if df is None or df.empty:
+        return out
+    if as_of_date is None:
+        as_of = pd.Timestamp(datetime.now(timezone.utc).date())
+    else:
+        as_of = pd.Timestamp(as_of_date)
+        if as_of.tz is not None:
+            as_of = as_of.tz_localize(None)
+    cutoff = as_of - pd.Timedelta(days=1)
+    work = df.copy()
+    work["date"] = pd.to_datetime(work["date"])
+    visible = work[work["date"] <= cutoff].sort_values("date")
+    if len(visible) < 14:
+        return out
+
+    # Current 7 days vs prior 7 days
+    cur7 = visible.tail(7)
+    prior7 = visible.tail(14).head(7)
+    cur_hdd = float(cur7["hdd"].sum())
+    prior_hdd = float(prior7["hdd"].sum())
+    cur_cdd = float(cur7["cdd"].sum())
+    prior_cdd = float(prior7["cdd"].sum())
+
+    if prior_hdd > 10:  # only meaningful if we had heating demand before
+        change = (cur_hdd - prior_hdd) / prior_hdd * 100
+        out["weather_hdd_change_7v7"] = round(change, 1)
+        out["weather_cold_front"] = change > 50  # 50% spike in HDD
+        out["weather_warm_front"] = change < -50
+    if prior_cdd > 10:
+        change_c = (cur_cdd - prior_cdd) / prior_cdd * 100
+        out["weather_cdd_change_7v7"] = round(change_c, 1)
+    return out
+
+
+def compute_weather_oracle_features(
+    df: pd.DataFrame,
+    as_of_date=None,
+    lookahead_days: int = 7,
+) -> dict[str, Any]:
+    """⚠️ ORACLE / LOOKAHEAD BIAS ⚠️
+
+    Uses ACTUAL FUTURE weather data as a feature. This is intentional
+    — it's an upper-bound test: 'if we had a perfect 7-day forecast,
+    would it help our natgas strategies?' If yes, real (imperfect)
+    forecasts might add edge. If no, no forecast will save natgas.
+
+    DO NOT USE THIS IN LIVE TRADING. Only valid for research.
+
+    Returns:
+      weather_oracle_hdd_future7 — sum of HDD over next 7 days
+      weather_oracle_hdd_anomaly — same, vs seasonal normal
+      weather_oracle_cold_coming — bool: future HDD >+30% vs normal
+      weather_oracle_warm_coming — bool: future HDD <-30% vs normal
+    """
+    out: dict[str, Any] = {
+        "weather_oracle_hdd_future7": None,
+        "weather_oracle_hdd_anomaly": None,
+        "weather_oracle_cold_coming": False,
+        "weather_oracle_warm_coming": False,
+    }
+    if df is None or df.empty:
+        return out
+    if as_of_date is None:
+        as_of = pd.Timestamp(datetime.now(timezone.utc).date())
+    else:
+        as_of = pd.Timestamp(as_of_date)
+        if as_of.tz is not None:
+            as_of = as_of.tz_localize(None)
+    work = df.copy()
+    work["date"] = pd.to_datetime(work["date"])
+    # LOOKAHEAD: grab days STRICTLY AFTER as_of, up to lookahead_days
+    future = work[
+        (work["date"] > as_of)
+        & (work["date"] <= as_of + pd.Timedelta(days=lookahead_days))
+    ]
+    if len(future) < lookahead_days:
+        return out
+    future_hdd = float(future["hdd"].sum())
+    normal_hdd = float(future["normal_hdd"].sum())
+    out["weather_oracle_hdd_future7"] = round(future_hdd, 1)
+    out["weather_oracle_hdd_anomaly"] = round(future_hdd - normal_hdd, 1)
+    if normal_hdd > 5:
+        anomaly_pct = (future_hdd - normal_hdd) / normal_hdd * 100
+        out["weather_oracle_cold_coming"] = anomaly_pct > 30
+        out["weather_oracle_warm_coming"] = anomaly_pct < -30
+    return out
+
+
 def compute_weather_features(
     df: pd.DataFrame,
     as_of_date=None,

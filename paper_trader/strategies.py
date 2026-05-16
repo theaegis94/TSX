@@ -231,6 +231,67 @@ class NatgasHeatDome(Strategy):
         return ("HNU.TO", 0.55)
 
 
+class NatgasColdFront(Strategy):
+    """TRANSITION test (no lookahead): buy HNU when 7-day HDD just
+    spiked >50% vs the prior 7 days — a cold front has arrived faster
+    than traders have priced in.
+    """
+    name = "natgas_cold_front"
+    description = (
+        "Buy HNU on a sudden HDD spike (current 7d > prior 7d by >50%)."
+    )
+
+    def signal(self, features):
+        front = features.get("weather_cold_front", False)
+        change = features.get("weather_hdd_change_7v7")
+        if not front or change is None:
+            return (None, 0.0)
+        if change > 100:
+            return ("HNU.TO", 0.75)
+        if change > 70:
+            return ("HNU.TO", 0.65)
+        return ("HNU.TO", 0.55)
+
+
+class NatgasOracleColdComing(Strategy):
+    """⚠️ ORACLE / LOOKAHEAD ⚠️
+    Uses ACTUAL next-7-day weather as 'forecast'. Upper-bound test
+    only — assumes perfect forecast accuracy. NOT FOR LIVE TRADING.
+    """
+    name = "natgas_oracle_cold"
+    description = (
+        "RESEARCH: with perfect 7-day forecast, buy HNU when next "
+        "7 days have HDD >30% above seasonal normal."
+    )
+
+    def signal(self, features):
+        coming = features.get("weather_oracle_cold_coming", False)
+        anomaly = features.get("weather_oracle_hdd_anomaly")
+        if not coming or anomaly is None:
+            return (None, 0.0)
+        if anomaly > 60:
+            return ("HNU.TO", 0.80)
+        return ("HNU.TO", 0.65)
+
+
+class NatgasOracleWarmComing(Strategy):
+    """⚠️ ORACLE / LOOKAHEAD ⚠️ Mirror — buy HND on warm forecast."""
+    name = "natgas_oracle_warm"
+    description = (
+        "RESEARCH: with perfect 7-day forecast, buy HND when next "
+        "7 days have HDD >30% below seasonal normal."
+    )
+
+    def signal(self, features):
+        coming = features.get("weather_oracle_warm_coming", False)
+        anomaly = features.get("weather_oracle_hdd_anomaly")
+        if not coming or anomaly is None:
+            return (None, 0.0)
+        if anomaly < -60:
+            return ("HND.TO", 0.80)
+        return ("HND.TO", 0.65)
+
+
 class NatgasPullbackInUptrend(Strategy):
     """Natgas mirror of OilPullbackInUptrend — buy HNU on NG=F pullback
     inside a confirmed uptrend."""
@@ -552,12 +613,15 @@ ALL_STRATEGIES: list[Strategy] = [
     OilBollingerOversold(),
     OilPullbackInUptrend(),
     OilSharpDip(),
-    # WEATHER STRATEGIES TESTED — ALL FAILED in production-mix backtest.
+    # WEATHER STRATEGIES — ALL TESTED, ALL FAILED:
     # Standalone test of NatgasHeatDome showed PF 3.64 / 11 trades, but
     # that was selection bias from competing with other natgas losers.
     # When mixed with oil strategies, HeatDome takes slots from oil
     # winners and bleeds (PF 0.37 / 34 trades, -$8,811).
-    # NatgasHeatDome(),    # iter 47: looked good standalone, broke prod
+    # NatgasHeatDome(),    # PF 3.64 standalone but 0.37 in prod mix
+    # NatgasColdFront(),   # PF 1.21 mixed → 0.79 standalone (selection bias)
+    # NatgasOracleColdComing(),  # PF 0.41 — fails with PERFECT forecast
+    # NatgasOracleWarmComing(),  # PF 0.52 — fails with PERFECT forecast
     # NatgasColdSnap(),    # PF 0.37 — news already priced in
     # NatgasWarmWinter(),  # PF 0.39 — HND decay overpowers thesis
     # NatgasPullbackInUptrend(),  # PF 0.15
