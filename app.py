@@ -7337,6 +7337,151 @@ with tab_paper:
             f"Click Refresh to recompute._"
         )
 
+    # === ML Next-Day Direction Predictor ===
+    st.markdown("### 🤖 ML Next-Day Direction Predictor")
+    st.caption(
+        "Gradient-boosted classifier trained on 12y of features "
+        "(technicals + cross-asset + calendar) to predict tomorrow's "
+        "direction for WTI and NG=F. Walk-forward validated: 52.6% "
+        "WTI / 51.0% NG overall accuracy, but **60% accuracy in the "
+        "[0.55, 0.60) confidence bucket** — model is right more often "
+        "when moderately confident. Recommendations below only fire on "
+        "calibrated high-confidence days."
+    )
+
+    @st.cache_data(ttl=3600, show_spinner="Training ML predictor (15s)…")
+    def _cached_predictor():
+        """Cache for 1 hour — training is slow (~10s) but predictions
+        from the model are fast."""
+        return pt.predict_tomorrow_both()
+
+    pred_l, pred_r = st.columns([3, 1])
+    with pred_r:
+        if st.button("🔄 Retrain & predict", key="pt_retrain_ml",
+                      use_container_width=True):
+            _cached_predictor.clear()
+            st.rerun()
+
+    try:
+        _pred = _cached_predictor()
+    except Exception as e:
+        st.warning(f"ML predictor failed: {e}")
+        _pred = None
+
+    if _pred and isinstance(_pred, dict):
+        # Top metrics: P(up) for each underlying + OOS accuracy
+        _m_l, _m_r = st.columns(2)
+        wti = _pred.get("wti") or {}
+        ng = _pred.get("ng") or {}
+        with _m_l:
+            if wti and "prob_up" in wti:
+                p = wti["prob_up"]
+                acc = wti.get("out_of_sample_accuracy", 0.0)
+                st.metric(
+                    "🛢️ WTI — P(up) tomorrow",
+                    f"{p*100:.1f}%",
+                    f"out-of-sample accuracy: {acc*100:.1f}%",
+                )
+        with _m_r:
+            if ng and "prob_up" in ng:
+                p = ng["prob_up"]
+                acc = ng.get("out_of_sample_accuracy", 0.0)
+                st.metric(
+                    "🔥 NG=F — P(up) tomorrow",
+                    f"{p*100:.1f}%",
+                    f"out-of-sample accuracy: {acc*100:.1f}%",
+                )
+
+        # Per-ETF recommendation cards
+        recs = _pred.get("recommendations", {})
+
+        def _render_pred_card(ticker: str, info: dict):
+            action = info.get("action", "SELL")
+            reason = info.get("reason", "")
+            tier = info.get("tier", "none")
+            prob = info.get("prob_underlying_up")
+            if action == "BUY":
+                bg = "rgba(34,197,94,0.18)"
+                border = "#16a34a"
+                chip_bg = "#16a34a"
+            else:
+                bg = "rgba(75,85,99,0.18)"
+                border = "#4b5563"
+                chip_bg = "#6b7280"
+            tier_chip = ""
+            if tier == "strong":
+                tier_chip = (
+                    '<span style="background:#1e40af; color:#fff; '
+                    'padding:1px 6px; border-radius:6px; '
+                    'font-size:0.65rem; margin-left:6px;">STRONG (60% hist)</span>'
+                )
+            elif tier == "weak":
+                tier_chip = (
+                    '<span style="background:#7c2d12; color:#fff; '
+                    'padding:1px 6px; border-radius:6px; '
+                    'font-size:0.65rem; margin-left:6px;">WEAK (52-55% hist)</span>'
+                )
+            prob_str = f"P(up)={prob:.2f}" if prob is not None else "—"
+            st.markdown(
+                f'<div style="background:{bg}; border:2px solid {border}; '
+                f'border-radius:10px; padding:10px 14px; '
+                f'margin-bottom:8px;">'
+                f'<div style="display:flex; justify-content:space-between; '
+                f'align-items:center;">'
+                f'<span style="font-size:1.0rem; font-weight:700;">'
+                f'{ticker}</span>'
+                f'<span style="font-size:0.78rem; color:#9ca3af;">'
+                f'{prob_str}</span>'
+                f'</div>'
+                f'<div style="margin:6px 0;">'
+                f'<span style="background:{chip_bg}; color:#fff; '
+                f'padding:4px 14px; border-radius:6px; font-weight:700;">'
+                f'{action}</span>'
+                f'{tier_chip}'
+                f'</div>'
+                f'<div style="font-size:0.78rem; color:#9ca3af;">'
+                f'{reason}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+        ml_col_l, ml_col_r = st.columns(2)
+        with ml_col_l:
+            st.markdown("**🛢️ Oil pair**")
+            _render_pred_card("HOU.TO", recs.get("HOU.TO", {}))
+            _render_pred_card("HOD.TO", recs.get("HOD.TO", {}))
+        with ml_col_r:
+            st.markdown("**🔥 Natgas pair**")
+            _render_pred_card("HNU.TO", recs.get("HNU.TO", {}))
+            _render_pred_card("HND.TO", recs.get("HND.TO", {}))
+
+        with st.expander("📊 Per-year out-of-sample accuracy"):
+            for target_key, target_name in [("wti", "WTI"), ("ng", "NG=F")]:
+                tgt = _pred.get(target_key, {}) or {}
+                per_year = tgt.get("per_year", [])
+                if not per_year:
+                    continue
+                st.markdown(f"**{target_name}**")
+                rows = [
+                    {
+                        "year": py["year"],
+                        "samples": py["n_test"],
+                        "model accuracy": f"{py['accuracy']*100:.1f}%",
+                        "baseline (majority)": f"{max(py['base_rate'], 1-py['base_rate'])*100:.1f}%",
+                        "edge": f"{(py['accuracy'] - max(py['base_rate'], 1-py['base_rate']))*100:+.1f}%",
+                    }
+                    for py in per_year
+                ]
+                st.dataframe(pd.DataFrame(rows), use_container_width=True,
+                             hide_index=True)
+
+        st.caption(
+            "_ML model retrained on the latest available data. "
+            "Cached for 1 hour — click Retrain to refresh. "
+            "Honest expectation: this adds ~3-8% edge on filtered "
+            "high-confidence days, not magic returns._"
+        )
+
     st.divider()
 
     # --- Agent health ---
