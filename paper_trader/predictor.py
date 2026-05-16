@@ -34,6 +34,10 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
+from . import cftc as _cftc
+from . import eia as _eia
+from . import weather as _weather
+
 LOGGER = logging.getLogger("paper_trader.predictor")
 
 # Underlying tickers we predict
@@ -131,6 +135,15 @@ def _build_feature_matrix(
     doy = base.index.dayofyear
     base["doy_cos"] = np.cos(2 * np.pi * doy / 365.25)
     base["doy_sin"] = np.sin(2 * np.pi * doy / 365.25)
+
+    # FEATURE EXPANSION ATTEMPTS (research, did NOT improve OOS):
+    #   - Lagged features (yesterday's RSI/return/etc): 55.6% → 53.6% past-year
+    #   - EIA inventory features: hurt past-year by ~3%
+    #   - Weather features (for NG): HND dropped to 41.2% past-year
+    #   - Larger model (depth=5, more iters, more L2): no clear gain
+    # All reverted. The original 24-feature model with default tuning
+    # remains the best OOS performer (55.6% past-year, 52.6% WTI / 51.0% NG
+    # 12-year walk-forward).
 
     # Label: next-day direction (1 = up, 0 = down/flat)
     base["next_ret"] = base["ret_1d"].shift(-1)
