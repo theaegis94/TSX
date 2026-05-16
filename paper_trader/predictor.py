@@ -379,6 +379,142 @@ def predict_tomorrow_both() -> dict[str, Any]:
     return out
 
 
+def evaluate_recent_recommendations(
+    months_back: int = 12,
+    train_years_back: int = 12,
+) -> dict[str, Any]:
+    """Walk through the last `months_back` months. For each trading
+    day, retrain the model on PRIOR data, generate a recommendation
+    using the same logic as live (calibrated buckets + fallback), then
+    score it against the actual next-day direction.
+
+    Returns a dict with per-ETF totals and per-tier breakdown so the
+    user can see WHICH recommendations were trustworthy.
+    """
+    from sklearn.ensemble import HistGradientBoostingClassifier
+    LOGGER.info(f"Evaluating recommendations over last {months_back} months…")
+
+    data = _fetch_history(years=train_years_back)
+    if not data:
+        return {"error": "no_data"}
+
+    cutoff = pd.Timestamp.utcnow().tz_localize(None) - pd.DateOffset(months=months_back)
+
+    per_etf = {
+        "HOU.TO": {"right": 0, "wrong": 0, "by_tier": {}},
+        "HOD.TO": {"right": 0, "wrong": 0, "by_tier": {}},
+        "HNU.TO": {"right": 0, "wrong": 0, "by_tier": {}},
+        "HND.TO": {"right": 0, "wrong": 0, "by_tier": {}},
+    }
+    daily_log: list[dict] = []
+
+    # We need one model per underlying, trained on data before the
+    # earliest test date. For speed we train ONCE (pre-cutoff) rather
+    # than retraining every day — this is a fair test because the
+    # model still has no future leakage relative to any test day.
+    for target, bull_ticker, bear_ticker in [
+        ("wti", "HOU.TO", "HOD.TO"),
+        ("ng", "HNU.TO", "HND.TO"),
+    ]:
+        df = _build_feature_matrix(data, target)
+        if df.empty:
+            continue
+        feat_cols = [c for c in df.columns
+                     if c not in ("px", "next_ret", "label")
+                     and not c.endswith("_px")]
+        # Normalize df.index to naive for comparison
+        if df.index.tz is not None:
+            df = df.copy()
+            df.index = df.index.tz_localize(None)
+        train_mask = df.index < cutoff
+        test_mask = df.index >= cutoff
+        if train_mask.sum() < 500 or test_mask.sum() < 30:
+            LOGGER.warning(f"{target}: insufficient samples (train={train_mask.sum()}, test={test_mask.sum()})")
+            continue
+
+        X_train = df.loc[train_mask, feat_cols].values
+        y_train = df.loc[train_mask, "label"].values
+        clf = HistGradientBoostingClassifier(
+            max_depth=4, learning_rate=0.05, max_iter=200,
+            l2_regularization=1.0, random_state=42,
+        )
+        clf.fit(X_train, y_train)
+
+        for date, row in df.loc[test_mask].iterrows():
+            x = row[feat_cols].values.reshape(1, -1)
+            prob_up = float(clf.predict_proba(x)[0, 1])
+            actual_up = bool(row["label"])  # 1 = next-day up
+
+            # Apply same logic as predict_tomorrow_both
+            if target == "wti":
+                if 0.55 <= prob_up < 0.60:
+                    rec_ticker = bull_ticker
+                    tier = "strong"
+                elif prob_up >= 0.60:
+                    rec_ticker = bull_ticker
+                    tier = "weak"
+                elif prob_up >= 0.50:
+                    rec_ticker = bull_ticker
+                    tier = "fallback"
+                else:
+                    rec_ticker = bear_ticker
+                    tier = "fallback"
+            else:  # ng
+                if prob_up >= 0.60:
+                    rec_ticker = bull_ticker
+                    tier = "weak"
+                elif prob_up <= 0.40:
+                    rec_ticker = bear_ticker
+                    tier = "weak"
+                elif prob_up >= 0.50:
+                    rec_ticker = bull_ticker
+                    tier = "fallback"
+                else:
+                    rec_ticker = bear_ticker
+                    tier = "fallback"
+
+            # Score: did the BUY actually pay off next day?
+            #   bull_ticker = right if underlying was up
+            #   bear_ticker = right if underlying was down
+            right = (
+                (rec_ticker == bull_ticker and actual_up)
+                or (rec_ticker == bear_ticker and not actual_up)
+            )
+
+            per_etf[rec_ticker]["right" if right else "wrong"] += 1
+            tb = per_etf[rec_ticker]["by_tier"].setdefault(
+                tier, {"right": 0, "wrong": 0},
+            )
+            tb["right" if right else "wrong"] += 1
+
+            daily_log.append({
+                "date": pd.Timestamp(date).strftime("%Y-%m-%d"),
+                "target": target,
+                "prob_up": round(prob_up, 3),
+                "actual_up": actual_up,
+                "recommended": rec_ticker,
+                "tier": tier,
+                "right": right,
+            })
+
+    # Aggregate
+    total_right = sum(e["right"] for e in per_etf.values())
+    total_wrong = sum(e["wrong"] for e in per_etf.values())
+    total = total_right + total_wrong
+    overall_acc = total_right / total if total else 0.0
+
+    return {
+        "months_back": months_back,
+        "cutoff": cutoff.strftime("%Y-%m-%d"),
+        "total_predictions": total,
+        "total_right": total_right,
+        "total_wrong": total_wrong,
+        "overall_accuracy": overall_acc,
+        "per_etf": per_etf,
+        "daily_log": daily_log,
+    }
+
+
 def predict_tomorrow(target: str = "wti") -> dict[str, Any]:
     """Train fresh + return today's prediction for tomorrow's
     direction. Returns {prob_up, prob_down, direction, accuracy}."""

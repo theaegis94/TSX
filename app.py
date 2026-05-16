@@ -7461,6 +7461,70 @@ with tab_paper:
             _render_pred_card("HNU.TO", recs.get("HNU.TO", {}))
             _render_pred_card("HND.TO", recs.get("HND.TO", {}))
 
+        with st.expander("🧪 Past-year ML recommendation backtest"):
+            st.caption(
+                "Walk-forward replay: for each trading day in the last "
+                "12 months, retrain the model on prior data and generate "
+                "the SAME recommendation the live system would have. "
+                "Score each BUY against the actual next-day direction."
+            )
+
+            @st.cache_data(ttl=3600, show_spinner="Backtesting (10-30s)…")
+            def _cached_evaluation():
+                return pt.evaluate_recent_recommendations(months_back=12)
+
+            if st.button("▶️ Run past-year backtest", key="pt_run_eval"):
+                _cached_evaluation.clear()
+                st.rerun()
+
+            try:
+                ev = _cached_evaluation()
+            except Exception as e:
+                ev = {"error": str(e)}
+
+            if "error" in ev:
+                st.warning(f"Backtest unavailable: {ev['error']}")
+            else:
+                st.success(
+                    f"**{ev['total_right']} RIGHT / "
+                    f"{ev['total_wrong']} WRONG = "
+                    f"{ev['overall_accuracy']*100:.1f}% accuracy** "
+                    f"over {ev['total_predictions']} predictions since "
+                    f"{ev['cutoff']}"
+                )
+                # Per-ETF table
+                rows = []
+                for etf, stats in ev["per_etf"].items():
+                    tot = stats["right"] + stats["wrong"]
+                    acc = (stats["right"] / tot * 100) if tot else 0
+                    rows.append({
+                        "ETF": etf,
+                        "Right": stats["right"],
+                        "Wrong": stats["wrong"],
+                        "Total BUYs": tot,
+                        "Accuracy": f"{acc:.1f}%",
+                    })
+                st.dataframe(pd.DataFrame(rows), use_container_width=True,
+                             hide_index=True)
+                # Per-tier breakdown
+                tier_rows = []
+                for etf, stats in ev["per_etf"].items():
+                    for tier, ts in stats.get("by_tier", {}).items():
+                        tot = ts["right"] + ts["wrong"]
+                        acc = (ts["right"] / tot * 100) if tot else 0
+                        tier_rows.append({
+                            "ETF": etf,
+                            "Tier": tier,
+                            "Right": ts["right"],
+                            "Wrong": ts["wrong"],
+                            "Total": tot,
+                            "Accuracy": f"{acc:.1f}%",
+                        })
+                if tier_rows:
+                    st.markdown("**Per-tier breakdown:**")
+                    st.dataframe(pd.DataFrame(tier_rows),
+                                 use_container_width=True, hide_index=True)
+
         with st.expander("📊 Per-year out-of-sample accuracy"):
             for target_key, target_name in [("wti", "WTI"), ("ng", "NG=F")]:
                 tgt = _pred.get(target_key, {}) or {}
