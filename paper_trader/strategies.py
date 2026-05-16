@@ -433,14 +433,14 @@ class DxyOilInverse(Strategy):
 # doesn't matter — the agent picks the highest-conviction signal across
 # all of them.
 ALL_STRATEGIES: list[Strategy] = [
-    OilRsiReversion(),
+    # Iter 46: oil_rsi_reversion REMOVED. Out-of-sample testing showed
+    # it loses in every window from 3y to 10y (PF 0.63-0.92). The 5y
+    # backtest's +3830% was a misleading aggregate — RSI was always
+    # the loser dragging down two real winners.
+    # OilRsiReversion(),  # PF <1 across all tested windows
     OilBollingerOversold(),
     OilPullbackInUptrend(),
     OilSharpDip(),
-    # NatgasRsiReversion(),  # iter 27: never fired in 5y, no edge
-    # OilTrendContinuation(),  # iter 17: PF 0.77 at short hold
-    # OilDxyTailwind(),  # iter 15: PF 0.77
-    # OilEarlyBounce(),  # iter 14: PF 0.79
 ]
 
 
@@ -455,6 +455,18 @@ def run_all_strategies(
       {"strategy": name, "ticker": str|None, "conviction": float}
     """
     out: list[dict] = []
+    # ITER 45: faster regime detector. Skip if EITHER condition fires:
+    #   - bear_regime (200d SMA filter — slow but durable)
+    #   - fast_bear (30-day return < -10% — catches crashes early)
+    # Together these should filter out the 2018-2020 bleed period.
+    bear_regime = features.get("wti_bear_regime", False)
+    fast_bear = features.get("wti_fast_bear", False)
+    if bear_regime or fast_bear:
+        return [{
+            "strategy": s.name, "ticker": None, "conviction": 0.0,
+        } for s in ALL_STRATEGIES
+            if enabled_names is None or s.name in enabled_names]
+
     # CFTC conviction modifier — boost-only (iter 36 reduce hurt us)
     cftc_boost = 0.0
     days_old = features.get("cftc_days_old")

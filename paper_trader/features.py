@@ -107,6 +107,43 @@ def _series_features(close: pd.Series) -> dict[str, float | None]:
         )
     except Exception:
         out["bb_position"] = None
+    # 200-day SMA + bear-regime detection (iter 44 — too slow)
+    try:
+        if len(close) >= 200:
+            sma200 = close.rolling(200).mean()
+            sma200_now = float(sma200.iloc[-1])
+            sma200_60d_ago = (
+                float(sma200.iloc[-61]) if len(sma200) >= 61 else sma200_now
+            )
+            cur = float(close.iloc[-1])
+            out["sma200"] = _safe_float(sma200_now)
+            out["sma200_slope_60d"] = _safe_float(
+                (sma200_now - sma200_60d_ago) / sma200_60d_ago * 100
+            )
+            out["bear_regime"] = (
+                cur < sma200_now and sma200_now < sma200_60d_ago
+            )
+        else:
+            out["sma200"] = None
+            out["sma200_slope_60d"] = None
+            out["bear_regime"] = False
+    except Exception:
+        out["sma200"] = None
+        out["sma200_slope_60d"] = None
+        out["bear_regime"] = False
+    # ITER 45: faster regime detector — 30-day momentum. Sharp drops
+    # catch trending bear markets BEFORE the 200d SMA rolls over.
+    try:
+        if len(close) > 30:
+            ret_30d = (close.iloc[-1] / close.iloc[-31] - 1) * 100
+            out["ret_30d_pct"] = _safe_float(ret_30d)
+            out["fast_bear"] = ret_30d < -10.0
+        else:
+            out["ret_30d_pct"] = None
+            out["fast_bear"] = False
+    except Exception:
+        out["ret_30d_pct"] = None
+        out["fast_bear"] = False
     return out
 
 
@@ -119,13 +156,12 @@ def fetch_features() -> dict[str, Any]:
         "as_of_ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
 
-    # Batch download a couple months of daily data for everything at once.
-    # 3mo gives plenty of bars for 20-day RSI / 20-day momentum windows.
+    # Need ≥200 bars for the SMA200 regime filter (iter 44). Bump to 1y.
     syms = list(SYMBOLS.values())
     try:
         df = yf.download(
             " ".join(syms),
-            period="3mo",
+            period="1y",
             interval="1d",
             auto_adjust=True,
             progress=False,

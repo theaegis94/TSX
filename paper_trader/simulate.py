@@ -60,7 +60,7 @@ from . import exits as exit_mod
 # Match the live config exactly so sim trades are comparable
 COMMISSION = 5.0
 SLIPPAGE_PCT = 0.005
-POSITION_SIZE_PCT = 1.00  # iter 35 — 100% base, fully use 3x leverage
+POSITION_SIZE_PCT = 1.00  # iter 39 — 100% base, uses 3x leverage cap
 MIN_CONVICTION_TO_OPEN = 0.50  # iteration 9 — accept weaker signals to scale up trade count
 SIM_STARTING_BALANCE = 10_000.0
 
