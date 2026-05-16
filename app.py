@@ -7220,6 +7220,28 @@ with tab_paper:
         _pred = None
 
     if _pred and isinstance(_pred, dict):
+        # Compute the next trading-day date (skips weekends).
+        # Holiday calendar not handled — close enough for display.
+        from datetime import datetime as _dt2, timedelta as _td
+        try:
+            from zoneinfo import ZoneInfo as _ZI
+            _et = _dt2.now(_ZI("America/New_York")).date()
+        except Exception:
+            _et = _dt2.utcnow().date()
+        # If it's already a weekday and BEFORE 4pm ET (market close), the
+        # next trading session is the day-after-tomorrow effectively — but
+        # for "what date does this prediction apply to" we want the next
+        # trading session OPEN after today. Convention: if before close,
+        # "tomorrow" = next weekday; if after close on Friday, "tomorrow"
+        # = Monday. The skip-weekend logic handles both.
+        _next_td = _et + _td(days=1)
+        while _next_td.weekday() >= 5:  # 5=Sat, 6=Sun
+            _next_td += _td(days=1)
+        _next_label = _next_td.strftime("%a %b %-d") \
+            if hasattr(_next_td, "strftime") else str(_next_td)
+        # %-d only works on unix; safer cross-platform:
+        _next_label = _next_td.strftime("%a, %b %d").replace(" 0", " ")
+
         # Top metrics: P(up) for each underlying + OOS accuracy
         _m_l, _m_r = st.columns(2)
         wti = _pred.get("wti") or {}
@@ -7229,7 +7251,7 @@ with tab_paper:
                 p = wti["prob_up"]
                 acc = wti.get("out_of_sample_accuracy", 0.0)
                 st.metric(
-                    "🛢️ WTI — P(up) tomorrow",
+                    f"🛢️ WTI — P(up) on {_next_label}",
                     f"{p*100:.1f}%",
                     f"out-of-sample accuracy: {acc*100:.1f}%",
                 )
@@ -7238,7 +7260,7 @@ with tab_paper:
                 p = ng["prob_up"]
                 acc = ng.get("out_of_sample_accuracy", 0.0)
                 st.metric(
-                    "🔥 NG=F — P(up) tomorrow",
+                    f"🔥 NG=F — P(up) on {_next_label}",
                     f"{p*100:.1f}%",
                     f"out-of-sample accuracy: {acc*100:.1f}%",
                 )
