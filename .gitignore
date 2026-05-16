@@ -30,3 +30,4 @@ strategies_state.db-wal
 strategies_state.db-shm
 paper_trader.lock
 logs/
+.eia_cache/
