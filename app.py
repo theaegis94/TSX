@@ -7421,6 +7421,12 @@ with tab_paper:
                     'padding:1px 6px; border-radius:6px; '
                     'font-size:0.65rem; margin-left:6px;">WEAK (52-55% hist)</span>'
                 )
+            elif tier == "fallback":
+                tier_chip = (
+                    '<span style="background:#52525b; color:#fff; '
+                    'padding:1px 6px; border-radius:6px; '
+                    'font-size:0.65rem; margin-left:6px;">FALLBACK (~50%)</span>'
+                )
             prob_str = f"P(up)={prob:.2f}" if prob is not None else "—"
             st.markdown(
                 f'<div style="background:{bg}; border:2px solid {border}; '

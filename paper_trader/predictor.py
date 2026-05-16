@@ -289,31 +289,91 @@ def predict_tomorrow_both() -> dict[str, Any]:
                    "prob_underlying_up": ng_p, "tier": "none"},
     }
 
+    # --- OIL PAIR ---
     if wti_p is not None:
         if 0.55 <= wti_p < 0.60:
             rec["HOU.TO"] = {
-                "action": "BUY", "reason": f"WTI P(up)={wti_p:.2f}, 60% historical accuracy",
+                "action": "BUY", "reason": f"WTI P(up)={wti_p:.2f} → 60% historical accuracy",
                 "prob_underlying_up": wti_p, "tier": "strong",
+            }
+            rec["HOD.TO"] = {
+                "action": "SELL", "reason": "opposing side of HOU strong-buy",
+                "prob_underlying_up": wti_p, "tier": "none",
             }
         elif wti_p >= 0.60:
             rec["HOU.TO"] = {
-                "action": "BUY", "reason": f"WTI P(up)={wti_p:.2f}, 55% historical accuracy",
+                "action": "BUY", "reason": f"WTI P(up)={wti_p:.2f} → 55% historical accuracy",
                 "prob_underlying_up": wti_p, "tier": "weak",
             }
-        # For HOD, we'd need a calibrated bear bucket — our model
-        # doesn't have one (middle buckets are noisy down). Keep SELL.
+            rec["HOD.TO"] = {
+                "action": "SELL", "reason": "opposing side of HOU buy",
+                "prob_underlying_up": wti_p, "tier": "none",
+            }
+        else:
+            # FALLBACK: no calibrated bucket fires — use direction of P(up)
+            if wti_p >= 0.50:
+                rec["HOU.TO"] = {
+                    "action": "BUY",
+                    "reason": f"WTI P(up)={wti_p:.2f} → directional bias (uncalibrated)",
+                    "prob_underlying_up": wti_p, "tier": "fallback",
+                }
+                rec["HOD.TO"] = {
+                    "action": "SELL", "reason": "opposing side of HOU fallback-buy",
+                    "prob_underlying_up": wti_p, "tier": "none",
+                }
+            else:
+                rec["HOD.TO"] = {
+                    "action": "BUY",
+                    "reason": f"WTI P(up)={wti_p:.2f} → directional bias (uncalibrated, HOD untested)",
+                    "prob_underlying_up": wti_p, "tier": "fallback",
+                }
+                rec["HOU.TO"] = {
+                    "action": "SELL", "reason": "opposing side of HOD fallback-buy",
+                    "prob_underlying_up": wti_p, "tier": "none",
+                }
 
+    # --- NATGAS PAIR ---
     if ng_p is not None:
         if ng_p >= 0.60:
             rec["HNU.TO"] = {
-                "action": "BUY", "reason": f"NG P(up)={ng_p:.2f}, 55% historical accuracy",
+                "action": "BUY", "reason": f"NG P(up)={ng_p:.2f} → 55% historical accuracy",
                 "prob_underlying_up": ng_p, "tier": "weak",
+            }
+            rec["HND.TO"] = {
+                "action": "SELL", "reason": "opposing side of HNU buy",
+                "prob_underlying_up": ng_p, "tier": "none",
             }
         elif ng_p <= 0.40:
             rec["HND.TO"] = {
-                "action": "BUY", "reason": f"NG P(up)={ng_p:.2f}, 52% historical down rate",
+                "action": "BUY", "reason": f"NG P(up)={ng_p:.2f} → 52% historical down rate",
                 "prob_underlying_up": ng_p, "tier": "weak",
             }
+            rec["HNU.TO"] = {
+                "action": "SELL", "reason": "opposing side of HND buy",
+                "prob_underlying_up": ng_p, "tier": "none",
+            }
+        else:
+            # FALLBACK
+            if ng_p >= 0.50:
+                rec["HNU.TO"] = {
+                    "action": "BUY",
+                    "reason": f"NG P(up)={ng_p:.2f} → directional bias (uncalibrated)",
+                    "prob_underlying_up": ng_p, "tier": "fallback",
+                }
+                rec["HND.TO"] = {
+                    "action": "SELL", "reason": "opposing side of HNU fallback-buy",
+                    "prob_underlying_up": ng_p, "tier": "none",
+                }
+            else:
+                rec["HND.TO"] = {
+                    "action": "BUY",
+                    "reason": f"NG P(up)={ng_p:.2f} → directional bias (uncalibrated)",
+                    "prob_underlying_up": ng_p, "tier": "fallback",
+                }
+                rec["HNU.TO"] = {
+                    "action": "SELL", "reason": "opposing side of HND fallback-buy",
+                    "prob_underlying_up": ng_p, "tier": "none",
+                }
 
     out["recommendations"] = rec
     return out
