@@ -2575,38 +2575,84 @@ def _render_save_url_banner():
 _render_save_url_banner()
 render_quick_analysis()
 
-# Top-right "data refreshed at" chip — shows the current page-render time in
-# Eastern Time (TSX / NYSE / NASDAQ clock) so it matches the market clock the
-# user is watching, not the Streamlit Cloud server's UTC clock. A small
-# "(data Xm old)" suffix shows how long since the cache was actually cleared,
-# so the user can tell whether the prices shown are freshly pulled or cached.
+# Top-right "data refreshed at" chip — shows the timestamp of the LAST
+# PRICE BAR yfinance gave us (i.e. when the watchlist tile prices were
+# actually last updated by the data source). Falls back to wall-clock
+# time if no ticker data is available.
 try:
     from zoneinfo import ZoneInfo
-    _et_now = datetime.now(ZoneInfo("America/New_York"))
+    _ET_ZONE = ZoneInfo("America/New_York")
 except Exception:
-    # zoneinfo not available — fall back to fixed UTC-4 (EDT). Will drift by
-    # 1 hr during EST (Nov–Mar) but better than showing UTC.
     from datetime import timezone, timedelta
-    _et_now = datetime.now(timezone(timedelta(hours=-4)))
-_now_str = _et_now.strftime("%H:%M:%S")
-_now_date = _et_now.strftime("%b %d")
-_now_tz = _et_now.strftime("%Z") or "ET"
-_cleared = st.session_state.get("_cache_cleared_at")
-_age_str = ""
-if _cleared:
-    # _cleared is timezone-naive (from datetime.now() on server). Compute age
-    # using server-local time on both sides to avoid tz-mixing errors.
-    _age_seconds = int((datetime.now() - _cleared).total_seconds())
-    if _age_seconds < 60:
-        _age_str = f"(data {_age_seconds}s old)"
-    elif _age_seconds < 3600:
-        _age_str = f"(data {_age_seconds // 60}m old)"
+    _ET_ZONE = timezone(timedelta(hours=-4))
+
+# Try to pull the latest `last_bar_ts` from any cached watchlist quote.
+# This is the real "when did the source data last update" timestamp.
+_last_bar_dt = None
+try:
+    _q_for_ts = st.session_state.get("_wl_quotes_for_ai") or {}
+    if not _q_for_ts and _wl_normalized:
+        _q_for_ts = cached_quotes(tuple(_wl_normalized[:30])) or {}
+    for _q in _q_for_ts.values():
+        if not isinstance(_q, dict):
+            continue
+        _ts_str = _q.get("last_bar_ts")
+        if not _ts_str:
+            continue
+        try:
+            _candidate = datetime.fromisoformat(_ts_str)
+            if _candidate.tzinfo is None:
+                # yfinance gives naive timestamps in market local time
+                _candidate = _candidate.replace(tzinfo=_ET_ZONE)
+            else:
+                _candidate = _candidate.astimezone(_ET_ZONE)
+            if _last_bar_dt is None or _candidate > _last_bar_dt:
+                _last_bar_dt = _candidate
+        except (ValueError, TypeError):
+            continue
+except Exception:
+    _last_bar_dt = None
+
+# Format what we'll display
+if _last_bar_dt is not None:
+    # Daily bars from yfinance are stamped at 00:00:00 — that's the bar's
+    # date but the price is the day's close (4 PM ET). For daily data the
+    # honest representation is "EOD" rather than the literal midnight time.
+    if (_last_bar_dt.hour == 0 and _last_bar_dt.minute == 0
+            and _last_bar_dt.second == 0):
+        _now_str = "Close"
+        # Bar is effectively "as of 4 PM ET on the bar's date"
+        _effective_dt = _last_bar_dt.replace(hour=16, minute=0)
     else:
-        _age_str = f"(data {_age_seconds // 3600}h old)"
+        _now_str = _last_bar_dt.strftime("%H:%M:%S")
+        _effective_dt = _last_bar_dt
+    _now_date = _last_bar_dt.strftime("%b %d")
+    _now_tz = _last_bar_dt.strftime("%Z") or "ET"
+    # Age vs now (real-world wall clock)
+    _now_real = datetime.now(_ET_ZONE)
+    _age_seconds = int((_now_real - _effective_dt).total_seconds())
+    if _age_seconds < 60:
+        _age_str = f"({_age_seconds}s ago)"
+    elif _age_seconds < 3600:
+        _age_str = f"({_age_seconds // 60}m ago)"
+    elif _age_seconds < 86400:
+        _age_str = f"({_age_seconds // 3600}h ago)"
+    else:
+        _age_str = f"({_age_seconds // 86400}d ago)"
+    _label = "Last price bar:"
+else:
+    # Fallback to wall-clock if no quote timestamps available
+    _et_now = datetime.now(_ET_ZONE)
+    _now_str = _et_now.strftime("%H:%M:%S")
+    _now_date = _et_now.strftime("%b %d")
+    _now_tz = _et_now.strftime("%Z") or "ET"
+    _age_str = "(no price data)"
+    _label = "Tickers refreshed:"
+
 st.markdown(
     f'<div style="text-align:right; font-size:0.78rem; color:#9ca3af; '
     f'margin-top:-4px; margin-bottom:4px;">'
-    f'🕒 Tickers refreshed: '
+    f'🕒 {_label} '
     f'<b style="color:#e5e7eb;">{_now_str} {_now_tz}</b>'
     f'<span style="color:#6b7280;"> &nbsp;·&nbsp; {_now_date}</span>'
     f'<span style="color:#6b7280;"> &nbsp;{_age_str}</span>'

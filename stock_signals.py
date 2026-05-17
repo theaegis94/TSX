@@ -251,11 +251,19 @@ def _quote_from_df(df, t: str) -> dict | None:
                 else:
                     direction = "flat"
             closes_5d.append((idx.strftime("%a"), float(val), direction))
+        # Capture the timestamp of the most recent bar so the UI can
+        # display "data as of <real source timestamp>", not just "cache
+        # was cleared at X".
+        try:
+            last_ts = closes.index[-1].isoformat()
+        except Exception:
+            last_ts = None
         return {
             "price": last,
             "prev": prev,
             "change_pct": (last - prev) / prev * 100 if prev else 0.0,
             "closes_5d": closes_5d,
+            "last_bar_ts": last_ts,
         }
     except (KeyError, AttributeError, ValueError, IndexError):
         return None
