@@ -7283,9 +7283,8 @@ with tab_paper:
         _next_td = _et + _td(days=1)
         while _next_td.weekday() >= 5:  # 5=Sat, 6=Sun
             _next_td += _td(days=1)
-        _next_label = _next_td.strftime("%a %b %-d") \
-            if hasattr(_next_td, "strftime") else str(_next_td)
-        # %-d only works on unix; safer cross-platform:
+        # Cross-platform: %-d works on Unix but ValueErrors on Windows.
+        # Use %d (zero-padded) and strip the leading zero ourselves.
         _next_label = _next_td.strftime("%a, %b %d").replace(" 0", " ")
 
         # Top metrics: P(up) for each underlying + OOS accuracy
