@@ -88,6 +88,17 @@ def _fetch_history(years: int = 12) -> dict[str, pd.DataFrame]:
     return out
 
 
+# Iter 49: target-specific feature subsets from permutation importance.
+# WTI works best with all 24 features; NG benefits from pruning to its
+# top contributors (vol_20d / sma200_ratio etc. had NEGATIVE permutation
+# importance for NG even though they help WTI).
+NG_KEEP_FEATURES = {
+    "doy_cos", "ret_20d", "ret_1d", "tnx_ret_5d", "brent_ret_5d",
+    "tnx_ret_1d", "vix_ret_1d", "dxy_ret_5d", "xle_ret_5d",
+    "ovx_ret_1d", "month",
+}
+
+
 def _build_feature_matrix(
     data: dict[str, pd.DataFrame],
     target: str,
@@ -179,6 +190,11 @@ def train_and_evaluate(
     feature_cols = [c for c in df.columns
                     if c not in ("px", "next_ret", "label")
                     and not c.endswith("_px")]
+    # ITER 49 NOTE: Tested NG-specific feature pruning. Raw accuracy on
+    # NG improved 51.4% -> 54.2% standalone, but recommendation accuracy
+    # DROPPED (55.6% -> 54.8%) because the bucket thresholds are
+    # calibrated to the old probability distribution. Not worth the
+    # complexity; full feature set retained for both.
     LOGGER.info(f"  {len(df)} samples, {len(feature_cols)} features")
 
     # Walk-forward by calendar year
