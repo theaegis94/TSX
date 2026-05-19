@@ -106,19 +106,8 @@ def _finnhub_key() -> str | None:
     return None
 
 
-def fetch_energy_news(hours_back: int = 36, limit: int = 40) -> list[dict]:
-    """Pull Finnhub general news, filter to oil/gas/macro relevance.
-
-    Returns list of dicts: {datetime (unix), headline, summary, source, url}.
-    Newest first, deduplicated by headline.
-    """
-    key = _finnhub_key()
-    if not key:
-        LOGGER.warning("FINNHUB_API_KEY not set; cannot fetch news.")
-        return []
-    cutoff_ts = int(
-        (datetime.now(timezone.utc) - timedelta(hours=hours_back)).timestamp()
-    )
+def _fetch_finnhub_general(key: str) -> list[dict]:
+    """Raw fetch of Finnhub general news. Returns items or empty list."""
     try:
         r = requests.get(
             "https://finnhub.io/api/v1/news",
@@ -126,21 +115,83 @@ def fetch_energy_news(hours_back: int = 36, limit: int = 40) -> list[dict]:
             timeout=20,
         )
         if r.status_code != 200:
-            LOGGER.warning(f"Finnhub returned HTTP {r.status_code}")
+            LOGGER.warning(f"Finnhub /news returned HTTP {r.status_code}")
             return []
-        items = r.json() or []
+        return r.json() or []
     except Exception as e:
         LOGGER.warning(f"Finnhub fetch failed: {e}")
         return []
 
+
+def _fetch_finnhub_company(key: str, symbol: str) -> list[dict]:
+    """Per-ticker news (fills in oil/gas specific stories Finnhub buckets
+    by company)."""
+    from_date = (datetime.now(timezone.utc) - timedelta(days=3)).strftime("%Y-%m-%d")
+    to_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    try:
+        r = requests.get(
+            "https://finnhub.io/api/v1/company-news",
+            params={"symbol": symbol, "from": from_date, "to": to_date, "token": key},
+            timeout=20,
+        )
+        if r.status_code != 200:
+            return []
+        return r.json() or []
+    except Exception:
+        return []
+
+
+# Tickers we pull company-specific news for to augment the general feed.
+# These move with oil/gas fundamentals and provide direct industry signal.
+ENERGY_TICKERS_FOR_NEWS = [
+    "XOM", "CVX", "COP", "OXY", "USO",   # US oil majors + WTI ETF
+    "BNO", "UNG",                          # Brent ETF + natgas ETF
+    "SU.TO", "CNQ.TO", "ENB.TO", "TRP.TO", # CA energy
+]
+
+
+def fetch_energy_news(hours_back: int = 36, limit: int = 40,
+                      include_diagnostics: bool = False) -> list[dict] | tuple:
+    """Pull Finnhub general news + per-ticker oil/gas news, filter to
+    oil/gas/macro relevance.
+
+    If include_diagnostics=True, returns (headlines, diag_dict) so
+    callers can show counts/reasons in the UI.
+    """
+    key = _finnhub_key()
+    if not key:
+        LOGGER.warning("FINNHUB_API_KEY not set; cannot fetch news.")
+        return ([], {"error": "no_finnhub_key"}) if include_diagnostics else []
+    cutoff_ts = int(
+        (datetime.now(timezone.utc) - timedelta(hours=hours_back)).timestamp()
+    )
+
+    # 1) General news (broad market) — large list
+    general_items = _fetch_finnhub_general(key)
+
+    # 2) Per-ticker news for energy companies (more focused signal)
+    ticker_items = []
+    for sym in ENERGY_TICKERS_FOR_NEWS:
+        ticker_items.extend(_fetch_finnhub_company(key, sym))
+
+    all_items = general_items + ticker_items
+    diag = {
+        "general_count": len(general_items),
+        "ticker_count": len(ticker_items),
+        "raw_total": len(all_items),
+    }
+
     relevant = []
     seen_headlines = set()
     all_kw = OIL_KEYWORDS | GAS_KEYWORDS | MACRO_KEYWORDS
-    for it in items:
+    in_window = 0
+    keyword_matched = 0
+    for it in all_items:
         try:
             ts = int(it.get("datetime") or 0)
             if ts < cutoff_ts:
                 continue
+            in_window += 1
             head = (it.get("headline") or "").strip()
             summary = (it.get("summary") or "").strip()
             if not head or head in seen_headlines:
@@ -148,6 +199,7 @@ def fetch_energy_news(hours_back: int = 36, limit: int = 40) -> list[dict]:
             text = f"{head} {summary}".lower()
             if not any(kw in text for kw in all_kw):
                 continue
+            keyword_matched += 1
             seen_headlines.add(head)
             relevant.append({
                 "datetime": ts,
@@ -158,9 +210,46 @@ def fetch_energy_news(hours_back: int = 36, limit: int = 40) -> list[dict]:
             })
         except (TypeError, ValueError):
             continue
-    # Sort newest first, limit
+
+    diag["in_36h_window"] = in_window
+    diag["keyword_matched"] = keyword_matched
+
+    # FALLBACK: if keyword filter is too narrow today, take the most
+    # recent ticker-specific items unfiltered (already energy-tagged)
+    if len(relevant) < 5:
+        LOGGER.info(
+            f"Only {len(relevant)} keyword-matched headlines — adding "
+            f"top {30-len(relevant)} energy-ticker items as fallback"
+        )
+        for it in ticker_items:
+            try:
+                ts = int(it.get("datetime") or 0)
+                if ts < cutoff_ts:
+                    continue
+                head = (it.get("headline") or "").strip()
+                if not head or head in seen_headlines:
+                    continue
+                seen_headlines.add(head)
+                relevant.append({
+                    "datetime": ts,
+                    "headline": head,
+                    "summary": (it.get("summary") or "")[:300],
+                    "source": it.get("source", ""),
+                    "url": it.get("url", ""),
+                })
+                if len(relevant) >= 25:
+                    break
+            except (TypeError, ValueError):
+                continue
+        diag["fallback_used"] = True
+        diag["after_fallback"] = len(relevant)
+    else:
+        diag["fallback_used"] = False
+
     relevant.sort(key=lambda x: x["datetime"], reverse=True)
-    return relevant[:limit]
+    relevant = relevant[:limit]
+    diag["returned"] = len(relevant)
+    return (relevant, diag) if include_diagnostics else relevant
 
 
 def score_with_claude(headlines: list[dict]) -> dict[str, Any] | None:
@@ -267,22 +356,41 @@ def compute_news_sentiment(
     hours_back: int = 36,
     max_headlines: int = 30,
 ) -> dict[str, Any] | None:
-    """End-to-end: fetch news + score with Claude. Returns None if any
-    upstream piece (key, API) is unavailable so the caller can hide the
-    panel gracefully.
+    """End-to-end: fetch news + score with Claude. Returns None on
+    fatal upstream failure; partial diagnostics included in dict on
+    soft failures (e.g. headlines fetched but Claude errored).
     """
-    headlines = fetch_energy_news(
+    headlines, diag = fetch_energy_news(
         hours_back=hours_back, limit=max_headlines,
+        include_diagnostics=True,
     )
     if not headlines:
-        return None
+        # Hard fail: nothing to score. Caller can show diagnostics.
+        return {
+            "as_of": datetime.now(timezone.utc).isoformat(),
+            "error": "no_headlines",
+            "diagnostics": diag,
+            "oil": None,
+            "gas": None,
+            "n_headlines": 0,
+            "headlines": [],
+        }
     scores = score_with_claude(headlines)
     if scores is None:
-        return None
+        return {
+            "as_of": datetime.now(timezone.utc).isoformat(),
+            "error": "claude_failed",
+            "diagnostics": diag,
+            "oil": None,
+            "gas": None,
+            "n_headlines": len(headlines),
+            "headlines": headlines,
+        }
     return {
         "as_of": datetime.now(timezone.utc).isoformat(),
         "oil": scores.get("oil"),
         "gas": scores.get("gas"),
         "n_headlines": scores.get("n", len(headlines)),
         "headlines": headlines,
+        "diagnostics": diag,
     }

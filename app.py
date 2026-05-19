@@ -7263,7 +7263,7 @@ with tab_paper:
         st.warning(f"News sentiment unavailable: {e}")
         _ns = None
 
-    if _ns is None:
+    if _ns is None or _ns.get("error"):
         # Diagnose which piece is missing so the user knows what to fix
         from paper_trader import news_sentiment as _ns_mod
         _fh = _ns_mod._finnhub_key()
@@ -7277,17 +7277,35 @@ with tab_paper:
             st.info(
                 "_News sentiment is missing: **" + ", ".join(_missing) + "**.  \n"
                 "Set these in `.env` (local) or your Streamlit Cloud "
-                "**App Settings → Secrets** (deployed). Both keys are "
-                "needed: Finnhub for headlines, Anthropic to score them._"
+                "**App Settings → Secrets** (deployed)._"
             )
         else:
-            # Both keys present — the call itself failed
-            st.info(
-                "_Both API keys are configured, but the scoring call "
-                "didn't return data. Either no relevant headlines in "
-                "the last 36h or the Claude/Finnhub API hiccupped. "
-                "Try Re-score in a few minutes._"
-            )
+            # Both keys present — show diagnostics on what happened
+            err = (_ns or {}).get("error", "unknown")
+            diag = (_ns or {}).get("diagnostics", {}) or {}
+            if err == "no_headlines":
+                msg = (
+                    f"_No relevant headlines in the last 36h.  \n"
+                    f"Finnhub returned **{diag.get('raw_total', 0)} total items** "
+                    f"({diag.get('general_count', 0)} general + "
+                    f"{diag.get('ticker_count', 0)} ticker-specific), "
+                    f"**{diag.get('in_36h_window', 0)} in window**, "
+                    f"**{diag.get('keyword_matched', 0)} matched keywords**.  \n"
+                    f"This usually means Finnhub's free tier rate-limited or "
+                    f"the cache returned old data. Try Re-score in 1-2 min._"
+                )
+            elif err == "claude_failed":
+                msg = (
+                    f"_Got {_ns.get('n_headlines', 0)} headlines but Claude "
+                    f"didn't return a valid response. Could be rate limit, "
+                    f"invalid key, or transient API error. Try Re-score._"
+                )
+            else:
+                msg = (
+                    "_Both API keys configured but the scoring call "
+                    "failed. Try Re-score in a few minutes._"
+                )
+            st.info(msg)
     else:
         def _sentiment_chip(score: float) -> tuple[str, str]:
             """Return (color, label) for a score."""
