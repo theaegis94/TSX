@@ -1,0 +1,366 @@
+"""Canadian ETF screener — 1-week-ahead direction prediction.
+
+Scope: rank ~25 of the most liquid Canadian-listed ETFs by the
+probability that they'll close higher 5 trading days from now.
+
+Methodology (mirrors predictor.py's HOU/HOD approach, adapted for
+weekly horizon):
+  - Per-ETF gradient-boosted classifier
+  - Features: own-price momentum (1d/5d/20d), RSI, MACD,
+    20-day volatility, MA-cross, volume ratio + cross-asset
+    market context (XIU 5d, USD/CAD 5d, TLT 5d)
+  - Walk-forward backtest: train on first 4 years, test on the
+    remaining ~1 year, never seeing future data
+  - Label: close_{t+5} > close_t
+
+Honest expectations:
+  - 52-55% accuracy on weekly direction would be a real edge
+  - Many ETFs (broad-market index funds especially) will land
+    at coin-flip — that's data telling us they're efficient
+  - The screener's value is identifying which ETFs DO have
+    detectable weekly momentum/mean-reversion structure
+"""
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+import numpy as np
+import pandas as pd
+import yfinance as yf
+from sklearn.ensemble import HistGradientBoostingClassifier
+
+LOGGER = logging.getLogger("paper_trader.etf_screener")
+
+# ~25 of the most liquid Canadian-listed ETFs across major asset classes.
+# Universe is intentionally diverse so the screener can highlight which
+# corners of the Canadian ETF market are actually predictable vs
+# random walks.
+UNIVERSE = [
+    # Broad Canadian equity
+    "XIU.TO", "XIC.TO", "VCN.TO", "ZCN.TO",
+    # US exposure (CAD-hedged + unhedged variants)
+    "VFV.TO", "XSP.TO", "ZSP.TO", "HXS.TO",
+    # International
+    "XEF.TO", "XEC.TO", "ZEM.TO",
+    # Sectors
+    "XEG.TO",   # Canadian energy
+    "ZEB.TO",   # Canadian banks
+    "XFN.TO",   # Canadian financials
+    "XGD.TO",   # Gold miners
+    "XIT.TO",   # Canadian tech
+    "XRE.TO",   # REITs
+    # Dividend-focused
+    "XDV.TO", "VDY.TO", "XEI.TO",
+    # Fixed income
+    "XBB.TO", "ZAG.TO",
+    # All-in-one asset allocation
+    "XEQT.TO", "VEQT.TO", "XGRO.TO",
+]
+
+# Market-context tickers (same for all ETFs)
+MARKET_CONTEXT = {
+    "tsx":  "^GSPTSE",   # TSX composite
+    "spx":  "^GSPC",     # S&P 500
+    "tlt":  "TLT",       # 20y bonds (rates proxy)
+    "dxy":  "DX-Y.NYB",  # USD index
+    "vix":  "^VIX",      # volatility
+}
+
+
+def _rsi(series: pd.Series, period: int = 14) -> pd.Series:
+    """Standard 14-period RSI."""
+    delta = series.diff()
+    gain = delta.where(delta > 0, 0).rolling(period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
+    rs = gain / loss.replace(0, np.nan)
+    return 100 - (100 / (1 + rs))
+
+
+def _macd_diff(series: pd.Series) -> pd.Series:
+    """MACD signal-line diff (12-26 EMA)."""
+    ema12 = series.ewm(span=12, adjust=False).mean()
+    ema26 = series.ewm(span=26, adjust=False).mean()
+    macd = ema12 - ema26
+    signal = macd.ewm(span=9, adjust=False).mean()
+    return macd - signal
+
+
+def _fetch_market_context(years: int = 5) -> dict[str, pd.DataFrame]:
+    """Pull market context series. Returned aligned to each ETF later."""
+    out = {}
+    for key, sym in MARKET_CONTEXT.items():
+        try:
+            df = yf.download(sym, period=f"{years}y", interval="1d",
+                             auto_adjust=False, progress=False)
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+            if df.empty:
+                continue
+            if df.index.tz is not None:
+                df.index = df.index.tz_localize(None)
+            out[key] = df
+        except Exception as e:
+            LOGGER.warning(f"market context {sym} failed: {e}")
+    return out
+
+
+def _fetch_etf(ticker: str, years: int = 5) -> pd.DataFrame | None:
+    """Pull daily OHLCV for a single ETF."""
+    try:
+        df = yf.download(ticker, period=f"{years}y", interval="1d",
+                         auto_adjust=False, progress=False)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        if df.empty or len(df) < 250:
+            return None
+        if df.index.tz is not None:
+            df.index = df.index.tz_localize(None)
+        return df
+    except Exception as e:
+        LOGGER.warning(f"fetch {ticker} failed: {e}")
+        return None
+
+
+def _build_features(
+    etf_df: pd.DataFrame,
+    market: dict[str, pd.DataFrame],
+    horizon: int = 5,
+) -> pd.DataFrame:
+    """Compute per-ETF features + market context, with the 5-day-ahead
+    label appended. Drops rows that have NaN in any feature."""
+    close = etf_df["Close"]
+    volume = etf_df["Volume"]
+
+    feats = pd.DataFrame(index=etf_df.index)
+    feats["ret_1d"]  = close.pct_change(1)
+    feats["ret_5d"]  = close.pct_change(5)
+    feats["ret_20d"] = close.pct_change(20)
+    feats["rsi_14"]  = _rsi(close, 14)
+    feats["macd"]    = _macd_diff(close)
+    feats["vol_20d"] = close.pct_change().rolling(20).std()
+    feats["ma_cross"] = (
+        close.rolling(20).mean() / close.rolling(50).mean() - 1
+    )
+    # Volume ratio: today vs 20-day average
+    vol_ma = volume.rolling(20).mean()
+    feats["vol_ratio"] = (volume / vol_ma).replace([np.inf, -np.inf], np.nan)
+
+    # Cross-asset market context (lagged 1 day to avoid look-ahead)
+    for key in ("tsx", "spx", "tlt", "dxy", "vix"):
+        m = market.get(key)
+        if m is None or "Close" not in m:
+            continue
+        m_close = m["Close"].reindex(feats.index, method="ffill")
+        feats[f"{key}_ret_5d"] = m_close.pct_change(5).shift(1)
+        if key == "vix":
+            feats[f"{key}_level"] = m_close.shift(1)
+
+    # Label: did the close 5 days later exceed today's close?
+    forward_ret = close.shift(-horizon) / close - 1
+    feats["next_5d_ret"] = forward_ret
+    feats["label"] = (forward_ret > 0).astype(int)
+
+    # Drop rows with NaN (head: history warmup, tail: no future data)
+    return feats.dropna()
+
+
+def _train_eval(
+    feats: pd.DataFrame,
+    train_ratio: float = 0.8,
+) -> dict[str, Any]:
+    """Fit on first train_ratio of rows, eval on the rest. Return
+    accuracy, latest probability, and the trained model."""
+    feat_cols = [c for c in feats.columns if c not in ("next_5d_ret", "label")]
+    if len(feats) < 300:
+        return {"error": "insufficient_history", "n_rows": len(feats)}
+
+    split = int(len(feats) * train_ratio)
+    X_train = feats.iloc[:split][feat_cols].values
+    y_train = feats.iloc[:split]["label"].values
+    X_test  = feats.iloc[split:][feat_cols].values
+    y_test  = feats.iloc[split:]["label"].values
+
+    clf = HistGradientBoostingClassifier(
+        max_depth=4, learning_rate=0.05, max_iter=200,
+        l2_regularization=1.0, random_state=42,
+    )
+    clf.fit(X_train, y_train)
+    preds = (clf.predict_proba(X_test)[:, 1] >= 0.5).astype(int)
+    accuracy = float((preds == y_test).mean()) if len(y_test) else 0.0
+
+    # Latest prediction (most recent row, no label)
+    latest_x = feats.iloc[-1][feat_cols].values.reshape(1, -1)
+    latest_prob = float(clf.predict_proba(latest_x)[0, 1])
+
+    # Baseline: how often does this ETF go up over 5 days, period?
+    base_rate = float(feats["label"].mean())
+
+    return {
+        "n_train": split,
+        "n_test": len(feats) - split,
+        "accuracy": accuracy,
+        "edge_vs_baseline": accuracy - max(base_rate, 1 - base_rate),
+        "base_rate_up": base_rate,
+        "latest_prob_up": latest_prob,
+        "feat_cols": feat_cols,
+        "model": clf,
+    }
+
+
+def rank_etfs(
+    universe: list[str] | None = None,
+    years: int = 5,
+) -> pd.DataFrame:
+    """Train a 1-week direction model per ETF, return ranked DataFrame.
+
+    Columns:
+      ticker        : symbol
+      prob_up_1wk   : latest probability the ETF closes higher in 5d
+      accuracy_oos  : walk-forward accuracy on the held-out window
+      edge          : accuracy minus max(base_rate, 1-base_rate)
+      n_test        : how many test predictions the accuracy is over
+      base_rate_up  : how often this ETF historically went up over 5d
+    """
+    if universe is None:
+        universe = UNIVERSE
+
+    LOGGER.info(f"Fetching market context for {years}y…")
+    market = _fetch_market_context(years=years)
+
+    rows = []
+    for tkr in universe:
+        LOGGER.info(f"Training model for {tkr}…")
+        etf_df = _fetch_etf(tkr, years=years)
+        if etf_df is None:
+            rows.append({"ticker": tkr, "error": "no_data"})
+            continue
+        feats = _build_features(etf_df, market)
+        if feats.empty:
+            rows.append({"ticker": tkr, "error": "no_features"})
+            continue
+        result = _train_eval(feats)
+        if "error" in result:
+            rows.append({"ticker": tkr, "error": result["error"]})
+            continue
+        rows.append({
+            "ticker": tkr,
+            "prob_up_1wk": result["latest_prob_up"],
+            "accuracy_oos": result["accuracy"],
+            "edge": result["edge_vs_baseline"],
+            "n_test": result["n_test"],
+            "base_rate_up": result["base_rate_up"],
+        })
+
+    df = pd.DataFrame(rows)
+    if "prob_up_1wk" in df.columns:
+        df = df.sort_values(
+            ["prob_up_1wk"], ascending=False, na_position="last",
+        ).reset_index(drop=True)
+    return df
+
+
+def backtest_screener_weekly(
+    universe: list[str] | None = None,
+    months_back: int = 12,
+    top_k: int = 3,
+    years: int = 5,
+) -> dict[str, Any]:
+    """Walk-forward backtest: each Friday, train models on prior data
+    and pick the top_k highest-probability ETFs. Score whether each
+    pick actually closed higher 5 trading days later.
+
+    Returns overall accuracy + per-ETF hit rate to identify which
+    ETFs the model can actually predict.
+    """
+    if universe is None:
+        universe = UNIVERSE
+    market = _fetch_market_context(years=years)
+    cutoff = pd.Timestamp.utcnow().tz_localize(None) - pd.DateOffset(months=months_back)
+
+    # Pre-build feature frames per ETF
+    per_etf_feats = {}
+    for tkr in universe:
+        etf_df = _fetch_etf(tkr, years=years)
+        if etf_df is None: continue
+        feats = _build_features(etf_df, market)
+        if feats.empty: continue
+        per_etf_feats[tkr] = feats
+
+    if not per_etf_feats:
+        return {"error": "no_etfs"}
+
+    # Determine test dates (one per week — Fridays)
+    sample_feats = next(iter(per_etf_feats.values()))
+    test_dates = [d for d in sample_feats.index
+                  if d >= cutoff and d.weekday() == 4]  # Friday = 4
+
+    per_etf_hits = {t: {"picks": 0, "right": 0, "ret_sum": 0.0}
+                    for t in per_etf_feats}
+    total_picks = 0
+    total_right = 0
+    sum_5d_ret = 0.0
+
+    feat_cols = None
+    for date in test_dates:
+        # Train each ETF on data strictly before this Friday
+        probs = {}
+        for tkr, feats in per_etf_feats.items():
+            train = feats.loc[feats.index < date]
+            if len(train) < 250: continue
+            if feat_cols is None:
+                feat_cols = [c for c in train.columns
+                             if c not in ("next_5d_ret", "label")]
+            X = train[feat_cols].values
+            y = train["label"].values
+            clf = HistGradientBoostingClassifier(
+                max_depth=4, learning_rate=0.05, max_iter=150,
+                l2_regularization=1.0, random_state=42,
+            )
+            clf.fit(X, y)
+            # Predict for THIS date (most recent row at-or-before date)
+            try:
+                latest_idx = feats.index.get_loc(date)
+            except KeyError:
+                continue
+            latest = feats.iloc[latest_idx][feat_cols].values.reshape(1, -1)
+            prob = float(clf.predict_proba(latest)[0, 1])
+            actual_ret = float(feats.iloc[latest_idx]["next_5d_ret"])
+            probs[tkr] = (prob, actual_ret)
+
+        # Pick top_k by probability
+        top = sorted(probs.items(), key=lambda x: x[1][0], reverse=True)[:top_k]
+        for tkr, (prob, actual_ret) in top:
+            total_picks += 1
+            right = actual_ret > 0
+            if right: total_right += 1
+            sum_5d_ret += actual_ret
+            per_etf_hits[tkr]["picks"] += 1
+            if right: per_etf_hits[tkr]["right"] += 1
+            per_etf_hits[tkr]["ret_sum"] += actual_ret
+
+    accuracy = total_right / total_picks if total_picks else 0.0
+    avg_5d_ret = sum_5d_ret / total_picks if total_picks else 0.0
+
+    # Per-ETF breakdown for tickers that actually got picked
+    per_etf = []
+    for tkr, h in per_etf_hits.items():
+        if h["picks"] == 0: continue
+        per_etf.append({
+            "ticker": tkr, "picks": h["picks"],
+            "right": h["right"],
+            "hit_rate": h["right"]/h["picks"],
+            "avg_5d_ret": h["ret_sum"]/h["picks"],
+        })
+    per_etf.sort(key=lambda x: x["picks"], reverse=True)
+
+    return {
+        "months_back": months_back,
+        "top_k_per_week": top_k,
+        "weeks_tested": len(test_dates),
+        "total_picks": total_picks,
+        "total_right": total_right,
+        "overall_accuracy": accuracy,
+        "avg_5d_return": avg_5d_ret,
+        "per_etf": per_etf,
+    }

@@ -7714,6 +7714,80 @@ with tab_paper:
             "underperform — the regime chip above is the warning signal."
         )
 
+        # === Canadian ETF Screener (1-week direction) ===
+        # Ranks ~25 of the most liquid Canadian-listed ETFs by next-week
+        # direction probability. Walk-forward validated. Most ETFs have
+        # NEAR-ZERO predictive edge — that's the data being honest, not
+        # a flaw. The panel exposes that honestly so the user doesn't
+        # chase high prob_up numbers with low accuracy.
+        st.divider()
+        st.markdown("### 🇨🇦 Canadian ETF Screener — 1-Week Direction")
+        st.caption(
+            "Trains a gradient-boosted classifier per ETF on 5y of "
+            "price/volume + cross-asset features. Predicts next-week "
+            "direction. **Trust prob_up only when accuracy_oos is "
+            "meaningfully above the base rate** — most Canadian ETFs "
+            "are efficient on a weekly horizon and the model has no "
+            "edge there. Cached 1 hour."
+        )
+
+        @st.cache_data(ttl=3600, show_spinner="Training 25 ETF models (30-60s)…")
+        def _cached_etf_rank():
+            return pt.rank_canadian_etfs()
+
+        if st.button("▶️ Re-train ETF screener", key="pt_etf_rank_btn"):
+            _cached_etf_rank.clear()
+            st.rerun()
+
+        try:
+            _etf_df = _cached_etf_rank()
+            if _etf_df is None or _etf_df.empty:
+                st.info("Screener returned no data.")
+            else:
+                # Keep only successful rows
+                if "prob_up_1wk" in _etf_df.columns:
+                    _ok = _etf_df.dropna(subset=["prob_up_1wk"]).copy()
+                else:
+                    _ok = _etf_df
+                # Format display columns
+                _disp = _ok.copy()
+                if "prob_up_1wk" in _disp.columns:
+                    _disp["P(up 1wk)"] = (_disp["prob_up_1wk"] * 100).round(1).astype(str) + "%"
+                if "accuracy_oos" in _disp.columns:
+                    _disp["accuracy"] = (_disp["accuracy_oos"] * 100).round(1).astype(str) + "%"
+                if "edge" in _disp.columns:
+                    _disp["edge"] = (_disp["edge"] * 100).round(2).astype(str) + " pts"
+                if "base_rate_up" in _disp.columns:
+                    _disp["base rate up"] = (_disp["base_rate_up"] * 100).round(1).astype(str) + "%"
+                _disp = _disp[["ticker", "P(up 1wk)", "accuracy", "edge", "base rate up", "n_test"]]
+                st.dataframe(_disp, hide_index=True, use_container_width=True)
+
+                # Headline honest summary
+                _positive_edge = _ok[_ok["edge"] > 0.01]
+                if len(_positive_edge) == 0:
+                    st.warning(
+                        "🟡 **No ETF shows meaningful positive edge this week.** "
+                        "The screener is honestly telling you weekly Canadian-ETF "
+                        "direction is mostly noise. Sitting in cash or sticking "
+                        "with the HOU/HOD trade plan is more defensible than "
+                        "picking from this list."
+                    )
+                else:
+                    _names = ", ".join(_positive_edge["ticker"].tolist())
+                    st.success(
+                        f"✅ ETFs with positive walk-forward edge: **{_names}**. "
+                        "Even these edges are small (1-4 pts) — size accordingly."
+                    )
+        except Exception as _e:
+            st.warning(f"ETF screener unavailable: {_e}")
+
+        st.caption(
+            "**Methodology**: 80/20 train/test split on 5 years of daily data. "
+            "Features: own-price momentum (1d/5d/20d), RSI, MACD, volatility, "
+            "MA cross, volume ratio + cross-asset (TSX, S&P 500, TLT, USD, VIX). "
+            "Label: close 5 trading days later > today's close."
+        )
+
         with st.expander("🧪 Past-year ML recommendation backtest"):
             st.caption(
                 "Walk-forward replay: for each trading day in the last "

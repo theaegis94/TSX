@@ -41,6 +41,7 @@ from .predictor import (
     compute_trade_plan,
     compute_regime_signal,
 )
+from .etf_screener import rank_etfs as rank_canadian_etfs, UNIVERSE as CANADIAN_ETF_UNIVERSE
 from .news_sentiment import compute_news_sentiment
 
 __all__ = [
@@ -65,6 +66,8 @@ __all__ = [
     "evaluate_recent_recommendations",
     "compute_trade_plan",
     "compute_regime_signal",
+    "rank_canadian_etfs",
+    "CANADIAN_ETF_UNIVERSE",
     "compute_news_sentiment",
     "TICKERS",
 ]
