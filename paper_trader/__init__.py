@@ -36,6 +36,7 @@ from .storage import (
 from .simulate import run_backtest
 from .recommend import compute_recommendations
 from .predictor import predict_tomorrow_both, evaluate_recent_recommendations
+from .news_sentiment import compute_news_sentiment
 
 __all__ = [
     "DEFAULT_INITIAL_CAPITAL",
@@ -57,5 +58,6 @@ __all__ = [
     "compute_recommendations",
     "predict_tomorrow_both",
     "evaluate_recent_recommendations",
+    "compute_news_sentiment",
     "TICKERS",
 ]

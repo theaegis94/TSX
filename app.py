@@ -7234,6 +7234,126 @@ with tab_paper:
         "position, trade history, and per-strategy accuracy."
     )
 
+    # === 📰 News Sentiment (Claude-powered) ===
+    st.markdown("### 📰 News Sentiment — Claude Analyst")
+    st.caption(
+        "Reads recent oil/gas/macro headlines from Finnhub and asks "
+        "Claude Haiku to score impact on **next-day** WTI and natgas "
+        "prices. Scale: -1 (strongly bearish) to +1 (strongly bullish). "
+        "Use this when the ML predictor is in FALLBACK tier — news "
+        "context is the qualitative layer the price-only model is blind to."
+    )
+
+    @st.cache_data(ttl=1800, show_spinner="Reading headlines + scoring (5-10s)…")
+    def _cached_news_sentiment():
+        """30-min cache — news doesn't change that fast and Claude API
+        costs are real (still cheap, just don't burn it every refresh)."""
+        return pt.compute_news_sentiment()
+
+    _news_l, _news_r = st.columns([3, 1])
+    with _news_r:
+        if st.button("🔄 Re-score now", key="pt_news_refresh",
+                      use_container_width=True):
+            _cached_news_sentiment.clear()
+            st.rerun()
+
+    try:
+        _ns = _cached_news_sentiment()
+    except Exception as e:
+        st.warning(f"News sentiment unavailable: {e}")
+        _ns = None
+
+    if _ns is None:
+        st.info(
+            "_News sentiment requires both `FINNHUB_API_KEY` and "
+            "`ANTHROPIC_API_KEY` to be set, plus available headlines. "
+            "Click Re-score after setting keys._"
+        )
+    else:
+        def _sentiment_chip(score: float) -> tuple[str, str]:
+            """Return (color, label) for a score."""
+            if score >= 0.5:
+                return ("#16a34a", "STRONGLY BULLISH")
+            if score >= 0.15:
+                return ("#22c55e", "BULLISH")
+            if score >= -0.15:
+                return ("#6b7280", "NEUTRAL / MIXED")
+            if score >= -0.5:
+                return ("#f97316", "BEARISH")
+            return ("#dc2626", "STRONGLY BEARISH")
+
+        oil = _ns.get("oil") or {}
+        gas = _ns.get("gas") or {}
+
+        _oc, _gc = st.columns(2)
+        for col, label, block, emoji in [
+            (_oc, "WTI Oil", oil, "🛢️"),
+            (_gc, "Henry Hub Natgas", gas, "🔥"),
+        ]:
+            with col:
+                if not block:
+                    st.info(f"_No {label} sentiment available_")
+                    continue
+                score = float(block.get("score", 0))
+                color, chip_text = _sentiment_chip(score)
+                reasoning = block.get("reasoning", "")
+                # Score bar — visual indicator
+                bar_width_pct = abs(score) * 50  # 0-50% of half-bar
+                bar_side = "right" if score >= 0 else "left"
+                st.markdown(
+                    f'<div style="background:rgba(0,0,0,0.15); '
+                    f'border:2px solid {color}; border-radius:10px; '
+                    f'padding:12px 16px; margin-bottom:8px;">'
+                    f'<div style="display:flex; justify-content:space-between; '
+                    f'align-items:center;">'
+                    f'<span style="font-size:1.05rem; font-weight:700;">'
+                    f'{emoji} {label}</span>'
+                    f'<span style="font-size:1.3rem; font-weight:700; '
+                    f'color:{color};">{score:+.2f}</span>'
+                    f'</div>'
+                    f'<div style="margin:6px 0;">'
+                    f'<span style="background:{color}; color:#fff; '
+                    f'padding:3px 10px; border-radius:6px; font-weight:700; '
+                    f'font-size:0.85rem;">{chip_text}</span>'
+                    f'</div>'
+                    f'<div style="font-size:0.82rem; color:#d1d5db; '
+                    f'line-height:1.4; margin-top:8px;">'
+                    f'{reasoning}'
+                    f'</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+
+        n_head = _ns.get("n_headlines", 0)
+        st.caption(
+            f"_Analyzed **{n_head} headlines** from the last 36 hours. "
+            f"Cached 30 min · Claude Haiku · ~$0.005 per scoring._"
+        )
+
+        with st.expander(f"📰 Headlines analyzed ({n_head})"):
+            for h in _ns.get("headlines", [])[:30]:
+                from datetime import datetime as _dtx
+                try:
+                    age_h = int(
+                        (_dtx.now().timestamp() - h["datetime"]) / 3600
+                    )
+                    age_str = f"{age_h}h ago" if age_h < 48 else f"{age_h//24}d ago"
+                except Exception:
+                    age_str = "?"
+                url = h.get("url", "")
+                head = h.get("headline", "")
+                src = h.get("source", "?")
+                if url:
+                    st.markdown(
+                        f"- [{head}]({url}) "
+                        f"_<span style='color:#6b7280;'>({src} · {age_str})</span>_",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown(f"- {head} _({src} · {age_str})_")
+
+    st.divider()
+
     # === ML Next-Day Direction Predictor ===
     st.markdown("### 🤖 ML Next-Day Direction Predictor")
     st.caption(
