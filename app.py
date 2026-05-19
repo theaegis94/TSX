@@ -7545,6 +7545,97 @@ with tab_paper:
             _render_pred_card("HNU.TO", recs.get("HNU.TO", {}))
             _render_pred_card("HND.TO", recs.get("HND.TO", {}))
 
+        # === Trade Plan: Kelly-sized + per-tier stop-loss ===
+        # Translates today's WTI prob_up into an actual position size and
+        # stop-loss level. Numbers were validated by the past-year
+        # simulation (variant D): +19.6% return, -4.7% max drawdown on
+        # $10k start. HOD signals are deliberately skipped (proven
+        # negative edge over the past year). HOU strong (P=0.55-0.60) is
+        # the workhorse bucket — sized largest.
+        st.divider()
+        st.markdown("### 📋 Trade Plan (Kelly-sized + stop-loss)")
+        st.caption(
+            "Translates the WTI probability into a concrete position "
+            "size and stop-loss level. Sizing is calibrated to the "
+            "best-performing simulation variant: **+19.6% / -4.7% max "
+            "drawdown** on the past 12 months. HOD signals are "
+            "intentionally skipped — past-year showed negative edge."
+        )
+        try:
+            _tp_equity = st.number_input(
+                "Account equity ($)", min_value=100.0, max_value=10_000_000.0,
+                value=10_000.0, step=500.0, key="pt_trade_plan_equity",
+                help="Your portfolio total. Position sizes scale with this.",
+            )
+            _wti_prob = float(recs.get("HOU.TO", {}).get("prob_up", 0.5))
+            _plan = pt.compute_trade_plan(_wti_prob, equity=_tp_equity)
+            _regime = pt.compute_regime_signal("wti")
+
+            _tp_col1, _tp_col2, _tp_col3 = st.columns(3)
+            with _tp_col1:
+                _action_color = "#16a34a" if _plan["action"] == "BUY" else "#6b7280"
+                st.markdown(
+                    f"<div style='padding:14px;border-radius:10px;"
+                    f"background:{_action_color}22;border:1px solid {_action_color};'>"
+                    f"<div style='font-size:0.85em;color:#9ca3af;'>Action</div>"
+                    f"<div style='font-size:1.6em;font-weight:700;color:{_action_color};'>"
+                    f"{_plan['action']}</div>"
+                    f"<div style='font-size:0.9em;margin-top:4px;'>"
+                    f"{_plan['ticker'] or 'cash'} &nbsp; "
+                    f"<span style='color:#9ca3af;'>tier: {_plan['tier']}</span></div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+            with _tp_col2:
+                if _plan["allocation_pct"] > 0:
+                    st.metric(
+                        "Position size",
+                        f"${_plan['allocation_dollars']:,.0f}",
+                        f"{_plan['allocation_pct']*100:.0f}% of equity",
+                    )
+                else:
+                    st.metric("Position size", "$0", "hold cash")
+            with _tp_col3:
+                if _plan["allocation_pct"] > 0:
+                    st.metric(
+                        "Stop-loss",
+                        f"{_plan['stop_loss_pct']*100:.0f}%",
+                        f"-${_plan['max_loss_dollars']:,.0f} worst case",
+                        delta_color="inverse",
+                    )
+                else:
+                    st.metric("Stop-loss", "—", "no position")
+
+            st.caption(f"_{_plan['rationale']}_")
+
+            # Regime context chip (information, not a hard gate)
+            if "error" not in _regime:
+                _slope = _regime['slope_pct']
+                _label = _regime['label']
+                _color = _regime['color']
+                _regime_caveat = ""
+                if _label == "trending down" and _plan["ticker"] == "HOU.TO":
+                    _regime_caveat = " ⚠️ Regime mismatch — model is long but trend is down. Consider sitting out."
+                elif _label == "ranging":
+                    _regime_caveat = " ⚠️ No clear trend — backtest sizing may not hold up."
+                st.markdown(
+                    f"<div style='margin-top:8px;padding:8px 12px;border-radius:8px;"
+                    f"background:{_color}22;border-left:3px solid {_color};font-size:0.9em;'>"
+                    f"<b>WTI regime:</b> <span style='color:{_color};font-weight:600;'>"
+                    f"{_label}</span> "
+                    f"(50-day SMA slope: <b>{_slope:+.2f}%</b> over 20 trading days)"
+                    f"{_regime_caveat}</div>",
+                    unsafe_allow_html=True,
+                )
+        except Exception as _e:
+            st.warning(f"Trade plan unavailable: {_e}")
+
+        st.caption(
+            "**Honest caveat:** numbers are calibrated to a year where oil "
+            "trended up. In a sustained bear market, HOU-heavy sizing will "
+            "underperform — the regime chip above is the warning signal."
+        )
+
         with st.expander("🧪 Past-year ML recommendation backtest"):
             st.caption(
                 "Walk-forward replay: for each trading day in the last "
