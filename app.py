@@ -2616,21 +2616,29 @@ except Exception:
 # Format what we'll display
 if _last_bar_dt is not None:
     # Daily bars from yfinance are stamped at 00:00:00 — that's the bar's
-    # date but the price is the day's close (4 PM ET). For daily data the
-    # honest representation is "EOD" rather than the literal midnight time.
+    # date but the price is the day's close (4 PM ET) OR the in-progress
+    # intraday last-trade (if it's today and market hasn't closed yet).
+    _now_real = datetime.now(_ET_ZONE)
     if (_last_bar_dt.hour == 0 and _last_bar_dt.minute == 0
             and _last_bar_dt.second == 0):
-        _now_str = "Close"
-        # Bar is effectively "as of 4 PM ET on the bar's date"
+        # Tentatively assume 4 PM ET close
         _effective_dt = _last_bar_dt.replace(hour=16, minute=0)
+        if _effective_dt > _now_real:
+            # 4 PM hasn't happened yet on this bar's date — the price
+            # is intraday in-progress. Use "now" as the effective time
+            # so the age stays >= 0.
+            _now_str = "Intraday"
+            _effective_dt = _now_real
+        else:
+            _now_str = "Close"
     else:
         _now_str = _last_bar_dt.strftime("%H:%M:%S")
         _effective_dt = _last_bar_dt
     _now_date = _last_bar_dt.strftime("%b %d")
     _now_tz = _last_bar_dt.strftime("%Z") or "ET"
-    # Age vs now (real-world wall clock)
-    _now_real = datetime.now(_ET_ZONE)
-    _age_seconds = int((_now_real - _effective_dt).total_seconds())
+    # Age vs now (real-world wall clock). Clamp to 0 as a final
+    # belt-and-suspenders against clock skew producing negative values.
+    _age_seconds = max(0, int((_now_real - _effective_dt).total_seconds()))
     if _age_seconds < 60:
         _age_str = f"({_age_seconds}s ago)"
     elif _age_seconds < 3600:
