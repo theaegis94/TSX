@@ -21,7 +21,9 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Paper trader runtime data
+# Orphaned paper-trader artifacts (module deleted but local DBs may
+# linger while Streamlit holds file locks — safe to delete manually
+# after stopping the dashboard)
 paper_trader.db
 paper_trader.db-wal
 paper_trader.db-shm
@@ -29,8 +31,7 @@ strategies_state.db
 strategies_state.db-wal
 strategies_state.db-shm
 paper_trader.lock
-logs/
-.eia_cache/
-
-# News-veto backtest cache (regenerated on demand by backtest_news_veto.py)
 news_backtest_cache.json
+.eia_cache/
+logs/
+
