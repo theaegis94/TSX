@@ -66,13 +66,15 @@ MACRO_KEYWORDS = {
 
 
 def _anthropic_key() -> str | None:
-    """Try env var, then Streamlit secrets, then dotenv."""
-    key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
-    if key:
-        return key
+    """Try env var, then Streamlit secrets. Robust against st.secrets
+    returning non-string types."""
+    key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if isinstance(key, str) and key.strip():
+        return key.strip()
     try:
         import streamlit as st  # type: ignore
-        key = st.secrets.get("ANTHROPIC_API_KEY", "").strip()
+        raw = st.secrets.get("ANTHROPIC_API_KEY", "")
+        key = str(raw).strip()
         if key:
             return key
     except Exception:
@@ -81,12 +83,22 @@ def _anthropic_key() -> str | None:
 
 
 def _finnhub_key() -> str | None:
-    key = os.environ.get("FINNHUB_API_KEY", "").strip()
-    if key:
-        return key
+    """Reuse stock_signals' resolved key — that one is loaded at import
+    time and already handles env + .env + st.secrets correctly."""
+    try:
+        import stock_signals as ss
+        if ss.FINNHUB_API_KEY and isinstance(ss.FINNHUB_API_KEY, str):
+            return ss.FINNHUB_API_KEY.strip() or None
+    except Exception:
+        pass
+    # Direct fallbacks
+    key = os.environ.get("FINNHUB_API_KEY", "")
+    if isinstance(key, str) and key.strip():
+        return key.strip()
     try:
         import streamlit as st  # type: ignore
-        key = st.secrets.get("FINNHUB_API_KEY", "").strip()
+        raw = st.secrets.get("FINNHUB_API_KEY", "")
+        key = str(raw).strip()
         if key:
             return key
     except Exception:

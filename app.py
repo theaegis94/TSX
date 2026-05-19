@@ -7264,11 +7264,30 @@ with tab_paper:
         _ns = None
 
     if _ns is None:
-        st.info(
-            "_News sentiment requires both `FINNHUB_API_KEY` and "
-            "`ANTHROPIC_API_KEY` to be set, plus available headlines. "
-            "Click Re-score after setting keys._"
-        )
+        # Diagnose which piece is missing so the user knows what to fix
+        from paper_trader import news_sentiment as _ns_mod
+        _fh = _ns_mod._finnhub_key()
+        _an = _ns_mod._anthropic_key()
+        _missing = []
+        if not _fh:
+            _missing.append("FINNHUB_API_KEY")
+        if not _an:
+            _missing.append("ANTHROPIC_API_KEY")
+        if _missing:
+            st.info(
+                "_News sentiment is missing: **" + ", ".join(_missing) + "**.  \n"
+                "Set these in `.env` (local) or your Streamlit Cloud "
+                "**App Settings → Secrets** (deployed). Both keys are "
+                "needed: Finnhub for headlines, Anthropic to score them._"
+            )
+        else:
+            # Both keys present — the call itself failed
+            st.info(
+                "_Both API keys are configured, but the scoring call "
+                "didn't return data. Either no relevant headlines in "
+                "the last 36h or the Claude/Finnhub API hiccupped. "
+                "Try Re-score in a few minutes._"
+            )
     else:
         def _sentiment_chip(score: float) -> tuple[str, str]:
             """Return (color, label) for a score."""
