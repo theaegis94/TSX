@@ -35,7 +35,7 @@ LOGGER = logging.getLogger("paper_trader.etf_screener")
 # ~25 of the most liquid Canadian-listed ETFs across major asset classes.
 # Universe is intentionally diverse so the screener can highlight which
 # corners of the Canadian ETF market are actually predictable vs
-# random walks.
+# random walks. Fast to train (~30s).
 UNIVERSE = [
     # Broad Canadian equity
     "XIU.TO", "XIC.TO", "VCN.TO", "ZCN.TO",
@@ -56,6 +56,90 @@ UNIVERSE = [
     "XBB.TO", "ZAG.TO",
     # All-in-one asset allocation
     "XEQT.TO", "VEQT.TO", "XGRO.TO",
+]
+
+
+# ~100 of the most liquid Canadian-listed ETFs across all major providers
+# (iShares, BMO, Vanguard, Horizons/Global X, CI, Hamilton, Purpose,
+# Mackenzie). Comprehensive coverage of broad market, US, international,
+# sectors, dividend, fixed income, all-in-one, leveraged, and specialty.
+# Slower to train (~3-5 min for the full ranking).
+UNIVERSE_FULL = [
+    # --- Broad Canadian equity ---
+    "XIU.TO", "XIC.TO", "VCN.TO", "ZCN.TO", "HXT.TO", "XCS.TO", "XMD.TO",
+    # --- US equity (CAD-hedged + unhedged + swap variants) ---
+    "VFV.TO", "VUN.TO", "XSP.TO", "ZSP.TO", "HXS.TO", "ZUE.TO",
+    "VUS.TO", "ZUQ.TO", "XUS.TO",
+    # --- US Nasdaq / tech ---
+    "ZQQ.TO", "XQQ.TO", "HXQ.TO", "QQC.TO",
+    # --- International developed ---
+    "XEF.TO", "XIN.TO", "VI.TO", "VIU.TO", "XAW.TO", "VXC.TO", "XWD.TO",
+    # --- Emerging markets ---
+    "XEC.TO", "ZEM.TO", "VEE.TO", "XEM.TO",
+    # --- Sectors: Canadian ---
+    "XEG.TO",   # iShares energy
+    "ZEO.TO",   # BMO Cdn equal-weight oil & gas
+    "ZEB.TO",   # BMO equal-weight banks
+    "XFN.TO",   # iShares financials
+    "ZGI.TO",   # global infrastructure
+    "ZUT.TO",   # utilities
+    "XUT.TO",   # iShares utilities
+    "XMA.TO",   # iShares materials
+    "XGD.TO",   # gold producers
+    "ZJG.TO",   # junior gold
+    "XIT.TO",   # iShares tech
+    "XHC.TO",   # global healthcare
+    "XST.TO",   # consumer staples
+    "XCD.TO",   # consumer discretionary
+    "XRE.TO",   # REITs
+    "ZRE.TO",   # BMO REITs
+    # --- Dividend / income ---
+    "XDV.TO", "VDY.TO", "XEI.TO", "ZDV.TO", "CDZ.TO", "XHD.TO",
+    "VIDY.TO",  # international dividend
+    # --- Covered-call income (BMO ZW* + Hamilton MAX) ---
+    "ZWB.TO",   # banks
+    "ZWC.TO",   # Canadian high div
+    "ZWU.TO",   # utilities
+    "ZWE.TO",   # Europe high div
+    "ZWH.TO",   # US high div
+    "ZWS.TO",   # S&P 500
+    "HMAX.TO",  # Hamilton banks
+    "UMAX.TO",  # Hamilton US
+    "HDIV.TO",  # Hamilton enhanced diversified
+    # --- Low volatility ---
+    "ZLB.TO",   # Cdn low vol
+    "ZLU.TO",   # US low vol
+    "ZLE.TO",   # EU low vol
+    # --- Fixed income ---
+    "XBB.TO", "ZAG.TO", "VAB.TO",
+    "XSB.TO", "VSB.TO",     # short-term
+    "XGB.TO", "ZGB.TO",     # government
+    "XCB.TO", "ZCS.TO",     # corporate
+    "XHY.TO", "ZHY.TO",     # high yield
+    "XSH.TO",               # short-term corporate
+    "ZEF.TO",               # EM bonds
+    "XPF.TO",               # preferred shares
+    # --- All-in-one asset allocation ---
+    "XEQT.TO", "VEQT.TO", "XGRO.TO", "VGRO.TO",
+    "XBAL.TO", "VBAL.TO", "VCNS.TO", "XCNS.TO",
+    "VRIF.TO",   # retirement income
+    # --- Cash / HISA equivalents ---
+    "PSA.TO", "CASH.TO", "ZST.TO",
+    # --- Horizons single + leveraged ---
+    "HXX.TO",   # Euro 50 swap
+    "HXC.TO",   # Cdn select swap
+    "HOU.TO", "HOD.TO",     # WTI 2x bull/bear (already in your watchlist)
+    "HNU.TO", "HND.TO",     # natgas 2x bull/bear
+    "HSU.TO", "HSD.TO",     # S&P 500 2x bull/bear
+    "HQU.TO", "HQD.TO",     # Nasdaq 2x bull/bear
+    "HXU.TO", "HXD.TO",     # TSX 60 2x bull/bear
+    "HEU.TO", "HED.TO",     # Cdn energy 2x bull/bear
+    # --- Specialty / thematic ---
+    "CGL.TO",   # gold bullion (CAD-hedged)
+    "MNT.TO",   # Royal Cdn Mint gold trust
+    "BTCC.TO",  # bitcoin
+    "ETHX.TO",  # ether
+    "RBOT.TO",  # robotics + AI
 ]
 
 # Market-context tickers (same for all ETFs)

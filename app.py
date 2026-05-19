@@ -7566,16 +7566,42 @@ with tab_paper:
             "edge there. Cached 1 hour."
         )
 
-        @st.cache_data(ttl=3600, show_spinner="Training 25 ETF models (30-60s)…")
-        def _cached_etf_rank():
-            return pt.rank_canadian_etfs()
+        # Universe selector: curated (fast) vs full (~100 ETFs, slower)
+        _uni_col, _btn_col = st.columns([2, 1])
+        with _uni_col:
+            _uni_choice = st.radio(
+                "Universe",
+                options=["Curated (25 ETFs · ~30s)",
+                          "All major Canadian (~100 ETFs · 3-5 min)"],
+                index=0,
+                horizontal=False,
+                key="pt_etf_universe_choice",
+                help="Curated covers all major asset classes with the most "
+                     "liquid names. Full sweeps ~100 ETFs across all major "
+                     "Canadian providers (iShares, BMO, Vanguard, Horizons, "
+                     "CI, Hamilton, Purpose, Mackenzie) for broader signal "
+                     "hunting.",
+            )
+        _use_full_universe = _uni_choice.startswith("All major")
 
-        if st.button("▶️ Re-train ETF screener", key="pt_etf_rank_btn"):
-            _cached_etf_rank.clear()
-            st.rerun()
+        @st.cache_data(ttl=3600, show_spinner="Training 25 ETF models (30-60s)…")
+        def _cached_etf_rank_curated():
+            return pt.rank_canadian_etfs(universe=pt.CANADIAN_ETF_UNIVERSE)
+
+        @st.cache_data(ttl=3600, show_spinner="Training ~100 ETF models (3-5 min)…")
+        def _cached_etf_rank_full():
+            return pt.rank_canadian_etfs(universe=pt.CANADIAN_ETF_UNIVERSE_FULL)
+
+        with _btn_col:
+            if st.button("▶️ Re-train", key="pt_etf_rank_btn",
+                          use_container_width=True):
+                _cached_etf_rank_curated.clear()
+                _cached_etf_rank_full.clear()
+                st.rerun()
 
         try:
-            _etf_df = _cached_etf_rank()
+            _etf_df = (_cached_etf_rank_full() if _use_full_universe
+                       else _cached_etf_rank_curated())
             if _etf_df is None or _etf_df.empty:
                 st.info("Screener returned no data.")
             else:
@@ -7636,13 +7662,28 @@ with tab_paper:
             )
 
             @st.cache_data(ttl=300, show_spinner="Scanning movers…")
+            def _cached_top_movers_curated():
+                return pt.compute_canadian_etf_top_movers(
+                    universe=pt.CANADIAN_ETF_UNIVERSE, top_k=10,
+                )
+
+            @st.cache_data(ttl=300, show_spinner="Scanning movers across ~100 ETFs…")
+            def _cached_top_movers_full():
+                return pt.compute_canadian_etf_top_movers(
+                    universe=pt.CANADIAN_ETF_UNIVERSE_FULL, top_k=10,
+                )
+
             def _cached_top_movers():
-                return pt.compute_canadian_etf_top_movers(top_k=10)
+                # Respect the universe selector from the screener panel above
+                if st.session_state.get("pt_etf_universe_choice", "").startswith("All major"):
+                    return _cached_top_movers_full()
+                return _cached_top_movers_curated()
 
             _mover_cols = st.columns([1, 1])
             with _mover_cols[0]:
                 if st.button("🔄 Refresh movers", key="pt_movers_refresh"):
-                    _cached_top_movers.clear()
+                    _cached_top_movers_curated.clear()
+                    _cached_top_movers_full.clear()
                     st.rerun()
             with _mover_cols[1]:
                 if st.button("➕ Add ALL top 5 to watchlist",

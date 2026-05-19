@@ -44,6 +44,7 @@ from .predictor import (
 from .etf_screener import (
     rank_etfs as rank_canadian_etfs,
     UNIVERSE as CANADIAN_ETF_UNIVERSE,
+    UNIVERSE_FULL as CANADIAN_ETF_UNIVERSE_FULL,
     compute_top_movers as compute_canadian_etf_top_movers,
 )
 from .news_sentiment import compute_news_sentiment
@@ -72,6 +73,7 @@ __all__ = [
     "compute_regime_signal",
     "rank_canadian_etfs",
     "CANADIAN_ETF_UNIVERSE",
+    "CANADIAN_ETF_UNIVERSE_FULL",
     "compute_canadian_etf_top_movers",
     "compute_news_sentiment",
     "TICKERS",
