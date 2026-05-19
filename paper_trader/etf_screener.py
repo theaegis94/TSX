@@ -260,6 +260,60 @@ def rank_etfs(
     return df
 
 
+def compute_top_movers(
+    universe: list[str] | None = None,
+    top_k: int = 10,
+) -> list[dict[str, Any]]:
+    """Pull today's intraday % change from open for each ticker in the
+    universe and return the top_k by absolute move magnitude.
+
+    Each item:
+      {ticker, open, current, change_pct, abs_pct, is_closed}
+
+    is_closed=True means we fell back to the previous daily bar
+    because intraday data wasn't available (market closed or weekend).
+    """
+    if universe is None:
+        universe = UNIVERSE
+    results = []
+    for t in universe:
+        try:
+            df = yf.download(t, period="1d", interval="5m",
+                             auto_adjust=False, progress=False)
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+            is_closed = False
+            if df.empty or len(df) < 2:
+                df = yf.download(t, period="5d", interval="1d",
+                                 auto_adjust=False, progress=False)
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+                if df.empty or len(df) < 2:
+                    continue
+                op = float(df["Open"].iloc[-1])
+                cp = float(df["Close"].iloc[-1])
+                is_closed = True
+            else:
+                op = float(df["Open"].iloc[0])
+                cp = float(df["Close"].iloc[-1])
+            if op <= 0:
+                continue
+            pct = (cp - op) / op * 100
+            results.append({
+                "ticker": t,
+                "open": op,
+                "current": cp,
+                "change_pct": pct,
+                "abs_pct": abs(pct),
+                "is_closed": is_closed,
+            })
+        except Exception as e:
+            LOGGER.warning(f"top_movers fetch {t} failed: {e}")
+            continue
+    results.sort(key=lambda x: x["abs_pct"], reverse=True)
+    return results[:top_k]
+
+
 def backtest_screener_weekly(
     universe: list[str] | None = None,
     months_back: int = 12,

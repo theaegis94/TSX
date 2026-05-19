@@ -7788,6 +7788,100 @@ with tab_paper:
             "Label: close 5 trading days later > today's close."
         )
 
+        # === Today's top movers + one-click watchlist add ===
+        # Pulls live % change from open across the universe, ranks by
+        # absolute magnitude, and lets the user add any of them to the
+        # watchlist with a single click. Cache 5 min so the buttons
+        # don't refetch constantly.
+        with st.expander("🔥 Today's top movers (live)"):
+            st.caption(
+                "Biggest absolute moves from today's open across the "
+                "25-ETF universe. Click ➕ to add a ticker to your "
+                "watchlist. Cached 5 minutes."
+            )
+
+            @st.cache_data(ttl=300, show_spinner="Scanning movers…")
+            def _cached_top_movers():
+                return pt.compute_canadian_etf_top_movers(top_k=10)
+
+            _mover_cols = st.columns([1, 1])
+            with _mover_cols[0]:
+                if st.button("🔄 Refresh movers", key="pt_movers_refresh"):
+                    _cached_top_movers.clear()
+                    st.rerun()
+            with _mover_cols[1]:
+                if st.button("➕ Add ALL top 5 to watchlist",
+                              key="pt_movers_add_all"):
+                    _movers = _cached_top_movers()
+                    _added, _skipped = [], []
+                    for m in _movers[:5]:
+                        _t = m["ticker"]
+                        _current = st.session_state.get(
+                            "watchlist_input", "")
+                        _parts = [p.strip().upper()
+                                  for p in _current.split(",")
+                                  if p.strip()]
+                        if _t.upper() in _parts:
+                            _skipped.append(_t)
+                        else:
+                            _add_ticker_to_watchlist(_t)
+                            _added.append(_t)
+                    if _added:
+                        st.success(f"Added: {', '.join(_added)}")
+                    if _skipped:
+                        st.info(f"Already in watchlist: {', '.join(_skipped)}")
+                    st.rerun()
+
+            try:
+                _movers = _cached_top_movers()
+                if not _movers:
+                    st.info("No live data available right now.")
+                else:
+                    _current_wl = [
+                        p.strip().upper()
+                        for p in st.session_state.get("watchlist_input", "").split(",")
+                        if p.strip()
+                    ]
+                    for m in _movers:
+                        _row_cols = st.columns([2, 2, 2, 1])
+                        _color = "#16a34a" if m["change_pct"] >= 0 else "#dc2626"
+                        _arrow = "▲" if m["change_pct"] >= 0 else "▼"
+                        _in_wl = m["ticker"].upper() in _current_wl
+                        with _row_cols[0]:
+                            st.markdown(
+                                f"<div style='padding-top:8px;'><b>{m['ticker']}</b></div>",
+                                unsafe_allow_html=True,
+                            )
+                        with _row_cols[1]:
+                            st.markdown(
+                                f"<div style='padding-top:8px;color:{_color};"
+                                f"font-weight:600;'>{_arrow} {m['change_pct']:+.2f}%"
+                                f"</div>",
+                                unsafe_allow_html=True,
+                            )
+                        with _row_cols[2]:
+                            _closed_txt = " (closed)" if m.get("is_closed") else ""
+                            st.markdown(
+                                f"<div style='padding-top:8px;color:#9ca3af;"
+                                f"font-size:0.9em;'>${m['current']:.2f} "
+                                f"(open ${m['open']:.2f}){_closed_txt}</div>",
+                                unsafe_allow_html=True,
+                            )
+                        with _row_cols[3]:
+                            if _in_wl:
+                                st.markdown(
+                                    "<div style='padding-top:8px;color:#9ca3af;"
+                                    "font-size:0.85em;'>✓ in WL</div>",
+                                    unsafe_allow_html=True,
+                                )
+                            else:
+                                if st.button("➕ Add",
+                                              key=f"pt_movers_add_{m['ticker']}"):
+                                    _add_ticker_to_watchlist(m["ticker"])
+                                    st.rerun()
+            except Exception as _e:
+                st.warning(f"Top movers unavailable: {_e}")
+
         with st.expander("🧪 Past-year ML recommendation backtest"):
             st.caption(
                 "Walk-forward replay: for each trading day in the last "
