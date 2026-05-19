@@ -7295,10 +7295,19 @@ with tab_paper:
                     f"the cache returned old data. Try Re-score in 1-2 min._"
                 )
             elif err == "claude_failed":
+                _cerr = diag.get("claude_error", "unknown")
+                _cdet = diag.get("claude_detail", "")
+                # Truncate the detail so the info box stays readable but
+                # the user can still see the actual API/parse error.
+                if len(_cdet) > 220:
+                    _cdet = _cdet[:220] + "…"
                 msg = (
-                    f"_Got {_ns.get('n_headlines', 0)} headlines but Claude "
-                    f"didn't return a valid response. Could be rate limit, "
-                    f"invalid key, or transient API error. Try Re-score._"
+                    f"_Got **{_ns.get('n_headlines', 0)} headlines** but "
+                    f"Claude scoring failed: **{_cerr}**.  \n"
+                    f"`{_cdet}`  \n"
+                    f"If this is `api_call_failed`, the Anthropic key may "
+                    f"be wrong / out of credits. If `json_parse_failed`, "
+                    f"the model returned prose — try Re-score._"
                 )
             else:
                 msg = (

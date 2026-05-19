@@ -252,27 +252,35 @@ def fetch_energy_news(hours_back: int = 36, limit: int = 40,
     return (relevant, diag) if include_diagnostics else relevant
 
 
+# Models to try in order. If the first one isn't accessible on the
+# account, we fall back. claude-haiku-4-5 is the newest; the 3-5 variant
+# is the long-tenured one almost every account can hit.
+CLAUDE_MODELS = [
+    "claude-haiku-4-5-20251001",
+    "claude-3-5-haiku-20241022",
+    "claude-3-5-sonnet-20241022",
+]
+
+
 def score_with_claude(headlines: list[dict]) -> dict[str, Any] | None:
-    """Send headlines to Claude Haiku, get structured sentiment scores.
+    """Send headlines to Claude, get structured sentiment scores.
 
     Returns:
-      {
-        "oil":  {"score": float, "direction": str, "reasoning": str},
-        "gas":  {"score": float, "direction": str, "reasoning": str},
-        "n":    int (headlines analyzed),
-      }
+      success: {"oil": {...}, "gas": {...}, "n": int}
+      failure: {"_error": "<reason>", "_detail": "<api/parse msg>"}
+        — caller distinguishes via presence of "_error" key.
     """
     if not headlines:
-        return None
+        return {"_error": "no_headlines", "_detail": "empty headline list"}
     key = _anthropic_key()
     if not key:
         LOGGER.warning("ANTHROPIC_API_KEY not set; cannot score sentiment.")
-        return None
+        return {"_error": "no_anthropic_key", "_detail": "ANTHROPIC_API_KEY not resolved"}
     try:
         import anthropic
     except ImportError:
         LOGGER.error("anthropic package not installed")
-        return None
+        return {"_error": "no_anthropic_package", "_detail": "pip install anthropic"}
 
     formatted = "\n".join(
         f"- ({h.get('source','?')}) {h['headline']}"
@@ -302,30 +310,64 @@ def score_with_claude(headlines: list[dict]) -> dict[str, Any] | None:
         f"Headlines ({len(headlines)} total):\n{formatted}"
     )
 
-    try:
-        client = anthropic.Anthropic(api_key=key)
-        resp = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=600,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        text = resp.content[0].text.strip()
-        # Claude sometimes wraps JSON in ```json fences; strip them
-        if text.startswith("```"):
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
-            text = text.strip("` \n")
-        data = json.loads(text)
-    except json.JSONDecodeError as e:
-        LOGGER.warning(f"Claude returned non-JSON: {e}")
-        return None
-    except Exception as e:
-        LOGGER.warning(f"Claude API call failed: {e}")
-        return None
+    client = anthropic.Anthropic(api_key=key)
+    last_err: str = ""
+    text = ""
+    model_used: str = ""
+    for model in CLAUDE_MODELS:
+        try:
+            resp = client.messages.create(
+                model=model,
+                max_tokens=600,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            text = resp.content[0].text.strip()
+            model_used = model
+            last_err = ""
+            break
+        except Exception as e:
+            last_err = f"{type(e).__name__}: {e}"
+            LOGGER.warning(f"Claude API call failed on {model}: {last_err}")
+            continue
+
+    if not text:
+        return {"_error": "api_call_failed", "_detail": last_err or "all models failed"}
+
+    # Parse JSON. Claude sometimes wraps in ```json fences or includes a
+    # short prose preamble. Try strict first, then extract a JSON object.
+    data = None
+    parse_err = ""
+    candidates = [text]
+    if text.startswith("```"):
+        inner = text.split("```")[1]
+        if inner.startswith("json"):
+            inner = inner[4:]
+        candidates.append(inner.strip("` \n"))
+    # Last-ditch: pull the first {...} block out of the response
+    if "{" in text and "}" in text:
+        start = text.find("{")
+        end = text.rfind("}")
+        if end > start:
+            candidates.append(text[start:end + 1])
+    for cand in candidates:
+        try:
+            data = json.loads(cand)
+            parse_err = ""
+            break
+        except json.JSONDecodeError as e:
+            parse_err = f"{e}"
+            continue
+
+    if data is None:
+        snippet = text[:200].replace("\n", " ")
+        LOGGER.warning(f"Claude returned non-JSON (model={model_used}): {snippet}")
+        return {
+            "_error": "json_parse_failed",
+            "_detail": f"{parse_err} | snippet: {snippet}",
+        }
 
     # Normalize + add direction labels
-    out = {"n": len(headlines)}
+    out = {"n": len(headlines), "_model_used": model_used}
     for k in ("oil", "gas"):
         block = data.get(k, {})
         try:
@@ -376,7 +418,13 @@ def compute_news_sentiment(
             "headlines": [],
         }
     scores = score_with_claude(headlines)
-    if scores is None:
+    if scores is None or scores.get("_error"):
+        # Propagate the specific Claude failure into diagnostics so
+        # the UI can show api_call_failed vs json_parse_failed etc.
+        diag = dict(diag)
+        if scores:
+            diag["claude_error"] = scores.get("_error", "unknown")
+            diag["claude_detail"] = scores.get("_detail", "")
         return {
             "as_of": datetime.now(timezone.utc).isoformat(),
             "error": "claude_failed",
@@ -386,6 +434,8 @@ def compute_news_sentiment(
             "n_headlines": len(headlines),
             "headlines": headlines,
         }
+    diag = dict(diag)
+    diag["claude_model_used"] = scores.get("_model_used", "")
     return {
         "as_of": datetime.now(timezone.utc).isoformat(),
         "oil": scores.get("oil"),
