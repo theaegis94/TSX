@@ -7571,6 +7571,98 @@ with tab_paper:
             _plan = pt.compute_trade_plan(_wti_prob, equity=_tp_equity)
             _regime = pt.compute_regime_signal("wti")
 
+            # === Intraday reality-check card ===
+            # Shows today's opening price + current price + bullish/bearish
+            # arrow for WTI (the asset the model predicts) and HOU.TO (the
+            # asset the plan would trade). Lets the user see at a glance
+            # whether the live market is moving the way the model expected.
+            # Cached 60s so it refreshes without spamming yfinance.
+            @st.cache_data(ttl=60, show_spinner=False)
+            def _intraday_snapshot(ticker: str) -> dict:
+                """Fetch open + current price for a ticker."""
+                try:
+                    df = yf.download(ticker, period="1d", interval="5m",
+                                     auto_adjust=False, progress=False)
+                    if isinstance(df.columns, pd.MultiIndex):
+                        df.columns = df.columns.get_level_values(0)
+                    if df.empty or len(df) < 2:
+                        # Fallback: latest daily bar (markets may be closed)
+                        df = yf.download(ticker, period="5d", interval="1d",
+                                         auto_adjust=False, progress=False)
+                        if isinstance(df.columns, pd.MultiIndex):
+                            df.columns = df.columns.get_level_values(0)
+                        if df.empty:
+                            return {"error": "no_data"}
+                        return {
+                            "open": float(df["Open"].iloc[-1]),
+                            "current": float(df["Close"].iloc[-1]),
+                            "change_pct": float(
+                                (df["Close"].iloc[-1] - df["Open"].iloc[-1])
+                                / df["Open"].iloc[-1] * 100
+                            ),
+                            "is_closed": True,
+                        }
+                    open_px = float(df["Open"].iloc[0])
+                    current_px = float(df["Close"].iloc[-1])
+                    return {
+                        "open": open_px,
+                        "current": current_px,
+                        "change_pct": (current_px - open_px) / open_px * 100,
+                        "is_closed": False,
+                    }
+                except Exception as exc:
+                    return {"error": str(exc)}
+
+            def _render_intraday_card(label: str, ticker: str, snap: dict):
+                if snap.get("error"):
+                    st.markdown(
+                        f"<div style='padding:14px;border-radius:10px;"
+                        f"border:1px solid #4b5563;background:#1f2937;'>"
+                        f"<div style='color:#9ca3af;font-size:0.85em;'>{label}</div>"
+                        f"<div style='color:#9ca3af;'>quote unavailable</div></div>",
+                        unsafe_allow_html=True,
+                    )
+                    return
+                bullish = snap["change_pct"] >= 0
+                color = "#16a34a" if bullish else "#dc2626"
+                arrow = "▲" if bullish else "▼"
+                label_txt = "Bullish" if bullish else "Bearish"
+                closed_note = (
+                    " <span style='color:#9ca3af;font-size:0.75em;'>"
+                    "(market closed — prev session)</span>"
+                    if snap.get("is_closed") else ""
+                )
+                st.markdown(
+                    f"<div style='padding:16px;border-radius:12px;"
+                    f"border:1px solid {color};background:{color}10;'>"
+                    f"<div style='color:#9ca3af;font-size:0.85em;'>"
+                    f"{label} ({ticker})</div>"
+                    f"<div style='margin-top:6px;font-size:0.95em;'>"
+                    f"Opening Price: <b>${snap['open']:.2f}</b>{closed_note}</div>"
+                    f"<div style='margin-top:2px;font-size:0.95em;'>"
+                    f"Intraday: <span style='color:{color};font-weight:700;'>"
+                    f"{arrow} {label_txt}</span> "
+                    f"<span style='color:#9ca3af;'>"
+                    f"({snap['change_pct']:+.2f}% from open, "
+                    f"now ${snap['current']:.2f})</span></div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+
+            _intra_col1, _intra_col2 = st.columns(2)
+            with _intra_col1:
+                _render_intraday_card(
+                    "WTI Crude (model target)", "CL=F",
+                    _intraday_snapshot("CL=F"),
+                )
+            with _intra_col2:
+                _render_intraday_card(
+                    "HOU.TO (long oil 2x)", "HOU.TO",
+                    _intraday_snapshot("HOU.TO"),
+                )
+
+            st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
+
             _tp_col1, _tp_col2, _tp_col3 = st.columns(3)
             with _tp_col1:
                 _action_color = "#16a34a" if _plan["action"] == "BUY" else "#6b7280"
