@@ -31,3 +31,6 @@ strategies_state.db-shm
 paper_trader.lock
 logs/
 .eia_cache/
+
+# News-veto backtest cache (regenerated on demand by backtest_news_veto.py)
+news_backtest_cache.json
