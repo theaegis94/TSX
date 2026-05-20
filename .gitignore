@@ -21,9 +21,13 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Orphaned paper-trader artifacts (module deleted but local DBs may
-# linger while Streamlit holds file locks — safe to delete manually
-# after stopping the dashboard)
+# Canadian-ETF paper trader runtime data
+ca_etf_trader.db
+ca_etf_trader.db-wal
+ca_etf_trader.db-shm
+
+# Legacy artifacts (from earlier paper_trader incarnation — gitignored
+# so they don't reappear if the user re-creates them locally)
 paper_trader.db
 paper_trader.db-wal
 paper_trader.db-shm

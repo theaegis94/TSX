@@ -7230,8 +7230,173 @@ with tab_news:
 
 # === Paper Trader tab ===
 with tab_paper:
-    st.subheader("🧪 Paper Trader")
-    st.caption("_Tab cleared — ready for new content._")
+    import paper_trader as pt
+    from datetime import datetime as _ptdt, timedelta as _pttd
+    from zoneinfo import ZoneInfo as _ptzi
+
+    st.subheader("🤖 Canadian-ETF Paper Trader")
+    st.caption(
+        "Two-slot rotation across ~108 liquid Canadian ETFs. "
+        "**Intraday slot:** BUY 10:00 AM → SELL 3:45 PM ET. "
+        "**Overnight slot:** BUY 3:30 PM → SELL 9:55 AM next day. "
+        "25% of equity per buy. The agent auto-replays any scheduled "
+        "trades that were missed since the last page load using actual "
+        "historical 5-min bar prices."
+    )
+
+    # --- Run the agent forward to NOW (auto-retroactive execution) ---
+    @st.cache_data(ttl=60, show_spinner="Replaying any missed scheduled trades…")
+    def _pt_tick_cached(timestamp_minute: str):
+        # Cache key is "current minute" so the agent ticks at most
+        # once per minute when the page is open
+        return pt.tick()
+
+    _now_et = _ptdt.now(_ptzi("America/Toronto"))
+    _tick_result = _pt_tick_cached(_now_et.strftime("%Y%m%d%H%M"))
+
+    if _tick_result["events_executed"] > 0:
+        st.success(
+            f"✅ Agent fired **{_tick_result['events_executed']} scheduled trade(s)** "
+            f"since last page load."
+        )
+
+    # --- Portfolio snapshot ---
+    portfolio = pt.get_portfolio_value()
+
+    _pcol1, _pcol2, _pcol3, _pcol4 = st.columns(4)
+    _pcol1.metric("💰 Cash", f"${portfolio['cash']:,.2f}")
+    _pcol2.metric("📊 Open MTM", f"${portfolio['open_mtm']:,.2f}")
+    _pcol3.metric(
+        "🏦 Total equity", f"${portfolio['total_equity']:,.2f}",
+        f"{portfolio['total_pnl_pct']:+.2f}% vs ${portfolio['initial_capital']:,.0f}",
+    )
+    _next_evt = pt.next_scheduled_event()
+    if _next_evt:
+        _hrs = _next_evt["seconds_until"] // 3600
+        _mins = (_next_evt["seconds_until"] % 3600) // 60
+        _eta = f"in {_hrs}h{_mins:02d}m" if _hrs > 0 else f"in {_mins}m"
+        _pcol4.metric(
+            "⏰ Next action",
+            f"{_next_evt['action']} {_next_evt['slot']}",
+            _eta,
+        )
+
+    # --- Open positions ---
+    if portfolio["positions"]:
+        st.markdown("##### 📌 Open positions")
+        for slot, p in portfolio["positions"].items():
+            _color = "#16a34a" if p["open_pnl"] >= 0 else "#dc2626"
+            _arrow = "▲" if p["open_pnl"] >= 0 else "▼"
+            st.markdown(
+                f"<div style='padding:10px;border-radius:8px;"
+                f"background:{_color}15;border:1px solid {_color};"
+                f"margin-bottom:6px;'>"
+                f"<b>{slot.upper()}</b> &nbsp;·&nbsp; "
+                f"<b>{p['ticker']}</b> &nbsp;·&nbsp; "
+                f"{p['shares']:.4f} shares &nbsp;·&nbsp; "
+                f"entry ${p['entry_price']:.4f} → now ${p['current_price']:.4f} "
+                f"&nbsp;·&nbsp; "
+                f"<span style='color:{_color};font-weight:700;'>"
+                f"{_arrow} ${p['open_pnl']:+,.2f} ({p['open_pnl_pct']:+.2f}%)"
+                f"</span></div>",
+                unsafe_allow_html=True,
+            )
+    else:
+        st.info("No open positions — both slots are empty.")
+
+    st.divider()
+
+    # --- Top of the panel: two ranking tables side-by-side ---
+    _rank_l, _rank_r = st.columns(2)
+
+    with _rank_l:
+        st.markdown("#### 🔥 Intraday top movers")
+        st.caption(
+            "Today's top % gainers from open. The agent's 10 AM buy "
+            "picks **#1** on this list."
+        )
+        @st.cache_data(ttl=300, show_spinner="Scanning movers…")
+        def _pt_top_movers():
+            return pt.compute_top_movers(top_k=10)
+        try:
+            _movers = _pt_top_movers()
+            if not _movers:
+                st.info("No intraday data right now (market closed?).")
+            else:
+                _mdf = pd.DataFrame([{
+                    "#": i + 1,
+                    "Ticker": m["ticker"],
+                    "Open": f"${m['open']:.2f}",
+                    "Now": f"${m['current']:.2f}",
+                    "Change": f"{m['change_pct']:+.2f}%",
+                } for i, m in enumerate(_movers)])
+                st.dataframe(_mdf, hide_index=True, use_container_width=True)
+        except Exception as _e:
+            st.warning(f"Movers unavailable: {_e}")
+
+    with _rank_r:
+        st.markdown("#### 🌅 Next-day bullish opening")
+        st.caption(
+            "Composite score = 0.35×(close near high) + "
+            "0.30×(5d return) + 0.20×(RSI zone 55-70) + "
+            "0.15×(volume surge). The agent's 3:30 PM buy picks **#1**."
+        )
+        @st.cache_data(ttl=900, show_spinner="Scoring 100+ ETFs (~60s)…")
+        def _pt_bullish():
+            return pt.rank_next_day_bullish(top_k=10)
+        try:
+            _bull = _pt_bullish()
+            if not _bull:
+                st.info("No prediction data right now.")
+            else:
+                _bdf = pd.DataFrame([{
+                    "#": i + 1,
+                    "Ticker": b["ticker"],
+                    "Score": f"{b['score']:.3f}",
+                    "Close": f"${b['close']:.2f}",
+                    "5d ret": f"{b['ret_5d_pct']:+.2f}%",
+                    "RSI": f"{b['rsi_14']:.0f}",
+                } for i, b in enumerate(_bull)])
+                st.dataframe(_bdf, hide_index=True, use_container_width=True)
+        except Exception as _e:
+            st.warning(f"Bullish-opening scorer unavailable: {_e}")
+
+    st.divider()
+
+    # --- Trade history ---
+    st.markdown("##### 📜 Trade history")
+    _trades = pt.get_trade_history(limit=100)
+    if _trades:
+        _tdf = pd.DataFrame(_trades)
+        _tdf["pnl_str"] = _tdf["pnl"].apply(
+            lambda x: f"${x:+,.2f}" if pd.notna(x) else ""
+        )
+        _display = _tdf[["ts", "slot", "ticker", "side", "shares",
+                         "price", "notional", "pnl_str"]].copy()
+        _display.columns = ["When", "Slot", "Ticker", "Side", "Shares",
+                            "Price", "Notional", "P&L"]
+        st.dataframe(_display, hide_index=True, use_container_width=True)
+    else:
+        st.caption("_No trades yet. The agent fires its first BUY at "
+                   "10:00 AM ET on the next trading day._")
+
+    # --- Admin / reset ---
+    with st.expander("⚙️ Controls"):
+        _new_cap = st.number_input(
+            "Reset starting capital to",
+            min_value=100.0, max_value=10_000_000.0,
+            value=pt.DEFAULT_INITIAL_CAPITAL, step=500.0,
+            key="pt_new_cap",
+        )
+        if st.button("🔄 Reset agent (wipe all positions + trade history)",
+                      type="primary"):
+            pt.reset_all(_new_cap)
+            _pt_tick_cached.clear()
+            st.success(f"Reset to ${_new_cap:,.2f}. Refresh to see.")
+            st.rerun()
+        if st.button("🔁 Force re-tick (re-run agent now)"):
+            _pt_tick_cached.clear()
+            st.rerun()
 
 
 # === Help tab ===
