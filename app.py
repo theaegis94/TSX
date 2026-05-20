@@ -7236,9 +7236,9 @@ with tab_paper:
 
     st.subheader("🤖 Commodity-ETF Paper Trader")
     st.caption(
-        "Two-slot rotation across **11 commodity-themed Canadian ETFs** "
-        "(oil/natgas futures, gold bullion, energy producers, gold "
-        "miners, materials). "
+        "Two-slot rotation across **6 pure-commodity Canadian ETFs**: "
+        "WTI 2x (HOU/HOD) · natgas 2x (HNU/HND) · gold bullion "
+        "(CGL/MNT). "
         "**Intraday slot:** BUY 10:00 AM → SELL 3:45 PM ET. "
         "**Overnight slot:** BUY 3:30 PM → SELL 9:55 AM next day. "
         "25% of equity per buy. The agent auto-replays any scheduled "
