@@ -27,7 +27,10 @@ import yfinance as yf
 
 from .universe import UNIVERSE
 from .predictor import WEIGHTS, _rsi
-from .agent import SCHEDULE, ALLOCATION_PCT, FILTERS, PAIR_UNDERLYING
+from .agent import (
+    SCHEDULE, ALLOCATION_PCT, FILTERS, PAIR_UNDERLYING,
+    size_intraday, size_overnight,
+)
 
 LOGGER = logging.getLogger("paper_trader.backtest")
 ET = ZoneInfo("America/Toronto")
@@ -335,7 +338,8 @@ def run_backtest_long(
                         mtm = cash
                         for p in positions.values():
                             mtm += p["shares"] * p["entry_price"]
-                        notional = min(mtm * ALLOCATION_PCT, cash * 0.99)
+                        alloc = size_intraday(top_gap)
+                        notional = min(mtm * alloc, cash * 0.99)
                         if notional >= 50:
                             shares = notional / entry_px
                             cash -= notional
@@ -348,7 +352,7 @@ def run_backtest_long(
                                 "slot": "intraday", "ticker": pick,
                                 "side": "BUY", "shares": shares,
                                 "price": entry_px, "notional": notional,
-                                "rationale": f"morning gap +{top_gap:.2f}%",
+                                "rationale": f"morning gap +{top_gap:.2f}%, alloc {alloc*100:.0f}%",
                             })
 
         # === 3:30 PM: buy overnight ===
@@ -377,7 +381,8 @@ def run_backtest_long(
                             bar_p = _bar(p["ticker"], d)
                             cur = bar_p["close"] if bar_p else p["entry_price"]
                             mtm += p["shares"] * cur
-                        notional = min(mtm * ALLOCATION_PCT, cash * 0.99)
+                        alloc = size_overnight(top_score)
+                        notional = min(mtm * alloc, cash * 0.99)
                         if notional >= 50:
                             shares = notional / entry_px
                             cash -= notional
@@ -390,7 +395,7 @@ def run_backtest_long(
                                 "slot": "overnight", "ticker": pick,
                                 "side": "BUY", "shares": shares,
                                 "price": entry_px, "notional": notional,
-                                "rationale": f"bullish score {top_score:.3f}",
+                                "rationale": f"bullish score {top_score:.3f}, alloc {alloc*100:.0f}%",
                             })
 
         # === 3:45 PM: sell intraday position ===
@@ -611,12 +616,16 @@ def run_backtest(days_back: int = 30,
             px = _price_at(intraday, ticker, ts)
             if not px:
                 continue
-            # MTM total equity for sizing
+            # MTM total equity for sizing (conviction-based)
             mtm = cash
             for p in positions.values():
                 cur = _price_at(intraday, p["ticker"], ts) or p["entry_price"]
                 mtm += p["shares"] * cur
-            notional = mtm * ALLOCATION_PCT
+            if slot == "intraday":
+                alloc = size_intraday(top_pct)
+            else:
+                alloc = size_overnight(top_score)
+            notional = mtm * alloc
             if notional > cash:
                 notional = cash * 0.99
             if notional < 50:
