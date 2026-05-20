@@ -30,6 +30,7 @@ from zoneinfo import ZoneInfo
 from . import storage
 from .movers import compute_top_mover_at, get_price_at
 from .predictor import rank_next_day_bullish
+from .universe import UNIVERSE
 
 LOGGER = logging.getLogger("paper_trader.agent")
 ET = ZoneInfo("America/Toronto")  # handles EST/EDT transitions
@@ -82,7 +83,8 @@ ETF_TO_UNDERLYING = {
 }
 
 
-def evaluate_intraday_pick(mover: dict, equity: float = 10_000.0) -> dict:
+def evaluate_intraday_pick(mover: dict, equity: float = 10_000.0,
+                            atr_pct: float = 3.0) -> dict:
     """Decorate an intraday top-mover dict with the full trader context:
     trend alignment, whether all filters pass, allocation%, dollar size,
     stop/target prices. Used by the dashboard to show 'what would
@@ -103,6 +105,16 @@ def evaluate_intraday_pick(mover: dict, equity: float = 10_000.0) -> dict:
     stop_px = entry_px * (1 + FILTERS["stop_loss_pct"]) if entry_px else 0
     target_px = entry_px * (1 + FILTERS["take_profit_pct"]) if entry_px else 0
 
+    # Trader-grade price prediction
+    pred = predict_intraday_exit(
+        entry_px=entry_px, gap_pct=gap, atr_pct=atr_pct,
+        trend_aligned=trend_ok, vol_ratio=mover.get("vol_ratio", 1.0),
+    )
+    # Risk/reward: predicted move vs stop distance
+    stop_distance_pct = abs(FILTERS["stop_loss_pct"]) * 100
+    rr_ratio = (pred["expected_move_pct"] / stop_distance_pct
+                if stop_distance_pct else 0)
+
     out.update({
         "trend_ok": trend_ok,
         "gap_ok": gap_ok,
@@ -113,6 +125,11 @@ def evaluate_intraday_pick(mover: dict, equity: float = 10_000.0) -> dict:
         "stop_px": stop_px,
         "target_px": target_px,
         "underlying": ETF_TO_UNDERLYING.get(ticker, ("?", "?"))[1],
+        "predicted_price": pred["predicted_price"],
+        "expected_move_pct": pred["expected_move_pct"],
+        "confidence": pred["confidence"],
+        "rr_ratio": rr_ratio,
+        "atr_pct": atr_pct,
         "reject_reason": (
             "" if would_fire
             else (f"gap +{gap:.2f}% < {FILTERS['min_intraday_pct']:.1f}%" if not gap_ok
@@ -122,7 +139,8 @@ def evaluate_intraday_pick(mover: dict, equity: float = 10_000.0) -> dict:
     return out
 
 
-def evaluate_overnight_pick(pick: dict, equity: float = 10_000.0) -> dict:
+def evaluate_overnight_pick(pick: dict, equity: float = 10_000.0,
+                              atr_pct: float = 3.0) -> dict:
     """Same idea for overnight bullish picks."""
     out = dict(pick)
     ticker = pick["ticker"]
@@ -138,6 +156,15 @@ def evaluate_overnight_pick(pick: dict, equity: float = 10_000.0) -> dict:
     stop_px = entry_px * (1 + FILTERS["stop_loss_pct"]) if entry_px else 0
     target_px = entry_px * (1 + FILTERS["take_profit_pct"]) if entry_px else 0
 
+    # Trader-grade price prediction
+    pred = predict_overnight_exit(
+        entry_px=entry_px, score=score, atr_pct=atr_pct,
+        trend_aligned=trend_ok, vol_ratio=pick.get("vol_ratio", 1.0),
+    )
+    stop_distance_pct = abs(FILTERS["stop_loss_pct"]) * 100
+    rr_ratio = (pred["expected_move_pct"] / stop_distance_pct
+                if stop_distance_pct else 0)
+
     out.update({
         "trend_ok": trend_ok,
         "score_ok": score_ok,
@@ -148,6 +175,11 @@ def evaluate_overnight_pick(pick: dict, equity: float = 10_000.0) -> dict:
         "stop_px": stop_px,
         "target_px": target_px,
         "underlying": ETF_TO_UNDERLYING.get(ticker, ("?", "?"))[1],
+        "predicted_price": pred["predicted_price"],
+        "expected_move_pct": pred["expected_move_pct"],
+        "confidence": pred["confidence"],
+        "rr_ratio": rr_ratio,
+        "atr_pct": atr_pct,
         "reject_reason": (
             "" if would_fire
             else (f"score {score:.2f} < {FILTERS['min_overnight_score']:.2f}" if not score_ok
@@ -155,6 +187,142 @@ def evaluate_overnight_pick(pick: dict, equity: float = 10_000.0) -> dict:
         ),
     })
     return out
+
+
+def get_universe_atrs() -> dict[str, float]:
+    """14-day Average True Range as % of price for each universe
+    ticker. Used by the price-prediction model to bound expected
+    moves to realistic daily-range magnitudes.
+
+    Daily fetch — ATR changes slowly so caching at the UI layer
+    (1h TTL) is fine."""
+    import yfinance as yf
+    out: dict[str, float] = {}
+    for tkr in UNIVERSE:
+        try:
+            df = yf.download(tkr, period="1mo", interval="1d",
+                             auto_adjust=False, progress=False)
+            if hasattr(df.columns, "get_level_values"):
+                df.columns = df.columns.get_level_values(0)
+            if df.empty or len(df) < 15:
+                continue
+            high = df["High"]; low = df["Low"]; close = df["Close"]
+            prev_close = close.shift(1)
+            import pandas as pd
+            tr = pd.concat([
+                high - low,
+                (high - prev_close).abs(),
+                (low - prev_close).abs(),
+            ], axis=1).max(axis=1)
+            atr = tr.rolling(14).mean().iloc[-1]
+            out[tkr] = float(atr) / float(close.iloc[-1]) * 100
+        except Exception:
+            continue
+    return out
+
+
+def predict_intraday_exit(
+    entry_px: float,
+    gap_pct: float,
+    atr_pct: float,
+    trend_aligned: bool = True,
+    vol_ratio: float = 1.0,
+) -> dict:
+    """Estimate the price at 3:45 PM ET given 10:00 AM entry context.
+
+    Logic: morning gaps tend to continue ~30-50% to close. Strong gaps
+    continue more reliably than weak ones. Trend alignment + volume
+    confirmation boost the projection. Capped at 2× ATR.
+
+    Returns:
+      predicted_price : point estimate at 3:45 PM
+      expected_move_pct : predicted % from entry (signed)
+      confidence : probability target is hit before stop (0.30-0.70)
+    """
+    # Continuation factor based on gap strength
+    if gap_pct >= 4.0:
+        cont = 0.50
+    elif gap_pct >= 2.5:
+        cont = 0.40
+    elif gap_pct >= 1.5:
+        cont = 0.30
+    else:
+        cont = 0.15
+
+    # Trend alignment + volume modulate continuation
+    if trend_aligned:
+        cont *= 1.20
+    if vol_ratio >= 1.5:
+        cont *= 1.15
+    elif vol_ratio < 0.8:
+        cont *= 0.90
+
+    expected_move = gap_pct * cont
+    # Cap to 2x ATR — don't predict moves beyond plausible daily range
+    if atr_pct > 0:
+        expected_move = min(expected_move, atr_pct * 2.0)
+    predicted = entry_px * (1 + expected_move / 100)
+
+    # Confidence model: base 50% + signal strength + corroboration
+    # Signal strength: gap of 1.5% -> 0%, gap of 4.5% -> +10%
+    signal_str = max(0.0, min(1.0, (gap_pct - 1.5) / 3.0))
+    conf = 0.50 + signal_str * 0.10
+    if trend_aligned:
+        conf += 0.05
+    else:
+        conf -= 0.10
+    if vol_ratio >= 1.5:
+        conf += 0.04
+    elif vol_ratio < 0.8:
+        conf -= 0.03
+    conf = max(0.30, min(0.70, conf))
+
+    return {
+        "predicted_price": predicted,
+        "expected_move_pct": expected_move,
+        "confidence": conf,
+        "atr_pct": atr_pct,
+    }
+
+
+def predict_overnight_exit(
+    entry_px: float,
+    score: float,
+    atr_pct: float,
+    trend_aligned: bool = True,
+    vol_ratio: float = 1.0,
+) -> dict:
+    """Estimate the price at 9:55 AM next day given 3:30 PM entry.
+
+    Overnight moves are typically smaller than intraday (0.2-0.5 ATR).
+    Higher composite score = larger projected move."""
+    score_factor = max(0.0, min(1.0, (score - 0.70) / (0.95 - 0.70)))
+    # Base 0.20 ATR for marginal score, 0.50 ATR for max score
+    base_atr_fraction = 0.20 + score_factor * 0.30
+
+    if trend_aligned:
+        base_atr_fraction *= 1.15
+    if vol_ratio >= 1.5:
+        base_atr_fraction *= 1.10
+
+    expected_move = base_atr_fraction * atr_pct
+    predicted = entry_px * (1 + expected_move / 100)
+
+    conf = 0.50 + score_factor * 0.12
+    if trend_aligned:
+        conf += 0.05
+    else:
+        conf -= 0.10
+    if vol_ratio >= 1.5:
+        conf += 0.03
+    conf = max(0.30, min(0.70, conf))
+
+    return {
+        "predicted_price": predicted,
+        "expected_move_pct": expected_move,
+        "confidence": conf,
+        "atr_pct": atr_pct,
+    }
 
 
 def get_underlying_today() -> dict:

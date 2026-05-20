@@ -7350,11 +7350,25 @@ with tab_paper:
         return pt.rank_next_day_bullish(top_k=10)
 
     _equity_for_plan = portfolio["total_equity"]
+
+    @st.cache_data(ttl=3600, show_spinner=False)
+    def _pt_atrs():
+        return pt.get_universe_atrs()
+
     try:
         _movers = _pt_top_movers()
         _bull = _pt_bullish()
-        _movers_eval = [pt.evaluate_intraday_pick(m, _equity_for_plan) for m in _movers]
-        _bull_eval = [pt.evaluate_overnight_pick(b, _equity_for_plan) for b in _bull]
+        _atrs = _pt_atrs()
+        _movers_eval = [
+            pt.evaluate_intraday_pick(m, _equity_for_plan,
+                                       atr_pct=_atrs.get(m["ticker"], 3.0))
+            for m in _movers
+        ]
+        _bull_eval = [
+            pt.evaluate_overnight_pick(b, _equity_for_plan,
+                                        atr_pct=_atrs.get(b["ticker"], 3.0))
+            for b in _bull
+        ]
         _intraday_pick = next((m for m in _movers_eval if m["would_fire"]), None)
         _overnight_pick = next((b for b in _bull_eval if b["would_fire"]), None)
     except Exception as _pe:
@@ -7381,6 +7395,10 @@ with tab_paper:
                 )
             else:
                 _c = "#16a34a"
+                _pred_color = "#16a34a" if p.get("expected_move_pct", 0) >= 0 else "#dc2626"
+                _conf_pct = p.get("confidence", 0.5) * 100
+                _rr = p.get("rr_ratio", 0)
+                _atr = p.get("atr_pct", 0)
                 st.markdown(
                     f"<div style='padding:14px;border-radius:10px;"
                     f"background:{_c}15;border:1px solid {_c};'>"
@@ -7388,8 +7406,13 @@ with tab_paper:
                     f"<div style='font-size:1.3em;font-weight:700;color:{_c};'>"
                     f"BUY {p['ticker']}</div>"
                     f"<div style='margin-top:6px;font-size:0.9em;'>"
-                    f"<b>${p['notional']:,.0f}</b> ({p['allocation_pct']*100:.0f}% of equity) "
+                    f"<b>${p['notional']:,.0f}</b> ({p['allocation_pct']*100:.0f}% equity) "
                     f"@ ~${p['entry_px']:.2f}<br>"
+                    f"🎯 <b>Predicted exit: ${p['predicted_price']:.2f}</b> "
+                    f"<span style='color:{_pred_color};'>"
+                    f"({p['expected_move_pct']:+.2f}%)</span> "
+                    f"<span style='color:#9ca3af;'>· conf {_conf_pct:.0f}% · "
+                    f"R:R {_rr:.2f} · ATR {_atr:.1f}%</span><br>"
                     f"Stop: <b style='color:#dc2626;'>${p['stop_px']:.2f}</b> "
                     f"(-{abs(pt.FILTERS['stop_loss_pct'])*100:.0f}%) "
                     f"&nbsp;·&nbsp; "
@@ -7417,13 +7440,16 @@ with tab_paper:
             _mdf = pd.DataFrame([{
                 "#": i + 1,
                 "Ticker": m["ticker"],
-                "Under": m["underlying"],
                 "Gap": f"{m['change_pct']:+.2f}%",
                 "Vol×": f"{m.get('vol_ratio', 1.0):.2f}",
                 "Trend": "✓" if m["trend_ok"] else "✗",
                 "Fire?": "✅" if m["would_fire"] else "—",
                 "Alloc": f"{m['allocation_pct']*100:.0f}%" if m["would_fire"] else "—",
                 "Entry": f"${m['entry_px']:.2f}",
+                "Pred": (f"${m['predicted_price']:.2f} ({m['expected_move_pct']:+.2f}%)"
+                          if m["would_fire"] else "—"),
+                "Conf": f"{m.get('confidence', 0.5)*100:.0f}%" if m["would_fire"] else "—",
+                "R:R": f"{m.get('rr_ratio', 0):.2f}" if m["would_fire"] else "—",
                 "Stop": f"${m['stop_px']:.2f}" if m["would_fire"] else "—",
                 "Target": f"${m['target_px']:.2f}" if m["would_fire"] else "—",
             } for i, m in enumerate(_movers_eval)])
@@ -7441,15 +7467,16 @@ with tab_paper:
             _bdf = pd.DataFrame([{
                 "#": i + 1,
                 "Ticker": b["ticker"],
-                "Under": b["underlying"],
                 "Score": f"{b['score']:.3f}",
-                "Close-pos": f"{b.get('close_pos', 0):.2f}",
                 "5d": f"{b['ret_5d_pct']:+.1f}%",
                 "RSI": f"{b['rsi_14']:.0f}",
-                "Vol×": f"{b.get('vol_ratio', 1.0):.2f}",
                 "Trend": "✓" if b["trend_ok"] else "✗",
                 "Fire?": "✅" if b["would_fire"] else "—",
                 "Alloc": f"{b['allocation_pct']*100:.0f}%" if b["would_fire"] else "—",
+                "Entry": f"${b['entry_px']:.2f}",
+                "Pred": (f"${b['predicted_price']:.2f} ({b['expected_move_pct']:+.2f}%)"
+                          if b["would_fire"] else "—"),
+                "Conf": f"{b.get('confidence', 0.5)*100:.0f}%" if b["would_fire"] else "—",
             } for i, b in enumerate(_bull_eval)])
             st.dataframe(_bdf, hide_index=True, use_container_width=True)
 
