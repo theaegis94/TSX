@@ -30,7 +30,24 @@ from .predictor import WEIGHTS, _rsi
 from .agent import (
     SCHEDULE, ALLOCATION_PCT, FILTERS, PAIR_UNDERLYING,
     size_intraday, size_overnight,
+    predict_intraday_exit, predict_overnight_exit,
 )
+
+
+def _atr_at(df, as_of_date, period: int = 14) -> float:
+    """14-day ATR as % of close, truncated at as_of_date (no look-ahead)."""
+    trunc = df[df.index.date <= as_of_date]
+    if len(trunc) < period + 1:
+        return 3.0  # safe default for stops/predictions
+    high = trunc["High"]; low = trunc["Low"]; close = trunc["Close"]
+    prev = close.shift(1)
+    tr = pd.concat([
+        high - low,
+        (high - prev).abs(),
+        (low - prev).abs(),
+    ], axis=1).max(axis=1)
+    atr_val = tr.rolling(period).mean().iloc[-1]
+    return float(atr_val) / float(close.iloc[-1]) * 100
 
 LOGGER = logging.getLogger("paper_trader.backtest")
 ET = ZoneInfo("America/Toronto")
@@ -330,6 +347,21 @@ def run_backtest_long(
                     skipped.append({"ts": d, "slot": "intraday",
                         "reason": f"{pick} fails trend alignment"})
                     ok = False
+                # R:R filter (if applicable)
+                if ok and apply_filters and cfg.get("min_rr_ratio", 0) > 0:
+                    bar_check = _bar(pick, d)
+                    if bar_check:
+                        atr_pct = _atr_at(universe_daily[pick], d)
+                        pred = predict_intraday_exit(
+                            entry_px=bar_check["open"],
+                            gap_pct=top_gap, atr_pct=atr_pct,
+                            trend_aligned=True, vol_ratio=1.0,
+                        )
+                        rr = pred["expected_move_pct"] / (abs(cfg["stop_loss_pct"]) * 100)
+                        if rr < cfg["min_rr_ratio"]:
+                            skipped.append({"ts": d, "slot": "intraday",
+                                "reason": f"R:R {rr:.2f} < threshold"})
+                            ok = False
                 if ok:
                     bar = _bar(pick, d)
                     if bar:
@@ -372,6 +404,21 @@ def run_backtest_long(
                     skipped.append({"ts": d, "slot": "overnight",
                         "reason": f"{pick} fails trend alignment"})
                     ok = False
+                # R:R filter for overnight slot
+                if ok and apply_filters and cfg.get("min_rr_ratio", 0) > 0:
+                    bar_check = _bar(pick, d)
+                    if bar_check:
+                        atr_pct = _atr_at(universe_daily[pick], d)
+                        pred = predict_overnight_exit(
+                            entry_px=bar_check["close"],
+                            score=top_score, atr_pct=atr_pct,
+                            trend_aligned=True, vol_ratio=1.0,
+                        )
+                        rr = pred["expected_move_pct"] / (abs(cfg["stop_loss_pct"]) * 100)
+                        if rr < cfg["min_rr_ratio"]:
+                            skipped.append({"ts": d, "slot": "overnight",
+                                "reason": f"R:R {rr:.2f} < threshold"})
+                            ok = False
                 if ok:
                     bar = _bar(pick, d)
                     if bar:
