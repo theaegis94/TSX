@@ -182,6 +182,7 @@ def run_backtest_long(
     months_back: int = 12,
     initial_capital: float = 10_000.0,
     apply_filters: bool = True,
+    filter_overrides: dict | None = None,
 ) -> dict[str, Any]:
     """Long-window backtest using DAILY bars (1-year+ horizon).
 
@@ -210,6 +211,11 @@ def run_backtest_long(
     quite a bit. The 60-day 5-min backtest is the higher-fidelity
     test; this one is for validating long-window expectancy.
     """
+    # Effective filter config: defaults from agent.FILTERS, plus any
+    # overrides for this run (used by parameter_sweep + manual tuning)
+    cfg = dict(FILTERS)
+    if filter_overrides:
+        cfg.update(filter_overrides)
     LOGGER.info(f"Long backtest: fetching {months_back}mo of daily data…")
     # Pull enough history to compute the 20-day SMA filter even at
     # the start of the test window.
@@ -310,13 +316,13 @@ def run_backtest_long(
             if pick:
                 top_gap = scores[pick]
                 ok = True
-                if apply_filters and top_gap < FILTERS["min_intraday_pct"]:
+                if apply_filters and top_gap < cfg["min_intraday_pct"]:
                     skipped.append({"ts": d, "slot": "intraday",
                         "reason": f"gap {top_gap:.2f}% < threshold"})
                     ok = False
                 if ok and apply_filters and not _trend_aligned_at(
                     pick, d, underlying,
-                    FILTERS["trend_slope_threshold_pct"],
+                    cfg["trend_slope_threshold_pct"],
                 ):
                     skipped.append({"ts": d, "slot": "intraday",
                         "reason": f"{pick} fails trend alignment"})
@@ -351,13 +357,13 @@ def run_backtest_long(
             if pick:
                 top_score = scores[pick]
                 ok = True
-                if apply_filters and top_score < FILTERS["min_overnight_score"]:
+                if apply_filters and top_score < cfg["min_overnight_score"]:
                     skipped.append({"ts": d, "slot": "overnight",
                         "reason": f"score {top_score:.2f} < threshold"})
                     ok = False
                 if ok and apply_filters and not _trend_aligned_at(
                     pick, d, underlying,
-                    FILTERS["trend_slope_threshold_pct"],
+                    cfg["trend_slope_threshold_pct"],
                 ):
                     skipped.append({"ts": d, "slot": "overnight",
                         "reason": f"{pick} fails trend alignment"})

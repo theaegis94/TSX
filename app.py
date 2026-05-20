@@ -7407,10 +7407,12 @@ with tab_paper:
                   "OFF (trade every scheduled event)"],
         index=0, key="pt_bt_filters",
         help=(
-            "ON: skip BUYs where intraday top mover is <1.5%, or "
-            "overnight score is <0.65, or the underlying commodity's "
-            "20-day trend disagrees with the bull/bear pick. "
-            "30-day backtest: ON delivers +4.17% vs OFF's -5.76%."
+            "ON: skip BUYs where intraday top mover is <1.5%, "
+            "overnight score is <0.70 (tuned via parameter sweep), or "
+            "the underlying commodity's 20-day trend disagrees with "
+            "the bull/bear pick. "
+            "30-day backtest: ON delivers +4.17% vs OFF's -5.76%. "
+            "3-year backtest: ON delivers +110% vs OFF's +95%."
         ),
     )
     _bt_apply = _bt_filters.startswith("ON")

@@ -56,9 +56,10 @@ FILTERS = {
     "min_intraday_pct": 1.5,
 
     # Overnight composite score must clear this threshold. The score
-    # ranges 0-1; 0.65 means a genuinely bullish setup, not a
-    # mediocre one.
-    "min_overnight_score": 0.65,
+    # ranges 0-1; 0.70 means a strongly bullish setup. Parameter sweep
+    # showed 0.70 beats 0.65 by ~10 pts of 3-year return with same
+    # drawdown (the 0.65-0.70 band was mostly mediocre picks).
+    "min_overnight_score": 0.70,
 
     # Trend alignment: for the bull/bear inverse pairs (HOU/HOD,
     # HNU/HND), the underlying's 20-day SMA slope must agree with
