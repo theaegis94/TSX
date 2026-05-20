@@ -7382,6 +7382,87 @@ with tab_paper:
         st.caption("_No trades yet. The agent fires its first BUY at "
                    "10:00 AM ET on the next trading day._")
 
+    # --- Historical backtest ---
+    st.divider()
+    st.markdown("##### 🧪 Backtest")
+    st.caption(
+        "Replay the agent's schedule day-by-day over a past window "
+        "using actual 5-min bar prices. The agent's first live trade "
+        "fires tomorrow — this lets you see what it WOULD have done "
+        "over the past N days first."
+    )
+
+    _bt_l, _bt_r = st.columns([1, 1])
+    _bt_days = _bt_l.selectbox(
+        "Days back", options=[5, 10, 20, 30, 45, 60], index=3,
+        key="pt_bt_days",
+    )
+    _bt_cap = _bt_r.number_input(
+        "Starting capital", min_value=100.0, max_value=10_000_000.0,
+        value=10000.0, step=500.0, key="pt_bt_cap",
+    )
+
+    @st.cache_data(ttl=3600, show_spinner="Replaying schedule on historical bars (30-60s)…")
+    def _pt_cached_backtest(days, cap):
+        return pt.run_backtest(days_back=int(days), initial_capital=float(cap))
+
+    if st.button("▶️ Run backtest", key="pt_run_bt"):
+        _pt_cached_backtest.clear()
+        st.rerun()
+
+    try:
+        _bt = _pt_cached_backtest(_bt_days, _bt_cap)
+        if _bt.get("error"):
+            st.warning(f"Backtest failed: {_bt['error']}")
+        else:
+            _bt_color = "#16a34a" if _bt["total_return_pct"] >= 0 else "#dc2626"
+            st.markdown(
+                f"<div style='padding:14px;border-radius:10px;"
+                f"background:{_bt_color}15;border:1px solid {_bt_color};"
+                f"margin:8px 0;'>"
+                f"<b>{_bt['date_range'][0]} → {_bt['date_range'][1]}</b> "
+                f"({_bt['trading_days']} trading days)<br>"
+                f"<span style='font-size:1.4em;font-weight:700;color:{_bt_color};'>"
+                f"${_bt['final_equity']:,.2f}</span> "
+                f"&nbsp; ({_bt['total_return_pct']:+.2f}%) "
+                f"&nbsp;·&nbsp; {_bt['n_trades']} trades "
+                f"&nbsp;·&nbsp; win rate {_bt['win_rate']*100:.1f}% "
+                f"&nbsp;·&nbsp; max DD {_bt['max_drawdown_pct']:.2f}%"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+            _slot_l, _slot_r = st.columns(2)
+            for col, slot_name, s in [
+                (_slot_l, "Intraday", _bt["intraday"]),
+                (_slot_r, "Overnight", _bt["overnight"]),
+            ]:
+                with col:
+                    _c = "#16a34a" if s["total_pnl"] >= 0 else "#dc2626"
+                    st.markdown(
+                        f"**{slot_name}** — {s['n']} trades, "
+                        f"win {s['win_rate']*100:.1f}%, "
+                        f"<span style='color:{_c};'>"
+                        f"avg ${s['avg_pnl']:+.2f} · total ${s['total_pnl']:+.2f}"
+                        f"</span>",
+                        unsafe_allow_html=True,
+                    )
+            # Equity curve
+            if _bt.get("equity_curve"):
+                _eq_df = pd.DataFrame(_bt["equity_curve"])
+                _eq_df["ts"] = pd.to_datetime(_eq_df["ts"])
+                st.line_chart(_eq_df.set_index("ts")[["equity"]], height=220)
+            # Trade log
+            with st.expander(f"📜 All {len(_bt['trades'])} backtest trades"):
+                _td = pd.DataFrame(_bt["trades"])
+                _td["ts"] = pd.to_datetime(_td["ts"])
+                _show_cols = [c for c in ["ts","slot","ticker","side","shares",
+                                           "price","notional","pnl","pnl_pct"]
+                              if c in _td.columns]
+                st.dataframe(_td[_show_cols], hide_index=True,
+                             use_container_width=True)
+    except Exception as _be:
+        st.warning(f"Backtest unavailable: {_be}")
+
     # --- Admin / reset ---
     with st.expander("⚙️ Controls"):
         _new_cap = st.number_input(

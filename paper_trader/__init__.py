@@ -30,6 +30,7 @@ from .storage import (
     reset_all,
     DEFAULT_INITIAL_CAPITAL,
 )
+from .backtest import run_backtest
 
 __all__ = [
     "UNIVERSE",
@@ -47,4 +48,5 @@ __all__ = [
     "get_trade_history",
     "reset_all",
     "DEFAULT_INITIAL_CAPITAL",
+    "run_backtest",
 ]
