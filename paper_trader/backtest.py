@@ -178,6 +178,298 @@ def _pick_overnight_at(daily: dict[str, pd.DataFrame],
     return winner[0], scores
 
 
+def run_backtest_long(
+    months_back: int = 12,
+    initial_capital: float = 10_000.0,
+    apply_filters: bool = True,
+) -> dict[str, Any]:
+    """Long-window backtest using DAILY bars (1-year+ horizon).
+
+    Tradeoff vs run_backtest(): we don't have intraday data going back
+    a full year on yfinance free tier, so we approximate the schedule
+    using daily Open/Close:
+
+      Intraday slot:
+        10:00 AM buy   ≈  day's Open
+        3:45 PM sell   ≈  day's Close
+        Top mover pick ≈  largest "morning gap" = (Open_t / Close_{t-1} - 1)
+
+      Overnight slot:
+        3:30 PM buy    ≈  day's Close
+        9:55 AM sell   ≈  next day's Open
+        Top pick       =  bullish-opening composite (already daily-based)
+
+    Same filters as the 60-day backtest:
+      - min_intraday_pct: morning gap must be ≥ 1.5%
+      - min_overnight_score: composite score must be ≥ 0.65
+      - require_trend_alignment: bull/bear ETF must agree with the
+        underlying commodity's 20-day SMA slope direction
+
+    Honest caveat: the intraday slot here measures "open → close" not
+    "10am → 3:45pm". On choppy days the two windows can differ by
+    quite a bit. The 60-day 5-min backtest is the higher-fidelity
+    test; this one is for validating long-window expectancy.
+    """
+    LOGGER.info(f"Long backtest: fetching {months_back}mo of daily data…")
+    # Pull enough history to compute the 20-day SMA filter even at
+    # the start of the test window.
+    fetch_period = f"{months_back + 3}mo"
+    universe_daily = {}
+    for tkr in UNIVERSE:
+        try:
+            df = yf.download(tkr, period=fetch_period, interval="1d",
+                             auto_adjust=False, progress=False)
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+            if df.empty:
+                continue
+            if df.index.tz is not None:
+                df.index = df.index.tz_convert(ET).tz_localize(None)
+            universe_daily[tkr] = df
+        except Exception as e:
+            LOGGER.warning(f"{tkr} long fetch failed: {e}")
+
+    underlying = _fetch_underlying_daily() if apply_filters else {}
+    if not universe_daily:
+        return {"error": "no_data"}
+
+    # Build the test-window date list (last `months_back` of trading days)
+    sample = next(iter(universe_daily.values()))
+    all_dates = sorted({d.date() for d in sample.index})
+    cutoff = (pd.Timestamp.today() - pd.DateOffset(months=months_back)).date()
+    test_dates = [d for d in all_dates if d >= cutoff]
+    if len(test_dates) < 10:
+        return {"error": "insufficient_history"}
+
+    # Replay day by day
+    cash = initial_capital
+    positions: dict[str, dict[str, Any]] = {}
+    trades: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    equity_curve: list[dict[str, Any]] = []
+    peak = initial_capital
+    max_dd = 0.0
+
+    def _bar(ticker: str, date) -> dict[str, float] | None:
+        df = universe_daily.get(ticker)
+        if df is None:
+            return None
+        match = df[df.index.date == date]
+        if match.empty:
+            return None
+        r = match.iloc[0]
+        return {
+            "open": float(r["Open"]), "close": float(r["Close"]),
+            "high": float(r["High"]), "low": float(r["Low"]),
+        }
+
+    def _prev_close(ticker: str, date) -> float | None:
+        df = universe_daily.get(ticker)
+        if df is None:
+            return None
+        prior = df[df.index.date < date]
+        if prior.empty:
+            return None
+        return float(prior["Close"].iloc[-1])
+
+    def _morning_gap_pick(date) -> tuple[str | None, dict[str, float]]:
+        scores = {}
+        for t in UNIVERSE:
+            bar = _bar(t, date)
+            prev = _prev_close(t, date)
+            if bar is None or prev is None or prev <= 0:
+                continue
+            scores[t] = (bar["open"] - prev) / prev * 100
+        if not scores:
+            return None, {}
+        return max(scores.items(), key=lambda x: x[1])[0], scores
+
+    for i, d in enumerate(test_dates):
+        # === 9:55 AM: sell overnight position (if any) ===
+        if "overnight" in positions:
+            bar = _bar(positions["overnight"]["ticker"], d)
+            if bar:
+                exit_px = bar["open"]
+                pos = positions["overnight"]
+                proceeds = pos["shares"] * exit_px
+                pnl = proceeds - pos["cost"]
+                pnl_pct = (exit_px - pos["entry_price"]) / pos["entry_price"] * 100
+                cash += proceeds
+                trades.append({
+                    "ts": pd.Timestamp.combine(d, dt_time(9, 55)),
+                    "slot": "overnight", "ticker": pos["ticker"],
+                    "side": "SELL", "shares": pos["shares"],
+                    "price": exit_px, "notional": proceeds,
+                    "pnl": pnl, "pnl_pct": pnl_pct,
+                })
+                del positions["overnight"]
+
+        # === 10:00 AM: buy intraday ===
+        if "intraday" not in positions:
+            pick, scores = _morning_gap_pick(d)
+            if pick:
+                top_gap = scores[pick]
+                ok = True
+                if apply_filters and top_gap < FILTERS["min_intraday_pct"]:
+                    skipped.append({"ts": d, "slot": "intraday",
+                        "reason": f"gap {top_gap:.2f}% < threshold"})
+                    ok = False
+                if ok and apply_filters and not _trend_aligned_at(
+                    pick, d, underlying,
+                    FILTERS["trend_slope_threshold_pct"],
+                ):
+                    skipped.append({"ts": d, "slot": "intraday",
+                        "reason": f"{pick} fails trend alignment"})
+                    ok = False
+                if ok:
+                    bar = _bar(pick, d)
+                    if bar:
+                        entry_px = bar["open"]
+                        # Mark-to-market for sizing
+                        mtm = cash
+                        for p in positions.values():
+                            mtm += p["shares"] * p["entry_price"]
+                        notional = min(mtm * ALLOCATION_PCT, cash * 0.99)
+                        if notional >= 50:
+                            shares = notional / entry_px
+                            cash -= notional
+                            positions["intraday"] = {
+                                "ticker": pick, "shares": shares,
+                                "entry_price": entry_px, "cost": notional,
+                            }
+                            trades.append({
+                                "ts": pd.Timestamp.combine(d, dt_time(10, 0)),
+                                "slot": "intraday", "ticker": pick,
+                                "side": "BUY", "shares": shares,
+                                "price": entry_px, "notional": notional,
+                                "rationale": f"morning gap +{top_gap:.2f}%",
+                            })
+
+        # === 3:30 PM: buy overnight ===
+        if "overnight" not in positions:
+            pick, scores = _pick_overnight_at(universe_daily, d)
+            if pick:
+                top_score = scores[pick]
+                ok = True
+                if apply_filters and top_score < FILTERS["min_overnight_score"]:
+                    skipped.append({"ts": d, "slot": "overnight",
+                        "reason": f"score {top_score:.2f} < threshold"})
+                    ok = False
+                if ok and apply_filters and not _trend_aligned_at(
+                    pick, d, underlying,
+                    FILTERS["trend_slope_threshold_pct"],
+                ):
+                    skipped.append({"ts": d, "slot": "overnight",
+                        "reason": f"{pick} fails trend alignment"})
+                    ok = False
+                if ok:
+                    bar = _bar(pick, d)
+                    if bar:
+                        entry_px = bar["close"]
+                        mtm = cash
+                        for p in positions.values():
+                            bar_p = _bar(p["ticker"], d)
+                            cur = bar_p["close"] if bar_p else p["entry_price"]
+                            mtm += p["shares"] * cur
+                        notional = min(mtm * ALLOCATION_PCT, cash * 0.99)
+                        if notional >= 50:
+                            shares = notional / entry_px
+                            cash -= notional
+                            positions["overnight"] = {
+                                "ticker": pick, "shares": shares,
+                                "entry_price": entry_px, "cost": notional,
+                            }
+                            trades.append({
+                                "ts": pd.Timestamp.combine(d, dt_time(15, 30)),
+                                "slot": "overnight", "ticker": pick,
+                                "side": "BUY", "shares": shares,
+                                "price": entry_px, "notional": notional,
+                                "rationale": f"bullish score {top_score:.3f}",
+                            })
+
+        # === 3:45 PM: sell intraday position ===
+        if "intraday" in positions:
+            pos = positions["intraday"]
+            bar = _bar(pos["ticker"], d)
+            if bar:
+                exit_px = bar["close"]
+                proceeds = pos["shares"] * exit_px
+                pnl = proceeds - pos["cost"]
+                pnl_pct = (exit_px - pos["entry_price"]) / pos["entry_price"] * 100
+                cash += proceeds
+                trades.append({
+                    "ts": pd.Timestamp.combine(d, dt_time(15, 45)),
+                    "slot": "intraday", "ticker": pos["ticker"],
+                    "side": "SELL", "shares": pos["shares"],
+                    "price": exit_px, "notional": proceeds,
+                    "pnl": pnl, "pnl_pct": pnl_pct,
+                })
+                del positions["intraday"]
+
+        # End-of-day equity snapshot
+        mtm = cash
+        for p in positions.values():
+            bar_p = _bar(p["ticker"], d)
+            cur = bar_p["close"] if bar_p else p["entry_price"]
+            mtm += p["shares"] * cur
+        equity_curve.append({"ts": pd.Timestamp(d), "equity": mtm})
+        if mtm > peak: peak = mtm
+        dd = (mtm - peak) / peak if peak else 0
+        if dd < max_dd: max_dd = dd
+
+    # Force-close any remaining position
+    final_d = test_dates[-1]
+    for slot, pos in list(positions.items()):
+        bar = _bar(pos["ticker"], final_d)
+        exit_px = bar["close"] if bar else pos["entry_price"]
+        proceeds = pos["shares"] * exit_px
+        pnl = proceeds - pos["cost"]
+        cash += proceeds
+        trades.append({
+            "ts": pd.Timestamp.combine(final_d, dt_time(16, 0)),
+            "slot": slot, "ticker": pos["ticker"], "side": "SELL",
+            "shares": pos["shares"], "price": exit_px,
+            "notional": proceeds, "pnl": pnl,
+            "pnl_pct": (exit_px - pos["entry_price"]) / pos["entry_price"] * 100,
+            "note": "force-closed at backtest end",
+        })
+
+    completed = [t for t in trades if t["side"] == "SELL" and "pnl" in t]
+    wins = sum(1 for t in completed if t["pnl"] > 0)
+    intra = [t for t in completed if t["slot"] == "intraday"]
+    over = [t for t in completed if t["slot"] == "overnight"]
+
+    def _stats(lst):
+        if not lst: return {"n": 0, "win_rate": 0, "avg_pnl": 0, "total_pnl": 0}
+        w = sum(1 for x in lst if x["pnl"] > 0)
+        return {"n": len(lst), "win_rate": w/len(lst),
+                "avg_pnl": sum(x["pnl"] for x in lst)/len(lst),
+                "total_pnl": sum(x["pnl"] for x in lst)}
+
+    return {
+        "initial_capital": initial_capital,
+        "final_equity": cash,
+        "total_return_pct": (cash / initial_capital - 1) * 100,
+        "total_pnl": cash - initial_capital,
+        "n_trades": len(completed),
+        "win_rate": wins / len(completed) if completed else 0,
+        "avg_pnl_per_trade": (sum(t["pnl"] for t in completed) / len(completed)) if completed else 0,
+        "max_drawdown_pct": max_dd * 100,
+        "trading_days": len(test_dates),
+        "intraday": _stats(intra),
+        "overnight": _stats(over),
+        "trades": trades,
+        "skipped": skipped,
+        "equity_curve": equity_curve,
+        "date_range": (str(test_dates[0]), str(test_dates[-1])),
+        "filters_applied": apply_filters,
+        "approximation_note": (
+            "Daily bars: intraday slot ≈ Open→Close, overnight slot "
+            "≈ Close→next Open. Top mover proxy = morning gap."
+        ),
+    }
+
+
 def _fetch_underlying_daily() -> dict[str, pd.DataFrame]:
     """Pull WTI + natgas daily bars for the trend-alignment filter."""
     out: dict[str, pd.DataFrame] = {}

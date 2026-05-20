@@ -7480,6 +7480,88 @@ with tab_paper:
     except Exception as _be:
         st.warning(f"Backtest unavailable: {_be}")
 
+    # --- 12-Month "long" backtest ---
+    st.divider()
+    st.markdown("##### 📅 Long-window backtest (daily bars)")
+    st.caption(
+        "Same strategy + filters as above, replayed over a year+ of "
+        "daily data. Approximates the schedule with **Open/Close** "
+        "(10am buy ≈ Open · 3:45pm sell ≈ Close · 3:30pm overnight buy "
+        "≈ Close · 9:55am next-day sell ≈ Open). Less granular than the "
+        "5-min backtest, but covers a wider market regime sample."
+    )
+
+    _lbt_l, _lbt_m, _lbt_r = st.columns([1, 1, 1])
+    _lbt_months = _lbt_l.selectbox(
+        "Months back", options=[3, 6, 9, 12, 18, 24], index=3,
+        key="pt_lbt_months",
+    )
+    _lbt_cap = _lbt_m.number_input(
+        "Starting capital", min_value=100.0, max_value=10_000_000.0,
+        value=10000.0, step=500.0, key="pt_lbt_cap",
+    )
+    _lbt_filters = _lbt_r.selectbox(
+        "Strategy filters", options=["ON", "OFF"], index=0,
+        key="pt_lbt_filters",
+    )
+    _lbt_apply = _lbt_filters == "ON"
+
+    @st.cache_data(ttl=3600, show_spinner="Replaying year+ of daily bars (15-30s)…")
+    def _pt_long_bt(months, cap, apply_filters):
+        return pt.run_backtest_long(
+            months_back=int(months),
+            initial_capital=float(cap),
+            apply_filters=bool(apply_filters),
+        )
+
+    if st.button("▶️ Run long-window backtest", key="pt_run_lbt"):
+        _pt_long_bt.clear()
+        st.rerun()
+
+    try:
+        _lbt = _pt_long_bt(_lbt_months, _lbt_cap, _lbt_apply)
+        if _lbt.get("error"):
+            st.warning(f"Long backtest failed: {_lbt['error']}")
+        else:
+            _lc = "#16a34a" if _lbt["total_return_pct"] >= 0 else "#dc2626"
+            st.markdown(
+                f"<div style='padding:14px;border-radius:10px;"
+                f"background:{_lc}15;border:1px solid {_lc};margin:8px 0;'>"
+                f"<b>{_lbt['date_range'][0]} → {_lbt['date_range'][1]}</b> "
+                f"({_lbt['trading_days']} trading days)<br>"
+                f"<span style='font-size:1.5em;font-weight:700;color:{_lc};'>"
+                f"${_lbt['final_equity']:,.2f}</span> "
+                f"&nbsp;({_lbt['total_return_pct']:+.2f}%) "
+                f"&nbsp;·&nbsp; {_lbt['n_trades']} trades "
+                f"&nbsp;·&nbsp; win {_lbt['win_rate']*100:.1f}% "
+                f"&nbsp;·&nbsp; max DD {_lbt['max_drawdown_pct']:.2f}% "
+                f"&nbsp;·&nbsp; skipped {len(_lbt.get('skipped',[]))}"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+            _ls_l, _ls_r = st.columns(2)
+            for col, name, s in [
+                (_ls_l, "Intraday", _lbt["intraday"]),
+                (_ls_r, "Overnight", _lbt["overnight"]),
+            ]:
+                with col:
+                    _c = "#16a34a" if s["total_pnl"] >= 0 else "#dc2626"
+                    st.markdown(
+                        f"**{name}** — {s['n']} trades, "
+                        f"win {s['win_rate']*100:.1f}%, "
+                        f"<span style='color:{_c};'>"
+                        f"avg ${s['avg_pnl']:+.2f} · total ${s['total_pnl']:+,.2f}"
+                        f"</span>",
+                        unsafe_allow_html=True,
+                    )
+            if _lbt.get("equity_curve"):
+                _ec_df = pd.DataFrame(_lbt["equity_curve"])
+                _ec_df["ts"] = pd.to_datetime(_ec_df["ts"])
+                st.line_chart(_ec_df.set_index("ts")[["equity"]], height=240)
+            st.caption(f"_{_lbt.get('approximation_note', '')}_")
+    except Exception as _le:
+        st.warning(f"Long backtest unavailable: {_le}")
+
     # --- Admin / reset ---
     with st.expander("⚙️ Controls"):
         _new_cap = st.number_input(
