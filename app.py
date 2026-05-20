@@ -7308,60 +7308,150 @@ with tab_paper:
 
     st.divider()
 
-    # --- Top of the panel: two ranking tables side-by-side ---
+    # --- Commodity-market context strip ---
+    @st.cache_data(ttl=120, show_spinner=False)
+    def _pt_underlying_today():
+        return pt.get_underlying_today()
+
+    _ctx = _pt_underlying_today()
+    if _ctx:
+        st.markdown("##### 📈 Today's commodity context")
+        _ctx_cols = st.columns(len(_ctx))
+        for i, (label, info) in enumerate(_ctx.items()):
+            with _ctx_cols[i]:
+                _c = "#16a34a" if info["change_pct"] >= 0 else "#dc2626"
+                _arrow = "▲" if info["change_pct"] >= 0 else "▼"
+                st.markdown(
+                    f"<div style='padding:8px 10px;border-radius:8px;"
+                    f"background:{_c}15;border:1px solid {_c};'>"
+                    f"<div style='font-size:0.8em;color:#9ca3af;'>{label}</div>"
+                    f"<div style='font-size:1.15em;font-weight:600;'>"
+                    f"<span style='color:{_c};'>{_arrow} {info['change_pct']:+.2f}%</span></div>"
+                    f"<div style='font-size:0.75em;color:#9ca3af;'>"
+                    f"{info['value']:.2f}</div></div>",
+                    unsafe_allow_html=True,
+                )
+        st.caption(
+            "_WTI / Natgas / Gold = today's % move on the underlying futures. "
+            "DXY rising = headwind for commodities. VIX low = risk-on regime._"
+        )
+
+    st.divider()
+
+    # --- Today's actionable plan callout ---
+    st.markdown("##### 🎯 Today's actionable plan (if slot is empty)")
+
+    @st.cache_data(ttl=300, show_spinner="Scanning movers + evaluating filters…")
+    def _pt_top_movers():
+        return pt.compute_top_movers(top_k=10)
+
+    @st.cache_data(ttl=900, show_spinner="Scoring all ETFs + filter check…")
+    def _pt_bullish():
+        return pt.rank_next_day_bullish(top_k=10)
+
+    _equity_for_plan = portfolio["total_equity"]
+    try:
+        _movers = _pt_top_movers()
+        _bull = _pt_bullish()
+        _movers_eval = [pt.evaluate_intraday_pick(m, _equity_for_plan) for m in _movers]
+        _bull_eval = [pt.evaluate_overnight_pick(b, _equity_for_plan) for b in _bull]
+        _intraday_pick = next((m for m in _movers_eval if m["would_fire"]), None)
+        _overnight_pick = next((b for b in _bull_eval if b["would_fire"]), None)
+    except Exception as _pe:
+        _intraday_pick = None
+        _overnight_pick = None
+        st.warning(f"Plan eval unavailable: {_pe}")
+        _movers_eval = []
+        _bull_eval = []
+
+    _plan_l, _plan_r = st.columns(2)
+    for col, slot_name, p, time_str in [
+        (_plan_l, "10:00 AM (intraday)", _intraday_pick, "10:00 AM ET"),
+        (_plan_r, "3:30 PM (overnight)", _overnight_pick, "3:30 PM ET"),
+    ]:
+        with col:
+            if p is None:
+                st.markdown(
+                    f"<div style='padding:14px;border-radius:10px;"
+                    f"background:#4b556322;border:1px dashed #6b7280;'>"
+                    f"<b>{slot_name}</b><br>"
+                    f"<span style='color:#9ca3af;'>HOLD CASH — no candidate "
+                    f"passes filters right now.</span></div>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                _c = "#16a34a"
+                st.markdown(
+                    f"<div style='padding:14px;border-radius:10px;"
+                    f"background:{_c}15;border:1px solid {_c};'>"
+                    f"<div style='color:#9ca3af;font-size:0.85em;'>{slot_name}</div>"
+                    f"<div style='font-size:1.3em;font-weight:700;color:{_c};'>"
+                    f"BUY {p['ticker']}</div>"
+                    f"<div style='margin-top:6px;font-size:0.9em;'>"
+                    f"<b>${p['notional']:,.0f}</b> ({p['allocation_pct']*100:.0f}% of equity) "
+                    f"@ ~${p['entry_px']:.2f}<br>"
+                    f"Stop: <b style='color:#dc2626;'>${p['stop_px']:.2f}</b> "
+                    f"(-{abs(pt.FILTERS['stop_loss_pct'])*100:.0f}%) "
+                    f"&nbsp;·&nbsp; "
+                    f"Target: <b style='color:#16a34a;'>${p['target_px']:.2f}</b> "
+                    f"(+{pt.FILTERS['take_profit_pct']*100:.0f}%)<br>"
+                    f"Underlying: <b>{p['underlying']}</b></div></div>",
+                    unsafe_allow_html=True,
+                )
+
+    st.divider()
+
+    # --- Trader-grade ranking tables ---
     _rank_l, _rank_r = st.columns(2)
 
     with _rank_l:
         st.markdown("#### 🔥 Intraday top movers")
         st.caption(
-            "Today's top % gainers from open. The agent's 10 AM buy "
-            "picks **#1** on this list."
+            "Top % gainers from today's open. **Fire** column shows which "
+            "would actually buy after filters. Stop = entry − 3%, target = "
+            "entry + 5%."
         )
-        @st.cache_data(ttl=300, show_spinner="Scanning movers…")
-        def _pt_top_movers():
-            return pt.compute_top_movers(top_k=10)
-        try:
-            _movers = _pt_top_movers()
-            if not _movers:
-                st.info("No intraday data right now (market closed?).")
-            else:
-                _mdf = pd.DataFrame([{
-                    "#": i + 1,
-                    "Ticker": m["ticker"],
-                    "Open": f"${m['open']:.2f}",
-                    "Now": f"${m['current']:.2f}",
-                    "Change": f"{m['change_pct']:+.2f}%",
-                } for i, m in enumerate(_movers)])
-                st.dataframe(_mdf, hide_index=True, use_container_width=True)
-        except Exception as _e:
-            st.warning(f"Movers unavailable: {_e}")
+        if not _movers_eval:
+            st.info("No intraday data right now (market closed?).")
+        else:
+            _mdf = pd.DataFrame([{
+                "#": i + 1,
+                "Ticker": m["ticker"],
+                "Under": m["underlying"],
+                "Gap": f"{m['change_pct']:+.2f}%",
+                "Vol×": f"{m.get('vol_ratio', 1.0):.2f}",
+                "Trend": "✓" if m["trend_ok"] else "✗",
+                "Fire?": "✅" if m["would_fire"] else "—",
+                "Alloc": f"{m['allocation_pct']*100:.0f}%" if m["would_fire"] else "—",
+                "Entry": f"${m['entry_px']:.2f}",
+                "Stop": f"${m['stop_px']:.2f}" if m["would_fire"] else "—",
+                "Target": f"${m['target_px']:.2f}" if m["would_fire"] else "—",
+            } for i, m in enumerate(_movers_eval)])
+            st.dataframe(_mdf, hide_index=True, use_container_width=True)
 
     with _rank_r:
         st.markdown("#### 🌅 Next-day bullish opening")
         st.caption(
-            "Composite score = 0.35×(close near high) + "
-            "0.30×(5d return) + 0.20×(RSI zone 55-70) + "
-            "0.15×(volume surge). The agent's 3:30 PM buy picks **#1**."
+            "Composite = 0.35×close-near-high + 0.30×5d-return + "
+            "0.20×RSI-zone(55-70) + 0.15×volume-surge. Threshold to fire ≥ 0.70."
         )
-        @st.cache_data(ttl=900, show_spinner="Scoring 100+ ETFs (~60s)…")
-        def _pt_bullish():
-            return pt.rank_next_day_bullish(top_k=10)
-        try:
-            _bull = _pt_bullish()
-            if not _bull:
-                st.info("No prediction data right now.")
-            else:
-                _bdf = pd.DataFrame([{
-                    "#": i + 1,
-                    "Ticker": b["ticker"],
-                    "Score": f"{b['score']:.3f}",
-                    "Close": f"${b['close']:.2f}",
-                    "5d ret": f"{b['ret_5d_pct']:+.2f}%",
-                    "RSI": f"{b['rsi_14']:.0f}",
-                } for i, b in enumerate(_bull)])
-                st.dataframe(_bdf, hide_index=True, use_container_width=True)
-        except Exception as _e:
-            st.warning(f"Bullish-opening scorer unavailable: {_e}")
+        if not _bull_eval:
+            st.info("No prediction data right now.")
+        else:
+            _bdf = pd.DataFrame([{
+                "#": i + 1,
+                "Ticker": b["ticker"],
+                "Under": b["underlying"],
+                "Score": f"{b['score']:.3f}",
+                "Close-pos": f"{b.get('close_pos', 0):.2f}",
+                "5d": f"{b['ret_5d_pct']:+.1f}%",
+                "RSI": f"{b['rsi_14']:.0f}",
+                "Vol×": f"{b.get('vol_ratio', 1.0):.2f}",
+                "Trend": "✓" if b["trend_ok"] else "✗",
+                "Fire?": "✅" if b["would_fire"] else "—",
+                "Alloc": f"{b['allocation_pct']*100:.0f}%" if b["would_fire"] else "—",
+            } for i, b in enumerate(_bull_eval)])
+            st.dataframe(_bdf, hide_index=True, use_container_width=True)
 
     st.divider()
 

@@ -23,7 +23,8 @@ LOGGER = logging.getLogger("paper_trader.movers")
 
 
 def _intraday_pct(ticker: str) -> dict[str, Any] | None:
-    """Pull today's 5min bars + compute % change from open."""
+    """Pull today's 5min bars + compute % change from open, volume
+    surge ratio, and intraday range context."""
     try:
         df = yf.download(ticker, period="1d", interval="5m",
                          auto_adjust=False, progress=False)
@@ -33,13 +34,36 @@ def _intraday_pct(ticker: str) -> dict[str, Any] | None:
             return None
         op = float(df["Open"].iloc[0])
         cp = float(df["Close"].iloc[-1])
+        hi = float(df["High"].max())
+        lo = float(df["Low"].min())
+        vol_today = float(df["Volume"].sum())
         if op <= 0:
             return None
+
+        # 20-day average daily volume for surge context
+        vol_ratio = 1.0
+        try:
+            daily = yf.download(ticker, period="40d", interval="1d",
+                                auto_adjust=False, progress=False)
+            if isinstance(daily.columns, pd.MultiIndex):
+                daily.columns = daily.columns.get_level_values(0)
+            if not daily.empty and len(daily) >= 5:
+                # Use the last 20 completed sessions
+                avg_vol = float(daily["Volume"].iloc[-21:-1].mean())
+                if avg_vol > 0:
+                    vol_ratio = vol_today / avg_vol
+        except Exception:
+            pass
+
         return {
             "ticker": ticker,
             "open": op,
             "current": cp,
+            "high": hi,
+            "low": lo,
             "change_pct": (cp - op) / op * 100,
+            "vol_ratio": vol_ratio,
+            "range_pct": (hi - lo) / op * 100 if op else 0,
         }
     except Exception as e:
         LOGGER.debug(f"intraday fetch {ticker} failed: {e}")

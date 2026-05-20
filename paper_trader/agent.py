@@ -70,6 +70,128 @@ def size_overnight(score: float) -> float:
     x = max(0.0, min(1.0, x))
     return lo + x * (hi - lo)
 
+
+# Underlying commodity each ETF tracks — used for "underlying sympathy"
+ETF_TO_UNDERLYING = {
+    "HOU.TO": ("CL=F", "WTI"),
+    "HOD.TO": ("CL=F", "WTI"),
+    "HNU.TO": ("NG=F", "Natgas"),
+    "HND.TO": ("NG=F", "Natgas"),
+    "CGL.TO": ("GC=F", "Gold"),
+    "MNT.TO": ("GC=F", "Gold"),
+}
+
+
+def evaluate_intraday_pick(mover: dict, equity: float = 10_000.0) -> dict:
+    """Decorate an intraday top-mover dict with the full trader context:
+    trend alignment, whether all filters pass, allocation%, dollar size,
+    stop/target prices. Used by the dashboard to show 'what would
+    actually fire'."""
+    out = dict(mover)
+    ticker = mover["ticker"]
+    gap = mover.get("change_pct", 0.0)
+
+    # Trend alignment check (same as live agent)
+    trend_ok = _trend_aligned(ticker) if FILTERS["require_trend_alignment"] else True
+    # All filters pass?
+    gap_ok = gap >= FILTERS["min_intraday_pct"]
+    would_fire = gap_ok and trend_ok
+
+    alloc = size_intraday(gap) if would_fire else 0.0
+    notional = equity * alloc
+    entry_px = float(mover.get("current", 0.0))
+    stop_px = entry_px * (1 + FILTERS["stop_loss_pct"]) if entry_px else 0
+    target_px = entry_px * (1 + FILTERS["take_profit_pct"]) if entry_px else 0
+
+    out.update({
+        "trend_ok": trend_ok,
+        "gap_ok": gap_ok,
+        "would_fire": would_fire,
+        "allocation_pct": alloc,
+        "notional": notional,
+        "entry_px": entry_px,
+        "stop_px": stop_px,
+        "target_px": target_px,
+        "underlying": ETF_TO_UNDERLYING.get(ticker, ("?", "?"))[1],
+        "reject_reason": (
+            "" if would_fire
+            else (f"gap +{gap:.2f}% < {FILTERS['min_intraday_pct']:.1f}%" if not gap_ok
+                  else "trend mismatch")
+        ),
+    })
+    return out
+
+
+def evaluate_overnight_pick(pick: dict, equity: float = 10_000.0) -> dict:
+    """Same idea for overnight bullish picks."""
+    out = dict(pick)
+    ticker = pick["ticker"]
+    score = pick.get("score", 0.0)
+
+    trend_ok = _trend_aligned(ticker) if FILTERS["require_trend_alignment"] else True
+    score_ok = score >= FILTERS["min_overnight_score"]
+    would_fire = score_ok and trend_ok
+
+    alloc = size_overnight(score) if would_fire else 0.0
+    notional = equity * alloc
+    entry_px = float(pick.get("close", 0.0))
+    stop_px = entry_px * (1 + FILTERS["stop_loss_pct"]) if entry_px else 0
+    target_px = entry_px * (1 + FILTERS["take_profit_pct"]) if entry_px else 0
+
+    out.update({
+        "trend_ok": trend_ok,
+        "score_ok": score_ok,
+        "would_fire": would_fire,
+        "allocation_pct": alloc,
+        "notional": notional,
+        "entry_px": entry_px,
+        "stop_px": stop_px,
+        "target_px": target_px,
+        "underlying": ETF_TO_UNDERLYING.get(ticker, ("?", "?"))[1],
+        "reject_reason": (
+            "" if would_fire
+            else (f"score {score:.2f} < {FILTERS['min_overnight_score']:.2f}" if not score_ok
+                  else "trend mismatch")
+        ),
+    })
+    return out
+
+
+def get_underlying_today() -> dict:
+    """Today's intraday move on the 3 underlying commodities. Used in
+    the dashboard's commodity-context strip."""
+    import yfinance as yf
+    out = {}
+    for sym, label in [("CL=F", "WTI"), ("NG=F", "Natgas"), ("GC=F", "Gold"),
+                        ("DX-Y.NYB", "DXY"), ("^VIX", "VIX")]:
+        try:
+            df = yf.download(sym, period="1d", interval="5m",
+                             auto_adjust=False, progress=False)
+            if hasattr(df.columns, "get_level_values"):
+                df.columns = df.columns.get_level_values(0)
+            if df.empty or len(df) < 2:
+                # Fall back to daily
+                df = yf.download(sym, period="5d", interval="1d",
+                                 auto_adjust=False, progress=False)
+                if hasattr(df.columns, "get_level_values"):
+                    df.columns = df.columns.get_level_values(0)
+                if df.empty:
+                    continue
+                op = float(df["Open"].iloc[-1])
+                cp = float(df["Close"].iloc[-1])
+            else:
+                op = float(df["Open"].iloc[0])
+                cp = float(df["Close"].iloc[-1])
+            if op > 0:
+                out[label] = {
+                    "value": cp,
+                    "open": op,
+                    "change_pct": (cp - op) / op * 100,
+                }
+        except Exception:
+            continue
+    return out
+
 # ============================================================
 # Strategy filters — added to address the -5.76% backtest result.
 # Each filter is a "veto" — if conditions aren't met, the buy is
