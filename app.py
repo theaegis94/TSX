@@ -7443,13 +7443,16 @@ with tab_paper:
                 "Gap": f"{m['change_pct']:+.2f}%",
                 "Vol×": f"{m.get('vol_ratio', 1.0):.2f}",
                 "Trend": "✓" if m["trend_ok"] else "✗",
+                "Entry": f"${m['entry_px']:.2f}",
+                # Predictions shown for every row — useful market context
+                # even on rejected trades (e.g. "HOU model says +0.5% but
+                # filters won't let us trade it"). Empty only if entry==0.
+                "Pred": (f"${m['predicted_price']:.2f} ({m['expected_move_pct']:+.2f}%)"
+                          if m.get('entry_px', 0) > 0 else "—"),
+                "Conf": f"{m.get('confidence', 0.5)*100:.0f}%",
+                "R:R": f"{m.get('rr_ratio', 0):.2f}",
                 "Fire?": "✅" if m["would_fire"] else "—",
                 "Alloc": f"{m['allocation_pct']*100:.0f}%" if m["would_fire"] else "—",
-                "Entry": f"${m['entry_px']:.2f}",
-                "Pred": (f"${m['predicted_price']:.2f} ({m['expected_move_pct']:+.2f}%)"
-                          if m["would_fire"] else "—"),
-                "Conf": f"{m.get('confidence', 0.5)*100:.0f}%" if m["would_fire"] else "—",
-                "R:R": f"{m.get('rr_ratio', 0):.2f}" if m["would_fire"] else "—",
                 "Stop": f"${m['stop_px']:.2f}" if m["would_fire"] else "—",
                 "Target": f"${m['target_px']:.2f}" if m["would_fire"] else "—",
             } for i, m in enumerate(_movers_eval)])
@@ -7471,12 +7474,13 @@ with tab_paper:
                 "5d": f"{b['ret_5d_pct']:+.1f}%",
                 "RSI": f"{b['rsi_14']:.0f}",
                 "Trend": "✓" if b["trend_ok"] else "✗",
-                "Fire?": "✅" if b["would_fire"] else "—",
-                "Alloc": f"{b['allocation_pct']*100:.0f}%" if b["would_fire"] else "—",
                 "Entry": f"${b['entry_px']:.2f}",
                 "Pred": (f"${b['predicted_price']:.2f} ({b['expected_move_pct']:+.2f}%)"
-                          if b["would_fire"] else "—"),
-                "Conf": f"{b.get('confidence', 0.5)*100:.0f}%" if b["would_fire"] else "—",
+                          if b.get('entry_px', 0) > 0 else "—"),
+                "Conf": f"{b.get('confidence', 0.5)*100:.0f}%",
+                "R:R": f"{b.get('rr_ratio', 0):.2f}",
+                "Fire?": "✅" if b["would_fire"] else "—",
+                "Alloc": f"{b['allocation_pct']*100:.0f}%" if b["would_fire"] else "—",
             } for i, b in enumerate(_bull_eval)])
             st.dataframe(_bdf, hide_index=True, use_container_width=True)
 
