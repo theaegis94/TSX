@@ -1,49 +1,42 @@
-"""Universe of Canadian-listed ETFs the paper trader can pick from.
+"""Universe of commodity-themed Canadian ETFs the paper trader picks from.
 
-~111 of the most liquid Canadian ETFs across all major providers:
-iShares, BMO, Vanguard, Horizons/Global X, CI, Hamilton, Purpose,
-Mackenzie. Curated for liquidity so the paper trader's simulated
-fills are realistic.
+Two flavors:
+
+  Pure commodity (futures-backed or bullion-backed):
+    HOU.TO / HOD.TO   — WTI crude oil 2x bull / bear
+    HNU.TO / HND.TO   — Henry Hub natgas 2x bull / bear
+    CGL.TO            — gold bullion (CAD-hedged)
+    MNT.TO            — Royal Canadian Mint physical gold trust
+
+  Commodity-correlated equity (single-resource sector ETFs):
+    XEG.TO            — iShares Canadian energy producers
+    ZEO.TO            — BMO equal-weight oil & gas
+    XGD.TO            — iShares S&P/TSX gold miners
+    ZJG.TO            — BMO junior gold miners
+    XMA.TO            — iShares Canadian materials
+
+11 tickers total. Concentrated by design so the morning intraday
+top-mover pick + the 3:30pm bullish-opening pick are always
+commodity-themed.
+
+Trade-off note: HOU/HOD and HNU/HND are inverse pairs. The two-slot
+agent can in theory go long HOU intraday AND long HOD overnight on
+the same day if momentum + bullish-opening score on opposite sides.
+That's accidentally a partial hedge, not necessarily bad — but worth
+being aware of when reading the trade log.
 """
 from __future__ import annotations
 
 UNIVERSE: list[str] = [
-    # --- Broad Canadian equity ---
-    "XIU.TO", "XIC.TO", "VCN.TO", "ZCN.TO", "HXT.TO", "XCS.TO", "XMD.TO",
-    # --- US equity (CAD-hedged + unhedged + swap variants) ---
-    "VFV.TO", "VUN.TO", "XSP.TO", "ZSP.TO", "HXS.TO", "ZUE.TO",
-    "VUS.TO", "ZUQ.TO", "XUS.TO",
-    # --- US Nasdaq / tech ---
-    "ZQQ.TO", "XQQ.TO", "HXQ.TO", "QQC.TO",
-    # --- International developed ---
-    "XEF.TO", "XIN.TO", "VI.TO", "VIU.TO", "XAW.TO", "VXC.TO", "XWD.TO",
-    # --- Emerging markets ---
-    "XEC.TO", "ZEM.TO", "VEE.TO", "XEM.TO",
-    # --- Canadian sectors ---
-    "XEG.TO", "ZEO.TO", "ZEB.TO", "XFN.TO", "ZGI.TO", "ZUT.TO", "XUT.TO",
-    "XMA.TO", "XGD.TO", "ZJG.TO", "XIT.TO", "XHC.TO", "XST.TO", "XCD.TO",
-    "XRE.TO", "ZRE.TO",
-    # --- Dividend / income ---
-    "XDV.TO", "VDY.TO", "XEI.TO", "ZDV.TO", "CDZ.TO", "XHD.TO", "VIDY.TO",
-    # --- Covered-call income ---
-    "ZWB.TO", "ZWC.TO", "ZWU.TO", "ZWE.TO", "ZWH.TO", "ZWS.TO",
-    "HMAX.TO", "UMAX.TO", "HDIV.TO",
-    # --- Low volatility ---
-    "ZLB.TO", "ZLU.TO", "ZLE.TO",
-    # --- Fixed income ---
-    "XBB.TO", "ZAG.TO", "VAB.TO", "XSB.TO", "VSB.TO",
-    "XGB.TO", "ZGB.TO", "XCB.TO", "ZCS.TO",
-    "XHY.TO", "ZHY.TO", "XSH.TO", "ZEF.TO", "XPF.TO",
-    # --- All-in-one asset allocation ---
-    "XEQT.TO", "VEQT.TO", "XGRO.TO", "VGRO.TO",
-    "XBAL.TO", "VBAL.TO", "VCNS.TO", "XCNS.TO", "VRIF.TO",
-    # --- Cash / HISA equivalents ---
-    "PSA.TO", "CASH.TO", "ZST.TO",
-    # --- Horizons single + leveraged ---
-    "HXX.TO",
-    "HOU.TO", "HOD.TO", "HNU.TO", "HND.TO",
-    "HSU.TO", "HSD.TO", "HQU.TO", "HQD.TO",
-    "HXU.TO", "HXD.TO",
-    # --- Specialty / thematic ---
-    "CGL.TO", "MNT.TO", "BTCC.TO", "ETHX.TO", "RBOT.TO",
+    # --- Pure commodity (futures + bullion) ---
+    "HOU.TO", "HOD.TO",     # WTI 2x bull / bear
+    "HNU.TO", "HND.TO",     # Natgas 2x bull / bear
+    "CGL.TO",               # Gold bullion (CAD-hedged)
+    "MNT.TO",               # Royal Cdn Mint gold trust
+    # --- Commodity-correlated equity sectors ---
+    "XEG.TO",               # Canadian energy producers
+    "ZEO.TO",               # BMO equal-weight oil & gas
+    "XGD.TO",               # Gold miners
+    "ZJG.TO",               # Junior gold miners
+    "XMA.TO",               # Canadian materials
 ]

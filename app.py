@@ -7234,14 +7234,16 @@ with tab_paper:
     from datetime import datetime as _ptdt, timedelta as _pttd
     from zoneinfo import ZoneInfo as _ptzi
 
-    st.subheader("🤖 Canadian-ETF Paper Trader")
+    st.subheader("🤖 Commodity-ETF Paper Trader")
     st.caption(
-        "Two-slot rotation across ~108 liquid Canadian ETFs. "
+        "Two-slot rotation across **11 commodity-themed Canadian ETFs** "
+        "(oil/natgas futures, gold bullion, energy producers, gold "
+        "miners, materials). "
         "**Intraday slot:** BUY 10:00 AM → SELL 3:45 PM ET. "
         "**Overnight slot:** BUY 3:30 PM → SELL 9:55 AM next day. "
         "25% of equity per buy. The agent auto-replays any scheduled "
-        "trades that were missed since the last page load using actual "
-        "historical 5-min bar prices."
+        "trades missed since last page load using actual historical "
+        "5-min bar prices."
     )
 
     # --- Run the agent forward to NOW (auto-retroactive execution) ---
