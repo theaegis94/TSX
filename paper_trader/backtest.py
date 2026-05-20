@@ -356,6 +356,7 @@ def run_backtest_long(
                             entry_px=bar_check["open"],
                             gap_pct=top_gap, atr_pct=atr_pct,
                             trend_aligned=True, vol_ratio=1.0,
+                            ticker=pick,
                         )
                         rr = pred["expected_move_pct"] / (abs(cfg["stop_loss_pct"]) * 100)
                         if rr < cfg["min_rr_ratio"]:
@@ -413,6 +414,7 @@ def run_backtest_long(
                             entry_px=bar_check["close"],
                             score=top_score, atr_pct=atr_pct,
                             trend_aligned=True, vol_ratio=1.0,
+                            ticker=pick,
                         )
                         rr = pred["expected_move_pct"] / (abs(cfg["stop_loss_pct"]) * 100)
                         if rr < cfg["min_rr_ratio"]:

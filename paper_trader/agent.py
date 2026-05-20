@@ -105,10 +105,11 @@ def evaluate_intraday_pick(mover: dict, equity: float = 10_000.0,
     stop_px = entry_px * (1 + FILTERS["stop_loss_pct"]) if entry_px else 0
     target_px = entry_px * (1 + FILTERS["take_profit_pct"]) if entry_px else 0
 
-    # Trader-grade price prediction
+    # Trader-grade price prediction (passes ticker for decay adjustment)
     pred = predict_intraday_exit(
         entry_px=entry_px, gap_pct=gap, atr_pct=atr_pct,
         trend_aligned=trend_ok, vol_ratio=mover.get("vol_ratio", 1.0),
+        ticker=ticker,
     )
     # Risk/reward: predicted move vs stop distance
     stop_distance_pct = abs(FILTERS["stop_loss_pct"]) * 100
@@ -156,10 +157,11 @@ def evaluate_overnight_pick(pick: dict, equity: float = 10_000.0,
     stop_px = entry_px * (1 + FILTERS["stop_loss_pct"]) if entry_px else 0
     target_px = entry_px * (1 + FILTERS["take_profit_pct"]) if entry_px else 0
 
-    # Trader-grade price prediction
+    # Trader-grade price prediction (passes ticker for decay adjustment)
     pred = predict_overnight_exit(
         entry_px=entry_px, score=score, atr_pct=atr_pct,
         trend_aligned=trend_ok, vol_ratio=pick.get("vol_ratio", 1.0),
+        ticker=ticker,
     )
     stop_distance_pct = abs(FILTERS["stop_loss_pct"]) * 100
     rr_ratio = (pred["expected_move_pct"] / stop_distance_pct
@@ -221,61 +223,94 @@ def get_universe_atrs() -> dict[str, float]:
     return out
 
 
+# Tickers subject to daily-reset leveraged-ETF decay
+LEVERAGED_2X_TICKERS = {"HOU.TO", "HOD.TO", "HNU.TO", "HND.TO"}
+LEV_DAILY_DECAY_PCT = 0.05    # ~0.05% per session avg drag (intraday hold)
+LEV_OVERNIGHT_DECAY_PCT = 0.04  # ~0.04% per overnight hold
+
+
 def predict_intraday_exit(
     entry_px: float,
     gap_pct: float,
     atr_pct: float,
     trend_aligned: bool = True,
     vol_ratio: float = 1.0,
+    ticker: str | None = None,
 ) -> dict:
-    """Estimate the price at 3:45 PM ET given 10:00 AM entry context.
+    """Trader-grade intraday prediction (10:00 AM → 3:45 PM ET).
 
-    Logic: morning gaps tend to continue ~30-50% to close. Strong gaps
-    continue more reliably than weak ones. Trend alignment + volume
-    confirmation boost the projection. Capped at 2× ATR.
-
-    Returns:
-      predicted_price : point estimate at 3:45 PM
-      expected_move_pct : predicted % from entry (signed)
-      confidence : probability target is hit before stop (0.30-0.70)
+    Built from observations a veteran commodity-ETF trader makes:
+      - Gap-size sweet spot: 3-4% continues best; 5%+ tends to fade
+        ("exhaustion gap"); <1% is noise.
+      - Volume signature: 2x+ avg volume = institutional, continues
+        hard; <0.8x volume = no follow-through, fades.
+      - Trend misalignment is a HARD penalty (×0.5), not soft (×0.9).
+      - 2x leveraged ETFs eat ~0.05% per session to volatility drag.
+      - Confidence band widened to [0.25, 0.80] — these are volatile
+        instruments with real edge cases on both sides.
     """
-    # Continuation factor based on gap strength
-    if gap_pct >= 4.0:
-        cont = 0.50
-    elif gap_pct >= 2.5:
-        cont = 0.40
-    elif gap_pct >= 1.5:
-        cont = 0.30
+    abs_gap = abs(gap_pct)
+
+    # Gap-size continuation factor (the SWEET SPOT is 3-4%, not bigger)
+    if abs_gap >= 5.0:
+        cont = 0.35    # exhaustion-gap fade risk
+    elif abs_gap >= 3.0:
+        cont = 0.55    # institutional-strength continuation
+    elif abs_gap >= 2.0:
+        cont = 0.45    # solid continuation zone
+    elif abs_gap >= 1.5:
+        cont = 0.30    # marginal — chop risk
+    elif abs_gap >= 0.5:
+        cont = 0.15    # weak signal
     else:
-        cont = 0.15
+        cont = 0.05    # noise
 
-    # Trend alignment + volume modulate continuation
+    # Trend alignment — harder bite when fighting the trend
     if trend_aligned:
-        cont *= 1.20
-    if vol_ratio >= 1.5:
-        cont *= 1.15
-    elif vol_ratio < 0.8:
-        cont *= 0.90
+        cont *= 1.30
+    else:
+        cont *= 0.50   # going against the 20-day trend is a real penalty
 
+    # Volume signature — bigger boost when real, bigger penalty when dead
+    if vol_ratio >= 2.0:
+        cont *= 1.35   # institutional flow
+    elif vol_ratio >= 1.5:
+        cont *= 1.20
+    elif vol_ratio >= 0.8:
+        cont *= 1.00
+    else:
+        cont *= 0.75   # dead volume — almost always fades
+
+    # Sign of the predicted move tracks the sign of the gap
     expected_move = gap_pct * cont
-    # Cap to 2x ATR — don't predict moves beyond plausible daily range
+
+    # Leveraged ETF decay — eat ~0.05% on intraday holds
+    if ticker in LEVERAGED_2X_TICKERS:
+        expected_move -= LEV_DAILY_DECAY_PCT
+
+    # Bound to ±2× ATR (no extrapolating beyond plausible daily range)
     if atr_pct > 0:
-        expected_move = min(expected_move, atr_pct * 2.0)
+        expected_move = max(-atr_pct * 2.0, min(atr_pct * 2.0, expected_move))
+
     predicted = entry_px * (1 + expected_move / 100)
 
-    # Confidence model: base 50% + signal strength + corroboration
-    # Signal strength: gap of 1.5% -> 0%, gap of 4.5% -> +10%
-    signal_str = max(0.0, min(1.0, (gap_pct - 1.5) / 3.0))
-    conf = 0.50 + signal_str * 0.10
+    # Confidence model — wider band, more responsive to signal strength
+    signal_str = max(0.0, min(1.0, (abs_gap - 1.5) / 3.5))
+    conf = 0.50 + signal_str * 0.18
     if trend_aligned:
-        conf += 0.05
+        conf += 0.07
     else:
-        conf -= 0.10
-    if vol_ratio >= 1.5:
-        conf += 0.04
+        conf -= 0.14
+    if vol_ratio >= 2.0:
+        conf += 0.08
+    elif vol_ratio >= 1.5:
+        conf += 0.05
     elif vol_ratio < 0.8:
-        conf -= 0.03
-    conf = max(0.30, min(0.70, conf))
+        conf -= 0.05
+    # Big gaps that hit the exhaustion zone get a confidence haircut
+    if abs_gap >= 5.0:
+        conf -= 0.05
+    conf = max(0.25, min(0.80, conf))
 
     return {
         "predicted_price": predicted,
@@ -291,31 +326,59 @@ def predict_overnight_exit(
     atr_pct: float,
     trend_aligned: bool = True,
     vol_ratio: float = 1.0,
+    ticker: str | None = None,
 ) -> dict:
-    """Estimate the price at 9:55 AM next day given 3:30 PM entry.
+    """Trader-grade overnight prediction (3:30 PM → 9:55 AM next day).
 
-    Overnight moves are typically smaller than intraday (0.2-0.5 ATR).
-    Higher composite score = larger projected move."""
-    score_factor = max(0.0, min(1.0, (score - 0.70) / (0.95 - 0.70)))
-    # Base 0.20 ATR for marginal score, 0.50 ATR for max score
-    base_atr_fraction = 0.20 + score_factor * 0.30
+    Same expert adjustments as intraday:
+      - Trend misalignment is a HARD penalty (×0.6)
+      - Volume confirmation is more impactful
+      - Leveraged ETF overnight decay (~0.04% per session)
+      - Wider confidence band [0.25, 0.80]
 
+    Overnight moves are smaller than intraday because the window
+    (~18 hours, but only ~25 min of active trading at the close +
+    open) is shorter and quieter — base 0.20-0.55 ATR.
+    """
+    score_factor = max(0.0, min(1.0, (score - 0.70) / 0.25))
+    # Slightly wider base range than v1 (was 0.20-0.50)
+    base_atr_fraction = 0.20 + score_factor * 0.35
+
+    # Stronger penalties for misalignment
     if trend_aligned:
+        base_atr_fraction *= 1.20
+    else:
+        base_atr_fraction *= 0.60
+
+    # Volume signature
+    if vol_ratio >= 2.0:
+        base_atr_fraction *= 1.25
+    elif vol_ratio >= 1.5:
         base_atr_fraction *= 1.15
-    if vol_ratio >= 1.5:
-        base_atr_fraction *= 1.10
+    elif vol_ratio < 0.8:
+        base_atr_fraction *= 0.85
 
     expected_move = base_atr_fraction * atr_pct
+
+    # Leveraged ETF overnight decay
+    if ticker in LEVERAGED_2X_TICKERS:
+        expected_move -= LEV_OVERNIGHT_DECAY_PCT
+
     predicted = entry_px * (1 + expected_move / 100)
 
-    conf = 0.50 + score_factor * 0.12
+    # Confidence — wider band, more responsive
+    conf = 0.50 + score_factor * 0.20
     if trend_aligned:
-        conf += 0.05
+        conf += 0.07
     else:
-        conf -= 0.10
-    if vol_ratio >= 1.5:
-        conf += 0.03
-    conf = max(0.30, min(0.70, conf))
+        conf -= 0.14
+    if vol_ratio >= 2.0:
+        conf += 0.06
+    elif vol_ratio >= 1.5:
+        conf += 0.04
+    elif vol_ratio < 0.8:
+        conf -= 0.04
+    conf = max(0.25, min(0.80, conf))
 
     return {
         "predicted_price": predicted,
@@ -523,6 +586,7 @@ def _execute_buy(slot: str, event_ts: datetime) -> dict[str, Any] | None:
             entry_px=get_price_at(pick, event_ts) or 1.0,
             gap_pct=float(top["change_pct"]), atr_pct=_atr_pct,
             trend_aligned=True, vol_ratio=1.0,
+            ticker=pick,
         )
         _rr = _pred["expected_move_pct"] / (abs(FILTERS["stop_loss_pct"]) * 100)
         if _rr < FILTERS["min_rr_ratio"]:
@@ -564,6 +628,7 @@ def _execute_buy(slot: str, event_ts: datetime) -> dict[str, Any] | None:
             entry_px=get_price_at(pick, event_ts) or 1.0,
             score=float(top["score"]), atr_pct=_atr_pct,
             trend_aligned=True, vol_ratio=top.get("vol_ratio", 1.0),
+            ticker=pick,
         )
         _rr = _pred["expected_move_pct"] / (abs(FILTERS["stop_loss_pct"]) * 100)
         if _rr < FILTERS["min_rr_ratio"]:
