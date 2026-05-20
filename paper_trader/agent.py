@@ -79,25 +79,37 @@ def size_overnight(score: float) -> float:
 # ============================================================
 FILTERS = {
     # Intraday top mover must be moving at least this much from open.
-    # Stops us from buying a "+0.2% mover" that's basically noise.
     "min_intraday_pct": 1.5,
 
-    # Overnight composite score must clear this threshold. The score
-    # ranges 0-1; 0.70 means a strongly bullish setup. Parameter sweep
-    # showed 0.70 beats 0.65 by ~10 pts of 3-year return with same
-    # drawdown (the 0.65-0.70 band was mostly mediocre picks).
+    # Overnight composite score must clear this threshold (0-1).
     "min_overnight_score": 0.70,
 
     # Trend alignment: for the bull/bear inverse pairs (HOU/HOD,
     # HNU/HND), the underlying's 20-day SMA slope must agree with
-    # the direction of the pick. Bull pick requires positive slope,
-    # bear pick requires negative slope. This prevents buying HND
-    # while natgas is in a sustained rally (the #1 loss pattern).
+    # the direction of the pick.
     "require_trend_alignment": True,
-
-    # Threshold for "positive trend" — 20d SMA slope over last 10
-    # trading days expressed as percent change. >+1% = uptrend.
     "trend_slope_threshold_pct": 1.0,
+
+    # --- v5: Catalyst-aware risk management ---
+    # Hard stop-loss as a percent of entry price (negative = loss).
+    # Triggered when the daily Low (intraday) or next-day Low
+    # (overnight) breaches the threshold. -3% on a 2x ETF caps
+    # exposure to ~1.5% adverse underlying move.
+    "stop_loss_pct": -0.03,
+
+    # Take-profit threshold — sell early if daily High clears this.
+    # Locks in outlier wins instead of giving them back by close.
+    "take_profit_pct": 0.05,
+
+    # Cross-asset confirmation (DXY for oil, 10y yield for gold).
+    # DEFAULT OFF based on backtest. Tested separately on 3 years of
+    # commodity data: cross-asset alignment vetoed 32 trades but the
+    # vetoed trades were positive in expectation. The USD-oil inverse
+    # relationship has weakened in recent years. Keeping the hook for
+    # future experimentation but off by default.
+    "require_cross_asset_alignment": False,
+    "dxy_5d_threshold_pct": 0.5,
+    "yield_5d_threshold_bps": 5.0,
 }
 
 # Map of inverse-pair ETFs to their underlying for trend lookup

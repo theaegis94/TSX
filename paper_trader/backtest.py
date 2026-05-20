@@ -398,12 +398,23 @@ def run_backtest_long(
                                 "rationale": f"bullish score {top_score:.3f}, alloc {alloc*100:.0f}%",
                             })
 
-        # === 3:45 PM: sell intraday position ===
+        # === 3:45 PM: sell intraday — with stop-loss / take-profit check ===
         if "intraday" in positions:
             pos = positions["intraday"]
             bar = _bar(pos["ticker"], d)
             if bar:
                 exit_px = bar["close"]
+                exit_reason = "schedule"
+                if apply_filters:
+                    stop_px = pos["entry_price"] * (1 + cfg["stop_loss_pct"])
+                    target_px = pos["entry_price"] * (1 + cfg["take_profit_pct"])
+                    # Stop fires first if both touched (conservative)
+                    if bar["low"] <= stop_px:
+                        exit_px = stop_px
+                        exit_reason = "stop_loss"
+                    elif bar["high"] >= target_px:
+                        exit_px = target_px
+                        exit_reason = "take_profit"
                 proceeds = pos["shares"] * exit_px
                 pnl = proceeds - pos["cost"]
                 pnl_pct = (exit_px - pos["entry_price"]) / pos["entry_price"] * 100
@@ -414,6 +425,7 @@ def run_backtest_long(
                     "side": "SELL", "shares": pos["shares"],
                     "price": exit_px, "notional": proceeds,
                     "pnl": pnl, "pnl_pct": pnl_pct,
+                    "exit_reason": exit_reason,
                 })
                 del positions["intraday"]
 
