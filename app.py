@@ -7493,8 +7493,10 @@ with tab_paper:
 
     _lbt_l, _lbt_m, _lbt_r = st.columns([1, 1, 1])
     _lbt_months = _lbt_l.selectbox(
-        "Months back", options=[3, 6, 9, 12, 18, 24], index=3,
+        "Months back", options=[3, 6, 9, 12, 18, 24, 36, 48, 60], index=3,
         key="pt_lbt_months",
+        help="36 = 3 years (3-yr backtest: +99.7% with filters, -14% in "
+             "the 2023 down year, +47%/+50% in 2024/2025).",
     )
     _lbt_cap = _lbt_m.number_input(
         "Starting capital", min_value=100.0, max_value=10_000_000.0,
