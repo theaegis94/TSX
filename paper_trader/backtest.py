@@ -27,7 +27,7 @@ import yfinance as yf
 
 from .universe import UNIVERSE
 from .predictor import WEIGHTS, _rsi
-from .agent import SCHEDULE, ALLOCATION_PCT
+from .agent import SCHEDULE, ALLOCATION_PCT, FILTERS, PAIR_UNDERLYING
 
 LOGGER = logging.getLogger("paper_trader.backtest")
 ET = ZoneInfo("America/Toronto")
@@ -178,8 +178,52 @@ def _pick_overnight_at(daily: dict[str, pd.DataFrame],
     return winner[0], scores
 
 
+def _fetch_underlying_daily() -> dict[str, pd.DataFrame]:
+    """Pull WTI + natgas daily bars for the trend-alignment filter."""
+    out: dict[str, pd.DataFrame] = {}
+    for sym in {u for u, _ in PAIR_UNDERLYING.values()}:
+        try:
+            df = yf.download(sym, period="6mo", interval="1d",
+                             auto_adjust=False, progress=False)
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+            if not df.empty:
+                if df.index.tz is not None:
+                    df.index = df.index.tz_convert(ET).tz_localize(None)
+                out[sym] = df
+        except Exception:
+            continue
+    return out
+
+
+def _trend_aligned_at(ticker: str,
+                       as_of: pd.Timestamp.date,
+                       underlying_daily: dict[str, pd.DataFrame],
+                       threshold_pct: float) -> bool:
+    """Trend alignment check using ALREADY-FETCHED underlying daily
+    history truncated to `as_of`. No yfinance calls during backtest
+    iteration."""
+    if ticker not in PAIR_UNDERLYING:
+        return True
+    sym, side = PAIR_UNDERLYING[ticker]
+    df = underlying_daily.get(sym)
+    if df is None or df.empty:
+        return True
+    trunc = df[df.index.date <= as_of]
+    if len(trunc) < 30:
+        return True
+    sma20 = trunc["Close"].rolling(20).mean().dropna()
+    if len(sma20) < 11:
+        return True
+    slope_pct = float((sma20.iloc[-1] - sma20.iloc[-11]) / sma20.iloc[-11] * 100)
+    if side == "bull":
+        return slope_pct > threshold_pct
+    return slope_pct < -threshold_pct
+
+
 def run_backtest(days_back: int = 30,
-                  initial_capital: float = 10_000.0) -> dict[str, Any]:
+                  initial_capital: float = 10_000.0,
+                  apply_filters: bool = True) -> dict[str, Any]:
     """Replay the agent's schedule over the past `days_back` trading
     days (capped by yfinance 60-day 5-min limit).
 
@@ -191,6 +235,7 @@ def run_backtest(days_back: int = 30,
     LOGGER.info(f"Fetching universe data for {days_back}d backtest…")
     intraday = _fetch_universe_5min(days_back)
     daily = _fetch_universe_daily(days_back)
+    underlying = _fetch_underlying_daily() if apply_filters else {}
     if not intraday or not daily:
         return {"error": "no_data"}
 
@@ -214,6 +259,7 @@ def run_backtest(days_back: int = 30,
     cash = initial_capital
     positions: dict[str, dict[str, Any]] = {}  # slot -> {ticker, shares, entry_price, cost}
     trades: list[dict[str, Any]] = []
+    skipped_log: list[dict[str, Any]] = []  # filter-rejected events
     equity_curve: list[dict[str, Any]] = []
     peak_equity = initial_capital
     max_dd = 0.0
@@ -227,15 +273,43 @@ def run_backtest(days_back: int = 30,
             if slot in positions:
                 continue  # slot already filled
             if slot == "intraday":
-                ticker, _ = _pick_intraday_at(intraday, ts)
-                rationale = "top intraday % from open"
+                ticker, scores = _pick_intraday_at(intraday, ts)
+                if not ticker:
+                    continue
+                top_pct = scores[ticker]
+                # Filter: minimum momentum
+                if apply_filters and top_pct < FILTERS["min_intraday_pct"]:
+                    skipped_log.append({"ts": ts, "slot": slot,
+                        "reason": f"momentum {top_pct:.2f}% < threshold"})
+                    continue
+                # Filter: trend alignment
+                if apply_filters and not _trend_aligned_at(
+                    ticker, ts.date(), underlying,
+                    FILTERS["trend_slope_threshold_pct"],
+                ):
+                    skipped_log.append({"ts": ts, "slot": slot,
+                        "reason": f"{ticker} fails trend alignment"})
+                    continue
+                rationale = f"top intraday {top_pct:+.2f}% from open"
             else:
-                # Use previous-session close for the overnight pick
-                # (rolling daily series indexed to day-of `ts`)
-                ticker, _ = _pick_overnight_at(daily, ts.date())
-                rationale = "top bullish-opening composite"
-            if not ticker:
-                continue
+                ticker, scores = _pick_overnight_at(daily, ts.date())
+                if not ticker:
+                    continue
+                top_score = scores[ticker]
+                # Filter: minimum bullish score
+                if apply_filters and top_score < FILTERS["min_overnight_score"]:
+                    skipped_log.append({"ts": ts, "slot": slot,
+                        "reason": f"score {top_score:.2f} < threshold"})
+                    continue
+                # Filter: trend alignment
+                if apply_filters and not _trend_aligned_at(
+                    ticker, ts.date(), underlying,
+                    FILTERS["trend_slope_threshold_pct"],
+                ):
+                    skipped_log.append({"ts": ts, "slot": slot,
+                        "reason": f"{ticker} fails trend alignment"})
+                    continue
+                rationale = f"top bullish score {top_score:.3f}"
             px = _price_at(intraday, ticker, ts)
             if not px:
                 continue
@@ -340,6 +414,8 @@ def run_backtest(days_back: int = 30,
         "intraday": _slot_stats(intraday_trades),
         "overnight": _slot_stats(overnight_trades),
         "trades": trades,
+        "skipped": skipped_log,
         "equity_curve": equity_curve,
         "date_range": (str(all_dates[0]), str(all_dates[-1])),
+        "filters_applied": apply_filters,
     }

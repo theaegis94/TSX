@@ -43,6 +43,73 @@ SCHEDULE = [
 ]
 ALLOCATION_PCT = 0.25  # 25% of equity per buy
 
+# ============================================================
+# Strategy filters — added to address the -5.76% backtest result.
+# Each filter is a "veto" — if conditions aren't met, the buy is
+# skipped and that slot sits in cash for the day. Goal: avoid the
+# "HND when natgas rallying" type of bad pick that destroyed the
+# overnight P&L in the 30d backtest.
+# ============================================================
+FILTERS = {
+    # Intraday top mover must be moving at least this much from open.
+    # Stops us from buying a "+0.2% mover" that's basically noise.
+    "min_intraday_pct": 1.5,
+
+    # Overnight composite score must clear this threshold. The score
+    # ranges 0-1; 0.65 means a genuinely bullish setup, not a
+    # mediocre one.
+    "min_overnight_score": 0.65,
+
+    # Trend alignment: for the bull/bear inverse pairs (HOU/HOD,
+    # HNU/HND), the underlying's 20-day SMA slope must agree with
+    # the direction of the pick. Bull pick requires positive slope,
+    # bear pick requires negative slope. This prevents buying HND
+    # while natgas is in a sustained rally (the #1 loss pattern).
+    "require_trend_alignment": True,
+
+    # Threshold for "positive trend" — 20d SMA slope over last 10
+    # trading days expressed as percent change. >+1% = uptrend.
+    "trend_slope_threshold_pct": 1.0,
+}
+
+# Map of inverse-pair ETFs to their underlying for trend lookup
+PAIR_UNDERLYING = {
+    "HOU.TO": ("CL=F", "bull"),   # WTI
+    "HOD.TO": ("CL=F", "bear"),
+    "HNU.TO": ("NG=F", "bull"),   # natgas
+    "HND.TO": ("NG=F", "bear"),
+}
+
+
+def _trend_aligned(ticker: str) -> bool:
+    """Check 20-day SMA slope of the underlying commodity. Returns
+    True if the slope direction matches the ETF's bull/bear side,
+    or if this ETF isn't an inverse-pair member (always pass)."""
+    if ticker not in PAIR_UNDERLYING:
+        return True
+    underlying, side = PAIR_UNDERLYING[ticker]
+    try:
+        import yfinance as yf
+        df = yf.download(underlying, period="2mo", interval="1d",
+                         auto_adjust=False, progress=False)
+        if hasattr(df.columns, "get_level_values"):
+            df.columns = df.columns.get_level_values(0)
+        if df.empty or len(df) < 30:
+            return True  # not enough data → fail open (allow trade)
+        close = df["Close"].dropna()
+        sma20 = close.rolling(20).mean()
+        if len(sma20.dropna()) < 11:
+            return True
+        slope_pct = float((sma20.iloc[-1] - sma20.iloc[-11]) / sma20.iloc[-11] * 100)
+        thresh = FILTERS["trend_slope_threshold_pct"]
+        if side == "bull":
+            return slope_pct > thresh
+        else:  # bear
+            return slope_pct < -thresh
+    except Exception as e:
+        LOGGER.warning(f"trend check failed for {ticker}: {e}")
+        return True  # fail open
+
 
 def _now_et() -> datetime:
     return datetime.now(ET)
@@ -89,30 +156,55 @@ def _execute_buy(slot: str, event_ts: datetime) -> dict[str, Any] | None:
         LOGGER.info(f"[{event_ts}] {slot} buy skipped — slot already filled")
         return None
 
-    # Pick ticker
+    # Pick ticker — apply filters to skip weak setups
     if slot == "intraday":
         movers = compute_top_mover_at(event_ts, top_k=5)
         if not movers:
             LOGGER.warning(f"[{event_ts}] no intraday candidates")
             return None
-        pick = movers[0]["ticker"]
+        top = movers[0]
+        # Filter 1: minimum momentum
+        if top["change_pct"] < FILTERS["min_intraday_pct"]:
+            LOGGER.info(
+                f"[{event_ts}] intraday skipped — top mover only "
+                f"+{top['change_pct']:.2f}% (need ≥{FILTERS['min_intraday_pct']:.1f}%)"
+            )
+            return None
+        pick = top["ticker"]
+        # Filter 2: trend alignment for inverse pairs
+        if FILTERS["require_trend_alignment"] and not _trend_aligned(pick):
+            LOGGER.info(
+                f"[{event_ts}] intraday skipped — {pick} fails trend alignment"
+            )
+            return None
         rationale = (
-            f"Top intraday gainer (+{movers[0]['change_pct']:.2f}% from open)"
+            f"Top intraday gainer (+{top['change_pct']:.2f}% from open)"
         )
     else:  # overnight
-        # Note: we use TODAY's predictor ranking. For a true historical
-        # replay we'd snapshot the rank at 3:30pm on the event_ts date;
-        # this is a small known limitation we surface in the UI.
         picks = rank_next_day_bullish(top_k=5)
         if not picks:
             LOGGER.warning(f"[{event_ts}] no overnight candidates")
             return None
-        pick = picks[0]["ticker"]
+        top = picks[0]
+        # Filter 1: minimum bullish score
+        if top["score"] < FILTERS["min_overnight_score"]:
+            LOGGER.info(
+                f"[{event_ts}] overnight skipped — top score "
+                f"{top['score']:.2f} (need ≥{FILTERS['min_overnight_score']:.2f})"
+            )
+            return None
+        pick = top["ticker"]
+        # Filter 2: trend alignment for inverse pairs
+        if FILTERS["require_trend_alignment"] and not _trend_aligned(pick):
+            LOGGER.info(
+                f"[{event_ts}] overnight skipped — {pick} fails trend alignment"
+            )
+            return None
         rationale = (
-            f"Top bullish-opening score {picks[0]['score']:.2f} "
-            f"(close-pos {picks[0]['close_pos']:.2f}, "
-            f"5d {picks[0]['ret_5d_pct']:+.1f}%, "
-            f"RSI {picks[0]['rsi_14']:.0f})"
+            f"Top bullish-opening score {top['score']:.2f} "
+            f"(close-pos {top['close_pos']:.2f}, "
+            f"5d {top['ret_5d_pct']:+.1f}%, "
+            f"RSI {top['rsi_14']:.0f})"
         )
 
     # Get the actual execution price at event_ts
